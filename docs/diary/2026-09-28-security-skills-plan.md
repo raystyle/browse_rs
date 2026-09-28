@@ -85,3 +85,16 @@ X-Original-URL 头取面板删 carlos）。[实证: 两题 congrats true；
 dialogStatus 再 dialogAccept；「ACCESS THE LAB」是 target=_blank
 锚，无头无手势弹不出页，改 a.target="_self" 再 click（点击片段被
 导航打断属预期）；launch URL GET 直达 400 必须题页点出。
+
+## 全量移交：PortSwigger 战役归 prs_c2coe（同日晚段）
+
+用户令「全部移交给 prs_c2coe」（两次）：解题、吸收、督导三道全归
+该工位端到端（回执「照办」生效）。移交前我方完成：战役课程表确立
+（语料 26 类 162 题，台账 /tmp/lab-ledger.md v2 递归两层版）、技能仓
+吸收七批（至 17affb6：HTTP2 碎加 --disable-http2、转录后缀陷阱、
+GUID 归属实证、页内零导航模式、IIFE 残留、交卷时序、解证双判）、
+分工避撞单四条（台账 [x] 唯工位记、skill 仓双署、实例不同题双开、
+单 daemon 归工位驾驶）。移交后我方仅余一件：终局回执时做 browse_rs
+收尾记账（S001 加 diary 加 skill 仓终态 sha 对账）。战役语料接入
+（sh3bu/Portswigger_labs）与疾影外增强节（pentest_rs 配合）一并
+在档（5f5b3e5）。
