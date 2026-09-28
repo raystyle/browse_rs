@@ -224,6 +224,31 @@ include 回 {selftest:"1"}，匿名重放与带权重放的差分肉眼可见）
 本端可达路径。[推断: 五端部署时安全仓随端克隆登记，走各端自己的
 workspaces.json；不共享配置是既有多根语义]
 
+### R4 实弹：双 lab 双解（2026-09-28 同日三续）
+
+用户本人有头登录 Academy（WSLg 修复后），切无头做题，代理走 ccoe
+工位（herdr 派单 w2E:p1）探明的网关家猫口。
+
+- 水平 IDOR（User ID controlled by request parameter）：wiener 基线
+  后一发 pageEval 同源 fetch 换 id 取 carlos 的 API key，
+  `dialogAccept` 喂 prompt 交卷。配方的「零侵入单发探针」原样可用。
+- 垂直越权（URL-based access control can be circumvented）：裸
+  `/admin` 403；允许路径加 `X-Original-URL` 头直取管理面板（自定义
+  头不在 fetch 禁改清单），查询串留请求行完成删用户。
+
+[实证: 两题 congrats true 且 Not solved 消失；lab 回执 URL 自带
+`?id=wiener`，IDOR 面与配方描述一致；login-wall 点名在 /my-account
+弹转 /login 时如实触发]
+改进回写七条随批入 skill：判读表加「回执状态与动作生效解耦，副作用
+面为权威」行；垂直节加前端改写头旁路形；坑四条（prompt 对话框堵死
+pageEval、方言值语言计算收页内、正则转义斜杠破 tokenizer、fetch
+禁带头例外自定义头）；labs.md 新增无头启动实战形节（_self 点击、
+launch 不可 GET、表单直灌、prompt 交卷、代理旗标）。
+环境插曲记账：WSLg 通道带伤（weston shared_memory I/O error 致
+copy mode，窗口打不开）经 `wsl --shutdown` 除根（use_gfxredir 归
+1）；portswigger 裸连被 GFW 间歇 RST，引擎挂
+`--proxy-server=http://192.168.88.2:5330` 后稳定。
+
 ## 风险
 
 - skill 面被误用为攻击自动化：配方以判读与流程知识为体，速率与批量

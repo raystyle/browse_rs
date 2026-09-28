@@ -62,3 +62,26 @@ cookies 对 include 带 selftest 的差分成立）。
 daemon 下 goto 的引擎侧点名不吃 wsl 侧登记（fetch 是 CLI 侧点名故
 命中），各端要 goto 点名须本端 add 登记。[实证: browse down 幂等
 退场；S001 收口节与本文随批过 PEVO]
+
+## R4 实弹：用户登录加双 lab 双解（同日三续）
+
+环境两役先行：WSLg 通道带伤（weston shared_memory I/O error 致
+copy mode，窗口注册任务栏打不开，msrdc 重启无效），`wsl --shutdown`
+除根（use_gfxredir 归 1）后有头窗正常，用户本人在窗内登录 Academy，
+切无头（engine-profile 持久登录态）。portswigger 裸连被 GFW 间歇
+RST，herdr 派单 ccoe 工位（w2E:p1）探明网关家猫双代理口
+（192.168.88.2:5330/5340），引擎挂 --proxy-server 后稳定；断言侧
+独立复核双口 CONNECT 200，且核出其配方 `<-loopback>` 语义反写
+（该 token 是移除回环隐式旁路，与其注释意图相反；默认即旁路，不挂
+更稳），已按飞轮吸收回告工位。
+
+双 lab 双解：水平 IDOR（wiener 基线后一发 id 换 carlos 取 API key，
+dialogAccept 喂 prompt 交卷）；垂直越权（裸 /admin 403，允许路径加
+X-Original-URL 头取面板删 carlos）。[实证: 两题 congrats true；
+改进七条回写 skill（判读副作用权威、前端改写头形、四坑、labs 无头
+实战节）；S001 R4 节随批]
+
+坑记三笔：prompt 对话框开着时 pageEval 全堵（cdp timeout），先
+dialogStatus 再 dialogAccept；「ACCESS THE LAB」是 target=_blank
+锚，无头无手势弹不出页，改 a.target="_self" 再 click（点击片段被
+导航打断属预期）；launch URL GET 直达 400 必须题页点出。
