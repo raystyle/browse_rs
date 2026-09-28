@@ -100,11 +100,12 @@ Filter（历史过滤）、CustomColumn（自定义列）、CustomAction（Repea
 | Turbo Intruder | 高并发 HTTP fuzz 引擎 | 红线不收（C 层） |
 | HTTP Request Smuggler | 畸形 CL/TE 字节序列探反代差异 | 引擎发不出畸形字节（C 层） |
 | Collaborator Everywhere | 出站请求注入载荷，等 OOB 回调 | 无协作服务器基建（C 层缓议） |
-| Autovader | 自动扫 DOM source/sink 与 postMessage | Runtime.evaluate 加 DOMDebugger 可达（A 层） |
+| Autovader | 自动扫 DOM source/sink 与 postMessage | Runtime.evaluate 加 DOMDebugger 可达（A 层，已落 dom-xss-sink-map） |
+| Sharpener | Burp 内 UI 增强（右键菜单、标签整理） | 无检测面，UI 皮不吸收（清单对账补记） |
 | Logger++ | 流量录制加过滤加 grep | `requests()`/`requestDetail`/`responseBody` 已覆盖摘要与单条全文（R2 修正原判）；批量导出面缺（B 层收窄） |
 | Hackvertor | 标签式编解码转换语言 | 方言页内是真 V8，编解码知识直转（A 层） |
-| Upload Scanner | multipart 上传面 fuzz | 部分依赖重放原语（B 加 A） |
-| Backslash Powered Scanner | 意外后缀探测触发报错差异 | 重放加判读（B 加 A） |
+| Upload Scanner | multipart 上传面 fuzz | A 面已落 upload-attack-surface（维度清单加双路配方）；批量 fuzz 部分不收 |
+| Backslash Powered Scanner | 意外后缀探测触发报错差异 | A 面已落 error-based-probing（三档探针加变体族）；改写重放原语落地后升级 |
 
 [记忆: 上表回路是行业通识级理解，个别 BApp 细节建议 R1 批次开源码复核]
 
@@ -196,6 +197,32 @@ BROWSE_NAME 双实例）与四类业务手法（价格篡改、跳步、越赋�
 echo-selftest.md 与 labs.md 加 hint）；`browse workspace site httpbin`
 全文读通；`rg -il 越权` 反查命中 authz-diffing.md；默认仓零改动]
 全部配方走今日原语，无空等原语的死文。
+
+### R2 收口与 R4 预演（2026-09-28 同日续）
+
+对照用户源清单逐项盘点补三篇 A 面（commit 49d0d99，加 158 行）：
+upload-attack-surface（Upload Scanner 的六维探测清单）、
+error-based-probing（Backslash 的三档探针）、insertion-points
+（ActiveScan++ 的入口枚举，其他配方的共用前置）。至此清单全部条目
+各有落点：A 面 skill（11 篇 intent 加 2 靶站）、B 层 REQ 候选三项或
+C 层留档四面，无悬空条目。
+
+R4 预演（旗舰配方实弹，httpbin 自验靶）：
+[实证: 态往返回路全通（newTab 设 cookie 后 before=1、cookiesClear 后
+anon=0、importStorageState 后 restored=1）；零侵入单发探针全通
+（`fetch("/cookies", {credentials:"omit"})` 回空 cookies，
+include 回 {selftest:"1"}，匿名重放与带权重放的差分肉眼可见）。
+引擎跨宿主 daemon（wsl CLI 到 windows 引擎）spawn 隔离实例，
+验后 down 幂等退场]
+[实证: 两个口径坑入档：现公共实例 `/get` 不回 cookies 字段，cookie
+探针打 `/cookies`；方言对象字面量键名 with 前缀（withCreds）被解析器
+拒，改名即过]
+
+部署注记：goto 回执的引擎侧域名点名在跨宿主 daemon（windows）下不
+吃 wsl 侧 workspaces.json 登记（fetch 两腿是 CLI 侧点名故命中）。
+各端要用 goto 点名安全仓，须在该端的 browse 侧 `workspace add` 登记
+本端可达路径。[推断: 五端部署时安全仓随端克隆登记，走各端自己的
+workspaces.json；不共享配置是既有多根语义]
 
 ## 风险
 

@@ -46,3 +46,19 @@ domain 靶站（httpbin 自验靶、portswigger labs）加双 README。
 库，改文字指代）；JS 正则不吃 `(?i)` 内联旗标，改 `new RegExp` 带旗标
 形。[实证: 验收四条全过：add 登记 list 并集双根；fetch 双靶站点名
 命中；site 全文读通；rg 意图反查命中；默认仓零改动]
+
+## 收口批：三篇补 A 面与旗舰实弹（同日再续）
+
+对照源清单逐项盘点再补三篇（49d0d99）：upload-attack-surface、
+error-based-probing、insertion-points。至此用户清单全部条目有落点
+（A 面 skill、B 层候选或 C 层留档），悬空清零。
+
+旗舰配方实弹（httpbin 靶，引擎跨宿主 spawn 隔离实例）：态往返三段
+全通（before 1、clear 后 0、import 后 1）；零侵入探针全通（omit 空
+cookies 对 include 带 selftest 的差分成立）。
+
+坑记再两笔：公共实例 /get 不回 cookies 字段（探针改打 /cookies）；
+方言对象键名 with 前缀被解析器拒（改名即过）。部署注记：跨宿主
+daemon 下 goto 的引擎侧点名不吃 wsl 侧登记（fetch 是 CLI 侧点名故
+命中），各端要 goto 点名须本端 add 登记。[实证: browse down 幂等
+退场；S001 收口节与本文随批过 PEVO]
