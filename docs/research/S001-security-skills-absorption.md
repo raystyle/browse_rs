@@ -101,7 +101,7 @@ Filter（历史过滤）、CustomColumn（自定义列）、CustomAction（Repea
 | HTTP Request Smuggler | 畸形 CL/TE 字节序列探反代差异 | 引擎发不出畸形字节（C 层） |
 | Collaborator Everywhere | 出站请求注入载荷，等 OOB 回调 | 无协作服务器基建（C 层缓议） |
 | Autovader | 自动扫 DOM source/sink 与 postMessage | Runtime.evaluate 加 DOMDebugger 可达（A 层） |
-| Logger++ | 流量录制加过滤加 grep | 缺网络事件录制原语（B 层） |
+| Logger++ | 流量录制加过滤加 grep | `requests()`/`requestDetail`/`responseBody` 已覆盖摘要与单条全文（R2 修正原判）；批量导出面缺（B 层收窄） |
 | Hackvertor | 标签式编解码转换语言 | 方言页内是真 V8，编解码知识直转（A 层） |
 | Upload Scanner | multipart 上传面 fuzz | 部分依赖重放原语（B 加 A） |
 | Backslash Powered Scanner | 意外后缀探测触发报错差异 | 重放加判读（B 加 A） |
@@ -118,7 +118,7 @@ C 层结构性不收（留档理由）。
 | 检测面 | 源 | skill 形态 |
 | --- | --- | --- |
 | 响应敏感信息（ leaked key、token） | BChecks 被动形 | intent-skill：正则清单加判读（goto/fetch 回执文本上跑） |
-| DOM XSS source/sink 地图 | Autovader/DOM Invader | page-skill：sink 特征加页内扫描配方 |
+| DOM XSS source/sink 地图 | Autovader/DOM Invader | intent-skill：sink 地图加页内扫描配方（R2 修正：原判 page-skill，但 slug 面是冻结白名单（#51 F3 十值）无安全配方挂点，落 intent 反查） |
 | 编解码与转换套路 | Hackvertor | intent-skill：V8 表达式配方集 |
 | 越权差分方法论 | Autorize | intent-skill：剥头重放比对流程（等 B 层原语落地后实弹化） |
 | 隐藏参数挖掘流程 | Param Miner | intent-skill：字典源加差分判读 |
@@ -131,8 +131,10 @@ C 层结构性不收（留档理由）。
    headers/postData 可改），CLI 路径是 `Network.getAllCookies` 导出后
    原生 HTTP 客户端重放。Autorize/Param Miner/Backslash 全家桶的底座。
    [推断: 两条路径技术可达，选型是 R3 批次 REQ 的核心议题]
-2. 流量录制：`trafficStart()`/`trafficDump()`，CDP `Network.enable` 事件
-   流收集成 HAR 形。Logger++ 面与 sqlmap 桥接的底座。
+2. 流量导出：R2 修订（2026-09-28）：方言已有 `requests()`（活动 tab
+   环形 1000 摘要）、`requestDetail`/`responseBody`（单条全文），录制
+   面大半已在；真缺口收窄为批量导出（raw 请求文件形与 HAR 面一键
+   落盘），是 sqlmap 桥接的提效项。
 3. 响应差分助手：双响应结构化比对（状态码、长度、正文相似度）。方言
    页内可 JS 自写，原语化是为 skill 简写与一致判读。[直觉: 优先级最低，
    先用页内 JS 验证需求]
@@ -178,6 +180,22 @@ B 层共同边界检查：新增均为原语函数调用，不进控制流，不
 独立仓（名暂定 browse-security-skills）走多根加载，正是 #63 通道的
 首个自用案例。[推断: 隔离理由是受众与审核口径不同，安全配方需要
 授权语境声明前置]
+
+### R2 完成（2026-09-28）
+
+仓 github.com/raystyle/browse-security-skills（root 40c6ac4，12 文件
+596 行）：8 篇 intent（越权差分旗舰、业务逻辑、隐藏参数、敏感信息、
+编解码、组件判读、DOM sink、sqlmap 桥）加 2 篇 domain 靶站（httpbin
+自验、portswigger labs）加双 README。业务逻辑与越权两篇按用户指令
+（2026-09-28「特别是业务逻辑漏洞越权类」）加深：剥授权三法（页内
+`credentials:"omit"` 零侵入单发、exportStorageState 态往返、
+BROWSE_NAME 双实例）与四类业务手法（价格篡改、跳步、越赋、重复
+提交）全量方言化。[实证: 验收实测四条全过：`browse workspace add`
+登记后 list 并集在册（roots 面双根）；`browse fetch` 对 httpbin.org
+与 portswigger.net 双靶站域名点名命中（domain_skills 各回执附
+echo-selftest.md 与 labs.md 加 hint）；`browse workspace site httpbin`
+全文读通；`rg -il 越权` 反查命中 authz-diffing.md；默认仓零改动]
+全部配方走今日原语，无空等原语的死文。
 
 ## 风险
 

@@ -27,3 +27,22 @@ A 层知识直转（6 张 skill 表）、B 层原语缺口（改写重放、流�
 实证锚：BChecks 主动被动两形样例逐字抓自主分支入档；bambdas 五挂点
 README 核验。机制型 BApp 回路表暂标 [记忆]，R1 批次开源码复核清零。
 [实证: md 禁字挡板过；PEVO 门禁随批跑]
+
+## R2 同日落成：browse-security-skills 仓首批 12 文件
+
+用户加令（2026-09-28）：继续直到全部吸收为 skill，业务逻辑与越权类
+重点；新建 browse-security-skills 仓。落 github.com/raystyle/
+browse-security-skills（公开仓，root 40c6ac4）：8 篇 intent 加 2 篇
+domain 靶站（httpbin 自验靶、portswigger labs）加双 README。
+
+两处 S001 原判修正（实操发现）：page-skills 的 slug 是冻结白名单
+（#51 F3 十值），安全配方无挂点，DOM XSS 落 intent 反查；方言已有
+`requests()`/`requestDetail`/`responseBody`，B 层「流量录制」缺口
+收窄为「批量导出」（raw/HAR 一键落盘）。剥授权三法全用今日原语：
+页内 fetch `credentials:"omit"` 零侵入单发、`exportStorageState` 态
+往返、`BROWSE_NAME` 双实例。
+
+坑记两笔：hst secretguard 挡板拦 AWS 示例 key 字面量（教学串也不入
+库，改文字指代）；JS 正则不吃 `(?i)` 内联旗标，改 `new RegExp` 带旗标
+形。[实证: 验收四条全过：add 登记 list 并集双根；fetch 双靶站点名
+命中；site 全文读通；rg 意图反查命中；默认仓零改动]
