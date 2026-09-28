@@ -13,6 +13,8 @@ clean-chrome（自编 Chromium），常驻 daemon 让会话、变量、活动 ta
 - 一条 JS 方言片段直调 CDP 全量 652 方法（`session.<Domain>.<method>`）
 - 常驻 daemon：会话、变量、活动 tab 与元素引用跨命令存活
 - 页面级原语：snapshot/screenshot/pdf、clickRef/fillRef、路由拦截与假应答
+- workspace 技能仓：站点/机制知识外置（ADR-0008），goto/fetch/detect 回执
+  自动点名；`add` 登记自定义仓（格式同默认仓，多根加载序首优先）
 - 附着优先引擎策略：探测本机浏览器，缺则 spawn 隔离实例；绝不关用户浏览器
 - 内嵌 Chromium 版本管理器：install/update/use/remove/list/doctor，镜像锚校验原子落位
 - agent 面：`--llms` 手册直出、错误带可照抄「下一步」、裸调用不弹交互
@@ -110,13 +112,19 @@ browse 'return await screenshot()'                    # 截图；pdf()/recordSta
 browse 'await routeBlock("*://ads.example.com/*")'    # 拦网；routeMock 本地假应答
 browse 'return await detectBrowsers()'                # 探测可附着浏览器
 browse workspace install                              # 装站点/机制知识仓（goto/fetch/detect 回执自动点名，ADR-0008）
-browse workspace add ~/my-skills                      # 登记自定义技能仓（多根序首优先，配置固化 ~/.browse-rs/workspaces.json）
+browse workspace add ~/my-skills                      # 登记自定义技能仓（domain-skills/<段>/ 与 page-skills/<slug>.md，配置固化 workspaces.json）
+browse workspace remove ~/my-skills                   # 移除登记（默认仓不受影响）
 browse chrome install 152.0.7977.84                   # 镜像装引擎（或本地导入）
 browse chrome update                                   # 升最新版并默认切用
 browse chrome remove <旧版本>                          # 删旧版（pin 指向的拒删，先 use 切走）
 browse issue new "标题" --body "复现步骤"              # 缺陷一键反馈（自动署名）
 browse down                                           # 幂等退场（附着来源不动）
 ```
+
+自定义仓只改「在哪找」不改「怎么找」：目录结构同默认仓（`domain-skills/<段>/`
+与 `page-skills/<slug>.md`），goto/fetch 点名与 `workspace site/page/list`
+读全文都吃多根序（序首命中整胜，未覆盖段默认仓仍可用）；`BROWSE_WORKSPACE`
+env 钉死时单根最高优先（多根配置不生效）。
 
 agent 手册一行：`browse --llms`（markdown 手册；`--full` 完整目录、
 `--json` 机器形 Schema）。缺陷反馈一行：`browse issue new`。
