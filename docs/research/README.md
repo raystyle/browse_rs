@@ -4,3 +4,4 @@
 
 | 编号 | 文件 | 主题 | 状态 |
 | --- | --- | --- | --- |
+| S001 | [S001-security-skills-absorption.md](S001-security-skills-absorption.md) | 网络安全 skill 吸收研究计划（Burp/PortSwigger 生态转 browse skill 面；A/B/C 分型加 R1 至 R4 四批） | active |
