@@ -490,10 +490,10 @@ pub fn render_template(body: &str, vars: &[(String, String)]) -> Result<String> 
         Ok(out) => Ok(out),
         // 引擎先渲染、扫描器只做带名富化（评审 #66 一轮 F1 反转权威序）：
         // Strict 引擎只对活分支里的未定义值报错（{% if false %}/{% raw %}
-        // 等死分支占位符不误报），报错是未定义类时扫描器补键名 CTA
+        // 等死分支占位符不误报），报错是未定义类时扫描器补键名 CTA。
+        // 判据走结构化 kind（二轮 G9）：措辞启发式不耐引擎版本变化
         Err(e) => {
-            let msg = format!("{e}");
-            if msg.contains("undefined") {
+            if e.kind() == minijinja::ErrorKind::UndefinedError {
                 let missing = missing_bare_placeholders(body, vars);
                 if !missing.is_empty() {
                     let cta = missing

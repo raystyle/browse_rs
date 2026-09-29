@@ -92,23 +92,41 @@ pub fn keygen_write(
                 .map(|d| d.as_secs())
                 .unwrap_or(0);
             let bak = path.with_file_name(format!("ed25519.key.bak-{stamp}"));
+            // 备份不成即拒 + 落盘后回读比对（评审 #66 二轮 G8）：覆盖是
+            // 不可逆动作，备份失败或短写时中止轮换而非静默继续
             #[cfg(unix)]
             {
                 use std::io::Write;
                 use std::os::unix::fs::OpenOptionsExt;
                 let mut opts = std::fs::OpenOptions::new();
                 opts.write(true).create(true).truncate(true).mode(0o600);
-                if let Ok(mut f) = opts.open(&bak) {
-                    let _ = f.write_all(&seed);
-                    backup = Some(bak.display().to_string());
-                }
+                let mut f = opts.open(&bak).map_err(|e| {
+                    format!(
+                        "旧钥备份件不可写（{}）：{e}；已中止覆盖防不可逆损失",
+                        bak.display()
+                    )
+                })?;
+                f.write_all(&seed).map_err(|e| {
+                    format!(
+                        "旧钥备份写入失败（{}）：{e}；已中止覆盖防不可逆损失",
+                        bak.display()
+                    )
+                })?;
             }
             #[cfg(not(unix))]
-            {
-                if std::fs::write(&bak, &seed).is_ok() {
-                    backup = Some(bak.display().to_string());
-                }
+            std::fs::write(&bak, &seed).map_err(|e| {
+                format!(
+                    "旧钥备份写入失败（{}）：{e}；已中止覆盖防不可逆损失",
+                    bak.display()
+                )
+            })?;
+            if std::fs::read(&bak).ok().as_deref() != Some(seed.as_slice()) {
+                return Err(format!(
+                    "旧钥备份回读不一致（{}）；已中止覆盖防不可逆损失",
+                    bak.display()
+                ));
             }
+            backup = Some(bak.display().to_string());
         }
         old
     } else {

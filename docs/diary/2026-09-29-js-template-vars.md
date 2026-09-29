@@ -40,6 +40,14 @@
 
 omc 键面三件套回执全绿：list 事前 8 键无冲突；register 81ca8826 预览 kid 派生分毫不差后 --yes 在册（active，count 8 到 9）；revoke 5f66（私钥已毁死面，卫生动作）翻 revoked。看板终态 = browse-rs 两把 active（0bb0 待裁 + 81ca）加一把 revoked（5f66）。新键首发实弹 = 账本 #66 立项单写入成功（dry-run 先行零入账预览）。
 
+## 评审二轮（browse-codex-review 快核）
+
+F1 反转验收（碰撞形实测未触发漏网）、G1/G2/G5/G7/五核一逐条过，三问答复（错误分面、G1 边界与基线同口径、G5 无丢钥窗）全对。**结论 CONFIRM：同意停手待总台协调推 main 与发 0.23.0**。随批加修二轮低 G：
+
+- G8 采纳：keygen 备份道从「静默 best-effort」改「不成即拒」：备份 open/write 失败报错中止覆盖，落盘后回读与旧 seed 逐字节比对不一致也中止（覆盖是不可逆动作，这正是 5f66 损失的同类窗口）
+- G9 采纳：F1 富化判据从措辞启发式（msg contains "undefined"）换结构化 `e.kind() == ErrorKind::UndefinedError`（耐引擎版本变化）
+- G10 记档：备份件 ed25519.key.bak-* 无自动清理（每次 --force 留一件，属有意的保守；要 prune 另立 issue）；0bb0 旧键吊销属总台待裁项，跟踪口在 ai_ccoe 09-22 键面日记与本节（悬空引用防呆：0bb0 = browse-rs 更名前疑似旧钥，active）
+
 ## 待办（总台协调面）
 
-本地 commit 不 push（派单令）；评审二轮快核后 CONFIRM；发布 0.23.0 待评审放行后总台协调。
+本地 commit 不 push（派单令）；发布 0.23.0 待总台协调（评审已 CONFIRM）；发版后三平台六件资产名 + 播种/CI/docs run id 回执评审格收轮。
