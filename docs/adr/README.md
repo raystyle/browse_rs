@@ -10,6 +10,7 @@
 | [ADR-0006](ADR-0006-multi-instance-name.md) | BROWSE_NAME 多实例命名空间 | accepted |
 | [ADR-0007](ADR-0007-embedded-chromium-manager.md) | 内嵌 Chromium 版本管理器托管 clean-chrome | accepted |
 | [ADR-0008](ADR-0008-workspace-skill-layers.md) | goto 回执技能触发层与 workspace 单仓外置知识 | accepted |
+| [ADR-0009](ADR-0009-template-engine-minijinja.md) | JS 命令小程序模板引擎选 minijinja | accepted |
 
 规则：一条 ADR 一个决定；被替代时 frontmatter 改 `status: superseded` 并加
 `superseded_by: ADR-00xx`（指向在册编号），原文冻结；Context 写给 18 个月后

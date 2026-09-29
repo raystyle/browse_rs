@@ -109,6 +109,7 @@ browse 'return await snapshot()'                      # AX 树快照（节点带
 browse 'await fillRef("e2", "hello")'                 # 按引用填输入
 browse 'await clickRef("e3")'                         # 按引用点击（遮挡守卫）
 browse --js @snips/title.js                           # @ 文件实参：直读文件为片段体（方言与 --js 通用，绝对/相对路径皆可）
+browse --js @x.test/mul --vars n=6                    # 命令小程序：@ 库内模板 + --vars 传参（Jinja {{ 键 }} 渲染，未填键 exit 2 报键名）
 browse 'return await screenshot()'                    # 截图；pdf()/recordStart() 同族
 browse 'await routeBlock("*://ads.example.com/*")'    # 拦网；routeMock 本地假应答
 browse 'return await detectBrowsers()'                # 探测可附着浏览器

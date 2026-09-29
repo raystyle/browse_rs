@@ -2,6 +2,13 @@
 
 版本级里程碑；逐批过程见 docs/diary。semver 判据在册 docs/requirements/REQ-004。
 
+## 0.23.0 - 2026-09-29
+
+- **JS 模板参数化执行（命令小程序）**：@ 实参加 `--vars 键=值`（可重复累积，不收逗号分隔）同给即模板道。模板源先按 snippets 根解析（`--root` 旗标 > `BROWSE_SNIPPETS_ROOT` env > 内置缺省三序；`根/<名>` 原样与补 `.js` 两试，越根候选跳过守卫语义同 snippets show），未命中回落字面路径（#64 语义：绝对/相对皆可）；按 Jinja 语法渲染（minijinja，ADR-0009：Strict undefined、零 autoescape；`{{ 键 }}` 直插值、`| default()` 可选参、`{% for %}` 生成面），未填键网络前拦 exit 2 报全部未填键名并给 `--vars` 补齐 CTA。不给 `--vars` 即 #64 纯透传，字面大括号对天然不误伤（零静默漂移）；方言与 `--js` 两形态同用；`--root` 升为全局旗标（eval 面模板道与 snippets 子命令共用一根）。snippets 定位升格：从「可复用 JS 片段」升为「参数化 JS 命令小程序库」（代码驻库，一条命令一个可复用小程序）；workspace 存编排知识、snippets 存命令小程序，两层各司其职
+- **账本身份轮换**：ledger 签名私钥轮换（新 kid `81ca88268ec8142dea86b032f884abeeef8a24ec28180df8bb5762ede48c1395` 重烧进 PUBKEY_JWK 常量；过程与在册协调见 diary 当日批记）。总台在册新 kid 前，issue 写入道不可用
+- **新依赖 minijinja v2.24**（memo-map 传递一件）：本仓首个模板引擎依赖，选型与受控配置在册 ADR-0009
+- semver 判据结论（0.23.0 裁定）：能力新增取 minor（REQ-004 判据行）
+
 ## 0.22.1 - 2026-09-29
 
 - **#64/#65 评审一轮修复（F1 + G 收口）**：F1 snippets 族解析臂吞未知旗标（`snippets list x --bogus` 旧形 exit 2，0.22.0 静默吃成位置位出误导性成功），`--` 前缀未知旗标（含 `--root=` 形）回 bail exit 2 基线契约复位；G1 首位置位胜出、多余位置位用法错（`snippets list a b` exit 2）；G2 显式配置根（`--root`/env）不存在时报配置错 exit 1（拼错根与真空库可分），内置缺省根不在册维持「片段库为空」引导面（#44 契约不破）；G5 裸 `@` 特例文案「@ 后缺文件路径」（二轮 G9 覆盖方言与 `--js` 双形）；G6 空串 `--root` 视同未给（与 env 空串回落同规）；G4 paths 文档句澄清（env 根不分 BROWSE_NAME，内置缺省根随实例分舱，与 workspace 缺省不同勿混读）；G7 js-flag 手册补「字面前缀，前导空白即不触发」。G3（list 面符号链接不过滤，存量）记档不修：越根守卫在 show 面（读内容道），list 只印首行摘要。测试：arg_contract 新增 snippets_arg_face_after_review_round1（F1 双臂、G1 双形、G2 显式/缺省对照、G5）

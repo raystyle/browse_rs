@@ -86,13 +86,16 @@ pub const COMMANDS: &[CmdSpec] = &[
         name: "eval",
         kind: CmdKind::Cli,
         signature: "browse '<片段>'",
-        args: &[arg!(
-            "snippet",
-            "string",
-            true,
-            "@ 前缀即读文件内容为片段体"
-        )],
-        description: "求值方言片段（缺省形态；自动拉起 daemon 与引擎）。实参以 @ 开头即文件实参形态：读文件内容为片段体（绝对/相对路径皆可，读失败报错带下一步），与 --js 同形。",
+        args: &[
+            arg!("snippet", "string", true, "@ 前缀即读文件内容为片段体"),
+            arg!(
+                "vars",
+                "string",
+                false,
+                "--vars 键=值 可重复；@ 实参同给即模板道"
+            ),
+        ],
+        description: "求值方言片段（缺省形态；自动拉起 daemon 与引擎）。实参以 @ 开头即文件实参形态：读文件内容为片段体（绝对/相对路径皆可，读失败报错带下一步），与 --js 同形；@ 实参配 --vars 键=值 即模板道（snippets 根先解析，Jinja 渲染，未填键 exit 2 报键名），方言与 --js 两形态同用。",
         example: "browse 'return await currentTab()'",
     },
     CmdSpec {
@@ -118,8 +121,14 @@ pub const COMMANDS: &[CmdSpec] = &[
         args: &[
             arg!("js", "string", true),
             arg!("stdin", "any", false, "空实参时整段管道读"),
+            arg!(
+                "vars",
+                "string",
+                false,
+                "--vars 键=值 可重复；与 @ 实参同给即模板道"
+            ),
         ],
-        description: "全量 JS 受限旁路：不经方言解析器直发 Runtime.evaluate（returnByValue 加 awaitPromise），return 值序列化回传；模板字符串/正则/函数声明直接写，消多层引号转义。分工：方言管 CDP 编排，--js 管页面逻辑。空实参加管道 = 整段 stdin 一次求值（配 --b64 先解码）。文件实参形态：实参以字面 @ 开头即读文件内容为片段体（前导空白即不触发、保持字面；`browse --js @snip.js`；方言与 --js 两形态通用，绝对/相对路径皆可，读失败报错带下一步；先于 --b64 展开，`--b64 @x.b64` = 文件存 base64 的组合形；stdin 管道不经此道）。不可序列化值（DOM 节点、Date、Map、RegExp 等，含容器内元素）在 returnByValue 下序列化成 {}，CLI 按空容器口径零输出；要值就在 JS 里自己 JSON.stringify 或取原语（.textContent/.outerHTML）。与 --repl 不同行。",
+        description: "全量 JS 受限旁路：不经方言解析器直发 Runtime.evaluate（returnByValue 加 awaitPromise），return 值序列化回传；模板字符串/正则/函数声明直接写，消多层引号转义。分工：方言管 CDP 编排，--js 管页面逻辑。空实参加管道 = 整段 stdin 一次求值（配 --b64 先解码）。文件实参形态：实参以字面 @ 开头即读文件内容为片段体（前导空白即不触发、保持字面；`browse --js @snip.js`；方言与 --js 两形态通用，绝对/相对路径皆可，读失败报错带下一步；先于 --b64 展开，`--b64 @x.b64` = 文件存 base64 的组合形；stdin 管道不经此道）。模板参数化（命令小程序）：@ 实参与 --vars 键=值（可重复累积，不收逗号分隔）同给即模板道——模板源先按 snippets 根解析（--root / BROWSE_SNIPPETS_ROOT / 内置三序，名原样与补 .js 两试，越根候选跳过），未命中回落字面路径；按 Jinja 语法渲染（{{ 键 }} 直插、| default() 可选参、{% for %} 生成面），未填键网络前拦 exit 2 报键名；不给 --vars 即纯透传（字面大括号对不误伤）。不可序列化值（DOM 节点、Date、Map、RegExp 等，含容器内元素）在 returnByValue 下序列化成 {}，CLI 按空容器口径零输出；要值就在 JS 里自己 JSON.stringify 或取原语（.textContent/.outerHTML）。与 --repl 不同行。",
         example: r#"browse --js 'return (() => { const f = s => s.length; return f("ab"); })()'"#,
     },
     CmdSpec {
@@ -384,7 +393,7 @@ pub const COMMANDS: &[CmdSpec] = &[
                 "--root 旗标 > BROWSE_SNIPPETS_ROOT env > 缺省状态目录 snippets/"
             ),
         ],
-        description: "列片段库（组合生态）：片段根下递归走访（<site>/<task>.js 天然分层），每文件取首行 // 注释头当摘要。先查库再写新片段的纪律入口。根可外置：--root 旗标或 BROWSE_SNIPPETS_ROOT env 指向外部仓（如 prs_c2coe 内片段目录），缺省仍内置状态目录 snippets/；语义分工：workspace 存编排知识（域/页/意图技能），snippets 存编排功能脚本（可复用 JS 片段）。",
+        description: "列片段库（参数化 JS 命令小程序库）：片段根下递归走访（<site>/<task>.js 天然分层），每文件取首行 // 注释头当摘要。先查库再写新片段的纪律入口。根可外置：--root 旗标或 BROWSE_SNIPPETS_ROOT env 指向外部仓（如 prs_c2coe 内片段目录），缺省仍内置状态目录 snippets/；语义分工：workspace 存编排知识（域/页/意图技能），snippets 存参数化 JS 命令小程序（代码驻库，@ 实参加 --vars 传参即一条命令一个可复用小程序）。",
         example: "browse snippets list",
     },
     CmdSpec {
@@ -400,7 +409,7 @@ pub const COMMANDS: &[CmdSpec] = &[
                 "同 list（根三序旗标 > env > 内置）"
             ),
         ],
-        description: "看片段全文；配合 --js 管道、--js @<路径> 或 POST /eval 即「缺 helper 自己存」闭环；越出片段根的相对路径仍拦截（根随 --root/BROWSE_SNIPPETS_ROOT 配置走）。",
+        description: "看片段全文；配合 --js 管道、--js @<路径>（或 @ 加 --vars 模板传参执行）或 POST /eval 即「缺 helper 自己存」闭环；越出片段根的相对路径仍拦截（根随 --root/BROWSE_SNIPPETS_ROOT 配置走）。",
         example: "browse snippets show x.test/search-title.js",
     },
     CmdSpec {
@@ -1629,7 +1638,7 @@ pub fn render_manual() -> String {
 
     // 意图路由表（#46）：想做什么用什么，一行一带；细节下钻 interaction 层
     out.push_str(
-        "\n意图路由（想做什么用什么；机制细节下钻 browse workspace（仓在 ~/.browse-rs/workspace），HTTP 契约 docs/guides/http-api.md）：\n  去页面并等可用 goto(url,opts)；等加载 waitLoad(s)；等导航事件 waitFor(frameNavigated,s)\n  找元素 findRefs(q)；拿结构 snapshot({depth}) 或 {ref} 子树；点击/填 clickRef/fillRef（ref 来自最近快照或 findRefs）\n  取回值/正文 pageEval(js) 或 session.Runtime.evaluate；多 tab listPageTargets/switchTab/currentTab\n  hover 菜单 hoverRef；右键双击 clickRef(ref,{button,clickCount})；滚轮 mouseWheel；拖拽 mouseDown-Move-Up 手拼\n  传文件 dropFiles；下文件 裸 Page.navigate 加 downloads()/downloadPath()；等特定响应 waitForResponse(pattern,s)\n  页面打不开/登不上 detect() 七判；console 错误 console({minLevel});JS 异常 jsErrors();请求对账 requests()/requestDetail()\n  仿真 emulate({viewport,UA}) / emulateMedia({colorScheme});授予权限 grantPermissions(perms);登录态热迁 cloneCookies(domains)\n  iframe/shadow 内容 snapshot({pierce:true});录制可读性 recordStart({cursor,showActions}) 加 recordChapter(title)\n  引擎层直出（需扩展域版引擎）：语义快照 semanticSnapshot / 变更推送 subscribeChanges / 响应等待 engineWaitForResponse / 截图差分 screenshotDiff\n  复用片段 browse snippets list/show（根可 --root/BROWSE_SNIPPETS_ROOT 外置）；站点/机制知识 browse workspace list/site/page（goto/fetch/detect 回执自动点名）；门外语言 POST /eval；看板 GET /（只读）\n",
+        "\n意图路由（想做什么用什么；机制细节下钻 browse workspace（仓在 ~/.browse-rs/workspace），HTTP 契约 docs/guides/http-api.md）：\n  去页面并等可用 goto(url,opts)；等加载 waitLoad(s)；等导航事件 waitFor(frameNavigated,s)\n  找元素 findRefs(q)；拿结构 snapshot({depth}) 或 {ref} 子树；点击/填 clickRef/fillRef（ref 来自最近快照或 findRefs）\n  取回值/正文 pageEval(js) 或 session.Runtime.evaluate；多 tab listPageTargets/switchTab/currentTab\n  hover 菜单 hoverRef；右键双击 clickRef(ref,{button,clickCount})；滚轮 mouseWheel；拖拽 mouseDown-Move-Up 手拼\n  传文件 dropFiles；下文件 裸 Page.navigate 加 downloads()/downloadPath()；等特定响应 waitForResponse(pattern,s)\n  页面打不开/登不上 detect() 七判；console 错误 console({minLevel});JS 异常 jsErrors();请求对账 requests()/requestDetail()\n  仿真 emulate({viewport,UA}) / emulateMedia({colorScheme});授予权限 grantPermissions(perms);登录态热迁 cloneCookies(domains)\n  iframe/shadow 内容 snapshot({pierce:true});录制可读性 recordStart({cursor,showActions}) 加 recordChapter(title)\n  引擎层直出（需扩展域版引擎）：语义快照 semanticSnapshot / 变更推送 subscribeChanges / 响应等待 engineWaitForResponse / 截图差分 screenshotDiff\n  复用命令小程序 browse snippets list/show 加 @ 实参 --vars 传参执行（根可 --root/BROWSE_SNIPPETS_ROOT 外置）；站点/机制知识 browse workspace list/site/page（goto/fetch/detect 回执自动点名）；门外语言 POST /eval；看板 GET /（只读）\n",
     );
     out.push_str(
         "定位：给 agent（也给人）的浏览器驾驶 CLI；JS 方言片段驱动 clean-chrome，\
@@ -1691,6 +1700,10 @@ pub const COMPANION_FLAGS: &[(&str, &str)] = &[
     ),
     ("--eval, -e <片段>", "显式求值（与缺省形态等价）"),
     ("--full", "--llms 变体：完整目录"),
+    (
+        "--vars <k=v>",
+        "模板参（可重复累积，不收逗号分隔）：与 @ 实参同给即模板道（命令小程序），源先按 snippets 根解析（--root 同根），Jinja 语法渲染，未填键网络前拦 exit 2 报键名",
+    ),
     ("--headless", "无头引擎（伴 up 与求值前置）"),
     ("--help, -h", "人读帮助"),
     (

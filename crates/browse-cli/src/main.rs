@@ -154,6 +154,10 @@ async fn main() -> Result<()> {
     let mut idle_timeout: Option<String> = None;
     let mut cookies_csv: Option<String> = None;
     let mut secrets: Option<String> = None;
+    // #66 命令小程序：--vars 键=值 可重复累积；snippets 根旗标（eval 面
+    // 模板道与 snippets 子命令共用一根，三序旗标 > env > 内置）
+    let mut vars: Vec<String> = Vec::new();
+    let mut snippets_root_flag: Option<String> = None;
 
     let mut args = Args(std::env::args().skip(1));
     let mut gen_surface: Option<String> = None;
@@ -190,6 +194,11 @@ async fn main() -> Result<()> {
             "--cookies" => cookies_csv = Some(args.next("--cookies")),
             "--secrets" => secrets = Some(args.next("--secrets")),
             "--js" => js = true,
+            // #66 模板参：只收重复旗标累积（与 --engine-arg 同族），不收
+            // 逗号分隔叠法（k=v 值本身可含逗号，歧义）；形状校验在使用口
+            "--vars" => vars.push(args.next("--vars")),
+            // #65/#66 共用根旗标：eval 面模板道与 snippets 子命令同根
+            "--root" => snippets_root_flag = Some(args.next("--root")),
             // base64 通道只留长参：`-b` 短参是 issue new 的 --body 既有
             // 契约（REQ-057），不夺权
             "--b64" => b64 = true,
@@ -392,10 +401,11 @@ async fn main() -> Result<()> {
                         // #65 --root 旗标：外部片段库根（旗标 > env > 内置
                         // 缺省）；[site] 位置过滤位保留
                         let mut site = None;
-                        let mut root = None;
                         while let Some(a) = args.next_opt() {
                             match a.as_str() {
-                                "--root" => root = Some(args.next("--root")),
+                                "--root" => {
+                                    snippets_root_flag = Some(args.next("--root"));
+                                }
                                 // 评审一轮 F1：-- 前缀未知旗标（含 --root= 等
                                 // 形）照旧 bail，不静默吃成位置位；G1：首位
                                 // 置位胜出，多余位置位用法错
@@ -409,14 +419,18 @@ async fn main() -> Result<()> {
                                 }
                             }
                         }
-                        mode = Mode::SnippetsList { site, root };
+                        mode = Mode::SnippetsList {
+                            site,
+                            root: snippets_root_flag.clone(),
+                        };
                     }
                     "show" => {
                         let mut rel = String::new();
-                        let mut root = None;
                         while let Some(a) = args.next_opt() {
                             match a.as_str() {
-                                "--root" => root = Some(args.next("--root")),
+                                "--root" => {
+                                    snippets_root_flag = Some(args.next("--root"));
+                                }
                                 // 同 list：F1 未知旗标 bail + G1 首位置位胜出
                                 other if other.starts_with('-') => bail_arg(other),
                                 other if rel.is_empty() => rel = other.to_string(),
@@ -428,7 +442,10 @@ async fn main() -> Result<()> {
                                 }
                             }
                         }
-                        mode = Mode::SnippetsShow { rel, root };
+                        mode = Mode::SnippetsShow {
+                            rel,
+                            root: snippets_root_flag.clone(),
+                        };
                     }
                     other => {
                         eprintln!("browse: snippets 子命令不认识 {other}（list/show，退出 2）");
@@ -574,11 +591,43 @@ async fn main() -> Result<()> {
     }
 
     // 维护命令：从 surface 目录重生成 schema/llms（提交 docs/surface/）
-    // @ 文件实参形态（#64）：实参以 @ 开头即读文件内容为片段体（方言与
-    // --js 两形态通用；绝对/相对路径皆可），读失败报错带 CTA；先于
-    // --b64 解码展开，`--b64 @<存 base64 的文件>` 组合形自然成立；
-    // stdin 管道形态不经此道（管道内容本身即片段体）
-    if snippets.iter().any(|s| s.starts_with('@')) {
+    // @ 实参双道（#64/#66）：给 --vars 走模板道（命令小程序：源先按
+    // snippets 根三序解析、越根候选跳过，未命中回落字面路径；Jinja 语法
+    // 渲染，未填键网络前拦 exit 2 带键名）；不给 --vars 走 #64 纯透传道
+    // （零漂移：读文件直展开，字面大括号对天然不误伤）。两道都先于
+    // --b64 解码；stdin 管道与 REPL 不经此（管道内容本身即片段体）
+    if !vars.is_empty() {
+        if !snippets.iter().any(|s| s.starts_with('@')) {
+            eprintln!("browse: --vars 只配 @ 形态实参（模板道；退出 2）");
+            std::process::exit(2);
+        }
+        let parsed_vars: Vec<(String, String)> = vars
+            .iter()
+            .map(|v| {
+                browse_cli::client::parse_vars_arg(v).unwrap_or_else(|| {
+                    eprintln!("browse: --vars 要 键=值 形（得到 {v}；退出 2）");
+                    std::process::exit(2);
+                })
+            })
+            .collect();
+        let (root, _explicit) = snippets_root(snippets_root_flag.clone());
+        for snip in &mut snippets {
+            if let Some(name) = snip.strip_prefix('@') {
+                let (_path, body) =
+                    browse_cli::client::load_template(name, &root).unwrap_or_else(|e| {
+                        eprintln!("{e:#}");
+                        std::process::exit(2);
+                    });
+                *snip =
+                    browse_cli::client::render_template(&body, &parsed_vars).unwrap_or_else(|e| {
+                        eprintln!("{e:#}");
+                        std::process::exit(2);
+                    });
+            }
+        }
+    } else if snippets.iter().any(|s| s.starts_with('@')) {
+        // #64 纯透传：实参以 @ 开头即读文件内容为片段体（方言与 --js 两
+        // 形态通用；绝对/相对路径皆可），读失败报错带 CTA
         browse_cli::client::expand_at_args(&mut snippets).unwrap_or_else(|e| {
             eprintln!("{e:#}");
             std::process::exit(2);

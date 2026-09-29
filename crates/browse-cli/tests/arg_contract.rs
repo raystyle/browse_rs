@@ -338,3 +338,90 @@ fn snippets_explicit_root_not_a_dir() {
     assert_eq!(code, 1, "{err}");
     assert!(err.contains("片段库根不是目录"), "{err}");
 }
+
+/// #66 模板道契约：--vars 形状与激活规则（只配 @ 形态、键=值 形）、
+/// 未填键网络前拦 exit 2 点名、根第一等解析序（库内与 cwd 同名时库内
+/// 胜出）、渲染成臂经 --ws 死口证（填充毕进求值道，连接拒零 daemon）；
+/// 不给 --vars 的 @ 实参走 #64 纯透传（既有 #64 用例即零回退锁）。
+#[test]
+fn template_vars_arg_contract() {
+    // 激活与形状：网络前拦 exit 2
+    let (code, _, err) = run(&["--js", "return 1", "--vars", "n=1"], &[]);
+    assert_eq!(code, 2, "{err}");
+    assert!(err.contains("--vars 只配"), "{err}");
+    let (code, _, err) = run(&["--js", "@/no/such/x", "--vars", "nokey"], &[]);
+    assert_eq!(code, 2, "{err}");
+    assert!(err.contains("--vars 要 键=值"), "{err}");
+
+    let st = TempState::new("tmpl");
+    let base = std::path::Path::new(st.path());
+    let root = base.join("root");
+    std::fs::create_dir_all(&root).expect("建根");
+
+    // 未填键：exit 2、点名全部未填键、已给键不点名（附着证明）、零 daemon
+    std::fs::write(root.join("miss.js"), "return {{ alpha }} + {{ beta }}\n").expect("写模板");
+    let (code, _, err) = run(
+        &[
+            "--js",
+            "@miss",
+            "--root",
+            &root.to_string_lossy(),
+            "--vars",
+            "alpha=1",
+        ],
+        &[],
+    );
+    assert_eq!(code, 2, "{err}");
+    assert!(err.contains("模板未填占位符"), "{err}");
+    assert!(err.contains("beta"), "未填键点名：{err}");
+    assert!(!err.contains("alpha"), "已给键不点名：{err}");
+
+    // 根第一等：库内与 cwd 同名（库内含未填占位符、cwd 是合法正文），
+    // 命中库内即模板未填错；若字面道先解析则会走到引擎连接（可判别）
+    std::fs::write(root.join("dup.js"), "{{ boom }}\n").expect("写库内同名");
+    let cwd = base.join("cwd");
+    std::fs::create_dir_all(&cwd).expect("建 cwd 位");
+    std::fs::write(cwd.join("dup.js"), "return 1\n").expect("写 cwd 同名");
+    let mut c = Command::new(env!("CARGO_BIN_EXE_browse"));
+    c.args([
+        "--js",
+        "@dup",
+        "--vars",
+        "x=1",
+        "--root",
+        &root.to_string_lossy(),
+    ])
+    .current_dir(&cwd)
+    .stdin(Stdio::null());
+    let out = c.output().expect("跑根序判别");
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert_eq!(
+        out.status.code(),
+        Some(2),
+        "根先解析应命中库内未填错：{err}"
+    );
+    assert!(
+        err.contains("模板未填占位符") && err.contains("boom"),
+        "{err}"
+    );
+
+    // 渲染成臂：全键填齐，--ws 死口证填充毕（模板错误不会出现，连接拒
+    // 即到达求值道；显式 ws 意图不拉 daemon，零 spawn）
+    std::fs::write(root.join("ok.js"), "return {{ n }} * 7\n").expect("写模板");
+    let (code, _, err) = run(
+        &[
+            "--js",
+            "@ok",
+            "--root",
+            &root.to_string_lossy(),
+            "--vars",
+            "n=6",
+            "--ws",
+            "ws://127.0.0.1:1",
+        ],
+        &[],
+    );
+    assert_eq!(code, 1, "死口连接拒属执行失败非模板错：{err}");
+    assert!(err.contains("Connection refused"), "填充毕进求值道：{err}");
+    assert!(!err.contains("模板"), "模板面应已通过：{err}");
+}

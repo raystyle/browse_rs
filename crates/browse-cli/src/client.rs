@@ -369,6 +369,193 @@ pub fn expand_at_args(snippets: &mut [String]) -> Result<()> {
     Ok(())
 }
 
+// ---- #66 JS 命令小程序：@ 实参 + --vars 模板道 ----
+
+/// 模板引擎单例（ADR-0009）：minijinja，Strict undefined（未填键硬错）
+/// 加零 autoescape（产物是 JS 源码不是 HTML，转义即破坏源码）。
+fn template_env() -> &'static minijinja::Environment<'static> {
+    static ENV: std::sync::OnceLock<minijinja::Environment<'static>> = std::sync::OnceLock::new();
+    ENV.get_or_init(|| {
+        let mut env = minijinja::Environment::new();
+        env.set_undefined_behavior(minijinja::UndefinedBehavior::Strict);
+        env
+    })
+}
+
+/// 解析 `--vars` 单值（`键=值`）：键是标识符（字母或下划线开头，字母
+/// 数字下划线续），值是首个 `=` 后的整段——可空串、可含 `=` 与引号，
+/// 原样直取（shell 引号由调用方管）。非 `k=v` 形返回 `None`（调用方
+/// 按用法错处理）。
+///
+/// # Examples
+///
+/// ```
+/// # use browse_cli::client::parse_vars_arg;
+/// assert_eq!(
+///     parse_vars_arg("q=hi there").map(|(k, v)| (k, v)),
+///     Some(("q".to_string(), "hi there".to_string()))
+/// );
+/// assert_eq!(parse_vars_arg("empty=").map(|(_, v)| v), Some(String::new()));
+/// assert_eq!(parse_vars_arg("a=b=c").map(|(_, v)| v), Some("b=c".to_string()));
+/// assert!(parse_vars_arg("nokey").is_none());
+/// assert!(parse_vars_arg("1k=v").is_none());
+/// ```
+#[must_use]
+pub fn parse_vars_arg(s: &str) -> Option<(String, String)> {
+    let (k, v) = s.split_once('=')?;
+    let mut cs = k.chars();
+    let head_ok = cs
+        .next()
+        .is_some_and(|c| c.is_ascii_alphabetic() || c == '_');
+    if head_ok && cs.all(|c| c.is_ascii_alphanumeric() || c == '_') {
+        Some((k.to_string(), v.to_string()))
+    } else {
+        None
+    }
+}
+
+/// 扫裸标识符占位符（`{{ 键 }}` 形，两侧空白容忍，键是纯标识符）里
+/// 未给的键：引擎 Strict 错误不保证带键名，验收面要求点名，故渲染前
+/// 先做这层带名预检；带过滤器或表达式的占位（`{{ k | default("x") }}`）
+/// 不属裸形，交给引擎（可选参由此通行）。
+fn missing_bare_placeholders(body: &str, vars: &[(String, String)]) -> Vec<String> {
+    let keys: Vec<&str> = vars.iter().map(|(k, _)| k.as_str()).collect();
+    let mut missing: Vec<String> = Vec::new();
+    let bytes = body.as_bytes();
+    let mut i = 0;
+    while i + 1 < bytes.len() {
+        if bytes[i] == b'{'
+            && bytes[i + 1] == b'{'
+            && let Some(end) = body[i + 2..].find("}}")
+        {
+            let inner = body[i + 2..i + 2 + end].trim();
+            let bare = !inner.is_empty()
+                && inner.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
+                && inner
+                    .chars()
+                    .next()
+                    .is_some_and(|c| c.is_ascii_alphabetic() || c == '_');
+            if bare && !keys.contains(&inner) && !missing.iter().any(|m| m == inner) {
+                missing.push(inner.to_string());
+            }
+            i += 2 + end + 2;
+            continue;
+        }
+        i += 1;
+    }
+    missing
+}
+
+/// `--vars` 模板渲染（#66 命令小程序）：Jinja 语法渲染模板源，`{{ 键 }}`
+/// 直插值（值按源码文本，引号由模板管），`| default()` 给可选参、
+/// `{% for %}` 生成面可用（引擎 minijinja，ADR-0009）。何时用：@ 实参
+/// 与 `--vars` 同给时，本函数是填充唯一道；不给 `--vars` 的 @ 实参走
+/// [`expand_at_args`] 纯透传（#64 语义零漂移）。
+///
+/// # Errors
+///
+/// 裸占位符有未给键：报错点名全部未填键并给 `--vars` 补齐 CTA（引擎
+/// Strict 兜底复杂表达式面的未定义值，错误形不带键名）；模板语法错：
+/// 报引擎原始错误。
+///
+/// # Examples
+///
+/// ```
+/// # use browse_cli::client::render_template;
+/// let vars = vec![("n".to_string(), "2".to_string())];
+/// assert_eq!(
+///     render_template("return {{ n }} + 1", &vars).unwrap(),
+///     "return 2 + 1"
+/// );
+/// // default 过滤器：可选参不填不报错
+/// assert_eq!(render_template("{{ opt | default(\"x\") }}", &vars).unwrap(), "x");
+/// // 未填键硬错且点名
+/// let err = render_template("{{ a }} + {{ b }}", &vars).unwrap_err();
+/// let msg = err.to_string();
+/// assert!(msg.contains("a") && msg.contains("b"), "{msg}");
+/// // 值原样直插（含引号与等号）
+/// let v2 = vec![("q".to_string(), "'a=b'".to_string())];
+/// assert_eq!(render_template("f({{ q }})", &v2).unwrap(), "f('a=b')");
+/// ```
+pub fn render_template(body: &str, vars: &[(String, String)]) -> Result<String> {
+    let missing = missing_bare_placeholders(body, vars);
+    if !missing.is_empty() {
+        let cta = missing
+            .iter()
+            .map(|k| format!("{k}=<值>"))
+            .collect::<Vec<_>>()
+            .join(" ");
+        anyhow::bail!(
+            "模板未填占位符：{}；下一步：--vars {} 补齐，或模板里改 {{{{ 键 | default(…) }}}} 给默认值",
+            missing.join("、"),
+            cta
+        );
+    }
+    let env = template_env();
+    // BTreeMap 收拢：同键重复 --vars 后值胜
+    let map: std::collections::BTreeMap<String, String> = vars.iter().cloned().collect();
+    let ctx = minijinja::Value::from_serialize(&map);
+    env.render_str(body, ctx).map_err(|e| {
+        anyhow!("模板渲染失败：{e}；下一步：核对 --vars 键名与模板表达式（语法错修模板，未定义值属硬错）")
+    })
+}
+
+/// 模板源解析（#66）：`--vars` 模板道的 @ 实参解析序——snippets 根
+/// 第一等：`根/<名>` 原样与 `根/<名>.js` 两试（命中且 canonicalize 后
+/// 仍在根内即用；越根候选跳过根道，守卫语义同 snippets show）；
+/// 根未命中回落字面路径（`#64` 语义：绝对/相对皆可，cwd 基准）。
+/// 返回 `(命中路径, 源码)`；全未命中报错列出试过的位。
+///
+/// # Errors
+///
+/// 所有候选位都不存在或读失败。
+///
+/// # Examples
+///
+/// ```
+/// # use browse_cli::client::load_template;
+/// // 全未命中（根也不在册）：报错列出试过的候选位
+/// let err = load_template("no/such/tmpl", std::path::Path::new("/no/such/root")).unwrap_err();
+/// assert!(err.to_string().contains("no/such/tmpl"), "{}", err);
+/// ```
+pub fn load_template(name: &str, root: &std::path::Path) -> Result<(String, String)> {
+    if name.is_empty() {
+        anyhow::bail!("@ 后缺模板名；下一步：browse --js @<库内名|路径> --vars 键=值");
+    }
+    let mut tried: Vec<String> = Vec::new();
+    // 根道：原样 + 补 .js 两试（<site>/<task> 省后缀直达库内分层）
+    if root.canonicalize().is_ok() {
+        for cand in [root.join(name), {
+            let mut p = root.join(name);
+            p.set_extension("js");
+            p
+        }] {
+            if let (Ok(canon), Ok(root_canon)) = (cand.canonicalize(), root.canonicalize())
+                && canon.starts_with(&root_canon)
+                && let Ok(body) = std::fs::read_to_string(&canon)
+            {
+                return Ok((canon.display().to_string(), body));
+            }
+            tried.push(cand.display().to_string());
+        }
+    }
+    // 字面道（#64 回落）：任何路径形皆可
+    let lit = std::path::Path::new(name);
+    if let Ok(body) = std::fs::read_to_string(lit) {
+        return Ok((
+            std::fs::canonicalize(lit)
+                .map(|p| p.display().to_string())
+                .unwrap_or_else(|_| name.to_string()),
+            body,
+        ));
+    }
+    tried.push(name.to_string());
+    anyhow::bail!(
+        "模板 {name} 未命中（试过：{}）；下一步：browse snippets list 看库内在册，或核对文件路径",
+        tried.join("、")
+    );
+}
+
 /// GET /health 取 daemon 状态面；daemon 不在时报可照抄的拉起提示。
 ///
 /// # Errors
@@ -511,5 +698,85 @@ mod tests {
         r.expect("好路径应通过");
         assert_eq!(ok_args[0], "keep-me", "非 @ 实参原样保留");
         assert_eq!(ok_args[1], "return 1 + 1", "@ 实参换成文件内容");
+    }
+
+    fn tmp_dir(tag: &str) -> std::path::PathBuf {
+        let d = std::env::temp_dir().join(format!(
+            "browse-tmpl-{tag}-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0)
+        ));
+        std::fs::create_dir_all(&d).expect("建临时目录");
+        d
+    }
+
+    /// #66 模板源解析序：snippets 根第一等（原样 + 补 .js 两试），越根
+    /// 候选跳过根道；根未命中回落字面路径。纯文件系统，零网络。
+    #[test]
+    fn template_resolution_root_first_then_fallback() {
+        let _env_guard = crate::TEST_ENV_LOCK.lock().unwrap();
+        let dir = tmp_dir("resolve");
+        let root = dir.join("root");
+        std::fs::create_dir_all(root.join("x.test")).expect("建库");
+        std::fs::write(root.join("x.test/t.js"), "// 库内\n").expect("写库内模板");
+        std::fs::write(dir.join("t.js"), "// 字面\n").expect("写字面模板");
+
+        // 省后缀：根/<名>.js 重试命中（根道第一等）
+        let (_, body) = load_template("x.test/t", &root).expect("根道 .js 重试应命中");
+        assert_eq!(body, "// 库内\n");
+        // 带后缀原样命中根道
+        let (_, body) = load_template("x.test/t.js", &root).expect("根道原样应命中");
+        assert_eq!(body, "// 库内\n");
+        // 根未命中回落字面路径（cwd 基准；绝对与相对同效）
+        let prev = std::env::current_dir().expect("取 cwd");
+        std::env::set_current_dir(&dir).expect("切 cwd");
+        let r = load_template("t.js", &root);
+        std::env::set_current_dir(prev).ok();
+        let (_, body) = r.expect("字面回落应命中");
+        assert_eq!(body, "// 字面\n");
+        // 越根相对名：根道候选跳过，字面道（cwd 基准）命中库外真文件
+        // （cwd 收进子目录，.. 稳定落在自管探针上，不碰共享 /tmp）
+        let inner = dir.join("inner");
+        std::fs::create_dir_all(&inner).expect("建子目录");
+        std::fs::write(dir.join("escape.js"), "// 库外\n").expect("写库外探针");
+        let prev = std::env::current_dir().expect("取 cwd");
+        std::env::set_current_dir(&inner).expect("切 cwd");
+        let r = load_template("../escape.js", &root);
+        std::env::set_current_dir(prev).ok();
+        let (_, body) = r.expect("越根走字面道应命中");
+        assert_eq!(body, "// 库外\n");
+        // 全未命中：报错列出试过的候选
+        let err = load_template("no/such", &root).unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("no/such"), "{msg}");
+        assert!(msg.contains("x.test") || msg.contains("root"), "{msg}");
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// #66 渲染面：重复键后值胜、值含等号引号空串原样直插、未填键点名、
+    /// default 过滤器可选参通行。
+    #[test]
+    fn template_render_values_and_missing() {
+        let vars = vec![
+            ("k".to_string(), "first".to_string()),
+            ("k".to_string(), "second".to_string()),
+            ("e".to_string(), String::new()),
+            ("q".to_string(), "'a=b'".to_string()),
+        ];
+        assert_eq!(
+            render_template("f({{ k }},{{ e }},{{ q }})", &vars).unwrap(),
+            "f(second,,'a=b')"
+        );
+        // 未填键点名（default 参不算缺）
+        let err = render_template("{{ a }} {{ b | default(1) }} {{ c }}", &[]).unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("a") && msg.contains("c"), "{msg}");
+        assert!(!msg.contains("b"), "default 参不点名：{msg}");
+        // 语法错带 CTA
+        let err = render_template("{% if %}", &[]).unwrap_err();
+        assert!(err.to_string().contains("模板渲染失败"), "{err}");
     }
 }

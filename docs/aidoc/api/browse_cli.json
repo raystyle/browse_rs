@@ -1,6 +1,6 @@
 {
   "crate": "browse-cli",
-  "version": "0.22.1",
+  "version": "0.23.0",
   "items": [
     {
       "path": "browse_cli::client",
@@ -63,9 +63,24 @@
       "docs": "GET /health 取 daemon 状态面；daemon 不在时报可照抄的拉起提示。\n\n# Errors\n\ndaemon 不在或响应坏。"
     },
     {
+      "path": "browse_cli::client::load_template",
+      "kind": "function",
+      "docs": "模板源解析（#66）：`--vars` 模板道的 @ 实参解析序——snippets 根\n第一等：`根/<名>` 原样与 `根/<名>.js` 两试（命中且 canonicalize 后\n仍在根内即用；越根候选跳过根道，守卫语义同 snippets show）；\n根未命中回落字面路径（`#64` 语义：绝对/相对皆可，cwd 基准）。\n返回 `(命中路径, 源码)`；全未命中报错列出试过的位。\n\n# Errors\n\n所有候选位都不存在或读失败。\n\n# Examples\n\n```\n# use browse_cli::client::load_template;\n// 全未命中（根也不在册）：报错列出试过的候选位\nlet err = load_template(\"no/such/tmpl\", std::path::Path::new(\"/no/such/root\")).unwrap_err();\nassert!(err.to_string().contains(\"no/such/tmpl\"), \"{}\", err);\n```"
+    },
+    {
+      "path": "browse_cli::client::parse_vars_arg",
+      "kind": "function",
+      "docs": "解析 `--vars` 单值（`键=值`）：键是标识符（字母或下划线开头，字母\n数字下划线续），值是首个 `=` 后的整段——可空串、可含 `=` 与引号，\n原样直取（shell 引号由调用方管）。非 `k=v` 形返回 `None`（调用方\n按用法错处理）。\n\n# Examples\n\n```\n# use browse_cli::client::parse_vars_arg;\nassert_eq!(\n    parse_vars_arg(\"q=hi there\").map(|(k, v)| (k, v)),\n    Some((\"q\".to_string(), \"hi there\".to_string()))\n);\nassert_eq!(parse_vars_arg(\"empty=\").map(|(_, v)| v), Some(String::new()));\nassert_eq!(parse_vars_arg(\"a=b=c\").map(|(_, v)| v), Some(\"b=c\".to_string()));\nassert!(parse_vars_arg(\"nokey\").is_none());\nassert!(parse_vars_arg(\"1k=v\").is_none());\n```"
+    },
+    {
       "path": "browse_cli::client::quit",
       "kind": "function",
       "docs": "POST /quit 退 daemon，daemon 侧顺带只终结自起引擎（附着来源不动）。\n\n# Errors\n\ndaemon 不在（幂等场景调用方先判活）或 HTTP 失败。"
+    },
+    {
+      "path": "browse_cli::client::render_template",
+      "kind": "function",
+      "docs": "`--vars` 模板渲染（#66 命令小程序）：Jinja 语法渲染模板源，`{{ 键 }}`\n直插值（值按源码文本，引号由模板管），`| default()` 给可选参、\n`{% for %}` 生成面可用（引擎 minijinja，ADR-0009）。何时用：@ 实参\n与 `--vars` 同给时，本函数是填充唯一道；不给 `--vars` 的 @ 实参走\n[`expand_at_args`] 纯透传（#64 语义零漂移）。\n\n# Errors\n\n裸占位符有未给键：报错点名全部未填键并给 `--vars` 补齐 CTA（引擎\nStrict 兜底复杂表达式面的未定义值，错误形不带键名）；模板语法错：\n报引擎原始错误。\n\n# Examples\n\n```\n# use browse_cli::client::render_template;\nlet vars = vec![(\"n\".to_string(), \"2\".to_string())];\nassert_eq!(\n    render_template(\"return {{ n }} + 1\", &vars).unwrap(),\n    \"return 2 + 1\"\n);\n// default 过滤器：可选参不填不报错\nassert_eq!(render_template(\"{{ opt | default(\\\"x\\\") }}\", &vars).unwrap(), \"x\");\n// 未填键硬错且点名\nlet err = render_template(\"{{ a }} + {{ b }}\", &vars).unwrap_err();\nlet msg = err.to_string();\nassert!(msg.contains(\"a\") && msg.contains(\"b\"), \"{msg}\");\n// 值原样直插（含引号与等号）\nlet v2 = vec![(\"q\".to_string(), \"'a=b'\".to_string())];\nassert_eq!(render_template(\"f({{ q }})\", &v2).unwrap(), \"f('a=b')\");\n```"
     },
     {
       "path": "browse_cli::client::skills_passthrough_env",

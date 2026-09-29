@@ -23,7 +23,7 @@ pub const REPO_ID: &str = "github.com/raystyle/browse-rs";
 /// 其 sha256hex，与舰队派生约定一致）。私钥恒在提交侧（env 或本地密档），
 /// 不进仓。
 pub const PUBKEY_JWK: &str =
-    "{\"crv\":\"Ed25519\",\"kty\":\"OKP\",\"x\":\"vGpYNa-iVpc3k00mG3aPZbk94NlHeWEABOqqal65Pag\"}";
+    "{\"crv\":\"Ed25519\",\"kty\":\"OKP\",\"x\":\"U2Usrt_o1Tvju3JPuQrkpYS3-nVPCCHumgFNQOejfqM\"}";
 
 /// issue kind 集（服务端 ISSUE_KINDS 同源，本地预检省一次网络往返）：bug
 /// （BUG 错误任务）与 improvement（改进优化任务）。
