@@ -63,16 +63,21 @@ fn b64url(seed: &[u8]) -> String {
 }
 
 /// 密钥对生成（一次性或轮换）：写私钥密档（0600）并返回 (kid, JWK, 旧
-/// kid)；私钥不打印不进 argv，公钥 JWK 供总台在册（在册后方可写入）。
-/// 在位密档非 `--force` 即拒（防静默销毁）。
+/// kid, 备份件路径)；私钥不打印不进 argv，公钥 JWK 供总台在册（在册后
+/// 方可写入）。在位密档非 `--force` 即拒（防静默销毁）；`--force` 轮换
+/// 覆盖前先落 0600 备份件 `ed25519.key.bak-<epoch秒>`（评审 #66 一轮
+/// G5：误操作可回滚，回执点名备份路径）。
 ///
 /// # Errors
 ///
 /// 失败返回 `String` 错误（路径与写入类）。
-pub fn keygen_write(force: bool) -> Result<(String, String, Option<String>), String> {
+pub fn keygen_write(
+    force: bool,
+) -> Result<(String, String, Option<String>, Option<String>), String> {
     let path = private_key_path()?;
     // 覆盖守卫（评审 G2b）：在册私钥静默销毁 = 后续写入全 401 且旧钥不可
-    // 恢复；非 force 即拒，force 时先带出旧 kid 供对账。
+    // 恢复；非 force 即拒，force 时先带出旧 kid 供对账、旧 seed 落备份。
+    let mut backup: Option<String> = None;
     let old_kid = if path.exists() {
         let old = load_keypair().ok().map(|k| k.key_id.clone());
         if !force {
@@ -80,6 +85,30 @@ pub fn keygen_write(force: bool) -> Result<(String, String, Option<String>), Str
                 "密档已在位（{}）；重复生成会销毁在册私钥，确认轮换加 --force",
                 path.display()
             ));
+        }
+        if let Ok(seed) = std::fs::read(&path) {
+            let stamp = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_secs())
+                .unwrap_or(0);
+            let bak = path.with_file_name(format!("ed25519.key.bak-{stamp}"));
+            #[cfg(unix)]
+            {
+                use std::io::Write;
+                use std::os::unix::fs::OpenOptionsExt;
+                let mut opts = std::fs::OpenOptions::new();
+                opts.write(true).create(true).truncate(true).mode(0o600);
+                if let Ok(mut f) = opts.open(&bak) {
+                    let _ = f.write_all(&seed);
+                    backup = Some(bak.display().to_string());
+                }
+            }
+            #[cfg(not(unix))]
+            {
+                if std::fs::write(&bak, &seed).is_ok() {
+                    backup = Some(bak.display().to_string());
+                }
+            }
         }
         old
     } else {
@@ -109,7 +138,7 @@ pub fn keygen_write(force: bool) -> Result<(String, String, Option<String>), Str
     }
     #[cfg(not(unix))]
     std::fs::write(&path, seed_out.as_bytes()).map_err(|e| format!("{}: {e}", path.display()))?;
-    Ok((kp.key_id.clone(), kp.public_jwk.clone(), old_kid))
+    Ok((kp.key_id.clone(), kp.public_jwk.clone(), old_kid, backup))
 }
 
 /// 载入账本身份：env `BROWSE_LEDGER_PRIVATE_KEY`（base64url seed）优先，
@@ -421,8 +450,9 @@ mod tests {
                     .as_millis()
             ));
             std::env::set_var("BROWSE_NAME", &root);
-            let (kid, jwk, old) = keygen_write(false).unwrap();
+            let (kid, jwk, old, no_backup) = keygen_write(false).unwrap();
             assert_eq!(kid.len(), 64);
+            assert!(no_backup.is_none(), "首代无备份件");
             assert!(old.is_none(), "首代无旧 kid");
             assert!(jwk.contains("Ed25519"));
             let via_file = load_keypair().unwrap();
@@ -436,11 +466,18 @@ mod tests {
             // 坏 seed 拒。
             std::env::set_var("BROWSE_LEDGER_PRIVATE_KEY", "tooshort");
             assert!(load_keypair().is_err());
-            // 覆盖守卫：在位密档非 force 拒、force 过（评审 G2b）。
+            // 覆盖守卫：在位密档非 force 拒、force 过（评审 G2b）；force
+            // 覆盖前旧 seed 落备份件（评审 #66 一轮 G5），备份内容与旧钥
+            // 密档逐字节同。
             std::env::remove_var("BROWSE_LEDGER_PRIVATE_KEY");
             assert!(keygen_write(false).is_err());
-            let (_, _, old2) = keygen_write(true).unwrap();
+            let old_seed = std::fs::read(private_key_path().unwrap()).unwrap();
+            let (_, _, old2, backup) = keygen_write(true).unwrap();
             assert_eq!(old2, Some(kid.clone()), "force 带出旧 kid");
+            let backup = backup.expect("force 应点名备份件");
+            let backed = std::fs::read(&backup).unwrap();
+            assert_eq!(backed, old_seed, "备份件 = 覆盖前旧 seed");
+            assert!(backup.contains("ed25519.key.bak-"), "{backup}");
             std::env::remove_var("BROWSE_LEDGER_PRIVATE_KEY");
             std::env::remove_var("BROWSE_NAME");
             let _ = std::fs::remove_dir_all(&root);

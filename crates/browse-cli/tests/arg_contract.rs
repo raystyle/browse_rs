@@ -425,3 +425,30 @@ fn template_vars_arg_contract() {
     assert!(err.contains("Connection refused"), "填充毕进求值道：{err}");
     assert!(!err.contains("模板"), "模板面应已通过：{err}");
 }
+
+/// 评审 #66 一轮采纳面：G1 守卫（--root 求值面漏 --vars 显式用法错，
+/// 不再静默失效被误读成文件不存在）；五核一直断言（字面大括号文件 +
+/// 不给 --vars 原样透传，落 --b64 字母表校验报错且原文可见——不经
+/// 模板道的直接证据，不再靠推论）。
+#[test]
+fn template_g1_guard_and_literal_passthrough() {
+    let st = TempState::new("g1");
+    let base = std::path::Path::new(st.path());
+    let root = base.join("root");
+    std::fs::create_dir_all(&root).expect("建根");
+    std::fs::write(root.join("t.js"), "return 1\n").expect("写模板");
+
+    // G1：--root 给了、--vars 没给、非 snippets 子命令 = 用法错 exit 2
+    let (code, _, err) = run(&["--js", "@t", "--root", &root.to_string_lossy()], &[]);
+    assert_eq!(code, 2, "{err}");
+    assert!(err.contains("--root 在求值面只配"), "{err}");
+
+    // 字面大括号 + 不给 --vars（无 --root 避 G1）：原文透传落 b64 校验
+    // （判别面：报 b64 字母表错而非「模板未填占位符」，即未过模板道）
+    let lit = base.join("lit.js");
+    std::fs::write(&lit, "{{ x }}{{ y }}\n").expect("写字面文件");
+    let (code, _, err) = run(&["--js", &format!("@{}", lit.display()), "--b64"], &[]);
+    assert_eq!(code, 2, "{err}");
+    assert!(err.contains("不是 base64 字母表"), "透传落 b64 校验：{err}");
+    assert!(!err.contains("模板"), "不经模板道：{err}");
+}

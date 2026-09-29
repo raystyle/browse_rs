@@ -23,6 +23,23 @@
 
 单测 template_resolution_root_first_then_fallback（根道 .js 重试、原样命中、字面回落、越根走字面道、全未命中列候选；坑：越根探针初版 `../` 落共享 /tmp 撞历史残留，cwd 收子目录后确定性）与 template_render_values_and_missing（重复键后值胜、空串与等号引号原样直插、未填点名、default 参不点名、语法错带 CTA）；argv 契约 template_vars_arg_contract（--vars 只配 @、键=值 形、未填键 exit 2 点名已给键不点名、根第一等判别：库内同名未填错 vs 字面先解析会到引擎连接、渲染成臂经 --ws 死口证填充毕进求值道零 daemon）。实弹：--js @x.test/mul --vars n=6 --root 库 出 60（default 参 10 兜底）；env 根缺位回落 cwd 字面道渲染 cwd；--js @文件 不带 --vars 出 42（#64 零回退）。[实证: fmt、clippy -D warnings、test --locked 13 套 216 用例、doc-test、doc、aidoc --check --strict、metadata --locked、surface_contract 8（--llms 仍 120 行贴帽）、PEVO 11 pass（ADR-0009 登记索引后）、e2e 真 chrome 5 passed]
 
+## 评审一轮（browse-codex-review）
+
+回执 1 F + 7 G + 五核 CONFIRM（轮换面评审方独立验证五项：kid 数学、钥文配对经 cryptography 独立派生、账本 #66 签名者即新键、全机密档枚举证旧钥确无副本、omc 服务端态采信我方回执）。
+
+- F1 必修（采纳，权威序反转）：带名预检先于引擎跑，`{% if false %}{{ x }}{% endif %}`、`{% raw %}`、`{# #}` 死分支占位符被误报「未填」，凡循环体打印循环变量的模板全过不了，与披露的 `{% for %}` 生成面自相矛盾。修法照评审方推荐：引擎先 render_str，未定义类报错后才跑扫描器富化键名；误报类自然消失
+- 零转义显式钉死（三核建议）：`set_auto_escape_callback(|_| AutoEscape::None)`，原属 render_str 匿名名落 None 的隐式不变量，写死防引擎升级改道
+- G1 采纳：--root 求值面漏 --vars 显式用法错（原静默失效，@读失败文案误导「文件不存在」）
+- G2 采纳：--root 撤 surface_contract 豁免（「子命令私有」理由已过期）补 COMPANION_FLAGS 行，行数锁两侧同步
+- G3/G4/G6 采纳（文档句）：show 面要全名 vs 模板道省 .js 两试；--vars 值恒字符串循环遍历按字符；敏感值走模板内 secrets/dotenv 道（argv 可见于 ps/历史）
+- G5 采纳：keygen --force 覆盖前自动落 0600 备份件 ed25519.key.bak-<epoch>（内容逐字节同旧 seed，单测锁），回执 backupKey 点名，即本日 5f66 不可逆损失的直防
+- G7 记档不修：写入前配对非阻塞告警（pairing_ok 仅测试用面，存量）
+- 五核一采纳补强：字面大括号 + 不给 --vars 的透传从推论升直断言（arg_contract：报 b64 字母表错而非模板错即证未过模板道）；根序、越根、--vars 位置位、--root 全局化四核 CONFIRM
+
+## 键面收口（飞轮跨工位，ai_ccoe 工位办结）
+
+omc 键面三件套回执全绿：list 事前 8 键无冲突；register 81ca8826 预览 kid 派生分毫不差后 --yes 在册（active，count 8 到 9）；revoke 5f66（私钥已毁死面，卫生动作）翻 revoked。看板终态 = browse-rs 两把 active（0bb0 待裁 + 81ca）加一把 revoked（5f66）。新键首发实弹 = 账本 #66 立项单写入成功（dry-run 先行零入账预览）。
+
 ## 待办（总台协调面）
 
-本地 commit 不 push（派单令）；评审闸门走 browse-codex-review；立项 issue 写入道等新 kid 在册；发布 0.23.0 待评审放行后总台协调。
+本地 commit 不 push（派单令）；评审二轮快核后 CONFIRM；发布 0.23.0 待评审放行后总台协调。

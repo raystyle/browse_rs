@@ -596,6 +596,17 @@ async fn main() -> Result<()> {
     // 渲染，未填键网络前拦 exit 2 带键名）；不给 --vars 走 #64 纯透传道
     // （零漂移：读文件直展开，字面大括号对天然不误伤）。两道都先于
     // --b64 解码；stdin 管道与 REPL 不经此（管道内容本身即片段体）
+    // 评审 #66 一轮 G1：--root 只配 snippets 子命令与 @+--vars 模板道，
+    // 求值面漏给 --vars 时显式报用法错（防「根没生效」被误读成文件不存在）
+    if snippets_root_flag.is_some()
+        && vars.is_empty()
+        && !matches!(mode, Mode::SnippetsList { .. } | Mode::SnippetsShow { .. })
+    {
+        eprintln!(
+            "browse: --root 在求值面只配 @ 实参加 --vars 模板道（漏 --vars 则根不生效；退出 2）"
+        );
+        std::process::exit(2);
+    }
     if !vars.is_empty() {
         if !snippets.iter().any(|s| s.starts_with('@')) {
             eprintln!("browse: --vars 只配 @ 形态实参（模板道；退出 2）");
@@ -990,7 +1001,7 @@ async fn main() -> Result<()> {
             Ok(())
         }
         Mode::LedgerKeygen { force } => {
-            let (kid, jwk, old) =
+            let (kid, jwk, old, backup) =
                 browse_cli::ledger::keygen_write(force).map_err(|e| anyhow!("{e}"))?;
             println!(
                 "{}",
@@ -999,6 +1010,9 @@ async fn main() -> Result<()> {
                     "keyId": kid,
                     "pubkeyJwk": jwk,
                     "replacedKid": old,
+                    // 覆盖前备份件（评审 #66 一轮 G5）：--force 轮换的旧 seed
+                    // 落 0600 备份，误操作可回滚
+                    "backupKey": backup,
                     // 内置 JWK 的 kid 自证面（评审 G6）：与 keyId 对账——轮换后
                     // 须重烧常量再在册，两值不同即提示未烧
                     "builtinKid": browse_cli::ledger::key_id(),

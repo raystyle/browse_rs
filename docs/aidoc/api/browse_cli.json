@@ -160,7 +160,7 @@
     {
       "path": "browse_cli::ledger::keygen_write",
       "kind": "function",
-      "docs": "密钥对生成（一次性或轮换）：写私钥密档（0600）并返回 (kid, JWK, 旧\nkid)；私钥不打印不进 argv，公钥 JWK 供总台在册（在册后方可写入）。\n在位密档非 `--force` 即拒（防静默销毁）。\n\n# Errors\n\n失败返回 `String` 错误（路径与写入类）。"
+      "docs": "密钥对生成（一次性或轮换）：写私钥密档（0600）并返回 (kid, JWK, 旧\nkid, 备份件路径)；私钥不打印不进 argv，公钥 JWK 供总台在册（在册后\n方可写入）。在位密档非 `--force` 即拒（防静默销毁）；`--force` 轮换\n覆盖前先落 0600 备份件 `ed25519.key.bak-<epoch秒>`（评审 #66 一轮\nG5：误操作可回滚，回执点名备份路径）。\n\n# Errors\n\n失败返回 `String` 错误（路径与写入类）。"
     },
     {
       "path": "browse_cli::ledger::load_keypair",

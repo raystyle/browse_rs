@@ -259,7 +259,6 @@ fn help_lists_every_cli_flag() {
         "--current",
         "--env",
         "--force",
-        "--root",
     ];
     let mut flags: Vec<String> = src
         .split(['"', '|'])

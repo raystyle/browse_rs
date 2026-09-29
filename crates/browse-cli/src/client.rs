@@ -378,6 +378,9 @@ fn template_env() -> &'static minijinja::Environment<'static> {
     ENV.get_or_init(|| {
         let mut env = minijinja::Environment::new();
         env.set_undefined_behavior(minijinja::UndefinedBehavior::Strict);
+        // 零转义显式钉死（评审 #66 一轮三核建议）：render_str 匿名名落
+        // AutoEscape::None 属隐式不变量，写死防引擎升级改道
+        env.set_auto_escape_callback(|_| minijinja::AutoEscape::None);
         env
     })
 }
@@ -415,8 +418,9 @@ pub fn parse_vars_arg(s: &str) -> Option<(String, String)> {
 }
 
 /// 扫裸标识符占位符（`{{ 键 }}` 形，两侧空白容忍，键是纯标识符）里
-/// 未给的键：引擎 Strict 错误不保证带键名，验收面要求点名，故渲染前
-/// 先做这层带名预检；带过滤器或表达式的占位（`{{ k | default("x") }}`）
+/// 未给的键：引擎 Strict 错误不保证带键名，验收面要求点名，故引擎报
+/// 未定义类错误后用这层做带名富化（评审 #66 一轮 F1：富化在渲染后，
+/// 死分支占位符不误报）；带过滤器或表达式的占位（`{{ k | default("x") }}`）
 /// 不属裸形，交给引擎（可选参由此通行）。
 fn missing_bare_placeholders(body: &str, vars: &[(String, String)]) -> Vec<String> {
     let keys: Vec<&str> = vars.iter().map(|(k, _)| k.as_str()).collect();
@@ -478,26 +482,37 @@ fn missing_bare_placeholders(body: &str, vars: &[(String, String)]) -> Vec<Strin
 /// assert_eq!(render_template("f({{ q }})", &v2).unwrap(), "f('a=b')");
 /// ```
 pub fn render_template(body: &str, vars: &[(String, String)]) -> Result<String> {
-    let missing = missing_bare_placeholders(body, vars);
-    if !missing.is_empty() {
-        let cta = missing
-            .iter()
-            .map(|k| format!("{k}=<值>"))
-            .collect::<Vec<_>>()
-            .join(" ");
-        anyhow::bail!(
-            "模板未填占位符：{}；下一步：--vars {} 补齐，或模板里改 {{{{ 键 | default(…) }}}} 给默认值",
-            missing.join("、"),
-            cta
-        );
-    }
     let env = template_env();
     // BTreeMap 收拢：同键重复 --vars 后值胜
     let map: std::collections::BTreeMap<String, String> = vars.iter().cloned().collect();
     let ctx = minijinja::Value::from_serialize(&map);
-    env.render_str(body, ctx).map_err(|e| {
-        anyhow!("模板渲染失败：{e}；下一步：核对 --vars 键名与模板表达式（语法错修模板，未定义值属硬错）")
-    })
+    match env.render_str(body, ctx) {
+        Ok(out) => Ok(out),
+        // 引擎先渲染、扫描器只做带名富化（评审 #66 一轮 F1 反转权威序）：
+        // Strict 引擎只对活分支里的未定义值报错（{% if false %}/{% raw %}
+        // 等死分支占位符不误报），报错是未定义类时扫描器补键名 CTA
+        Err(e) => {
+            let msg = format!("{e}");
+            if msg.contains("undefined") {
+                let missing = missing_bare_placeholders(body, vars);
+                if !missing.is_empty() {
+                    let cta = missing
+                        .iter()
+                        .map(|k| format!("{k}=<值>"))
+                        .collect::<Vec<_>>()
+                        .join(" ");
+                    anyhow::bail!(
+                        "模板未填占位符：{}；下一步：--vars {} 补齐，或模板里改 {{{{ 键 | default(…) }}}} 给默认值",
+                        missing.join("、"),
+                        cta
+                    );
+                }
+            }
+            anyhow::bail!(
+                "模板渲染失败：{e}；下一步：核对 --vars 键名与模板表达式（语法错修模板，未定义值属硬错）"
+            )
+        }
+    }
 }
 
 /// 模板源解析（#66）：`--vars` 模板道的 @ 实参解析序——snippets 根
@@ -778,5 +793,23 @@ mod tests {
         // 语法错带 CTA
         let err = render_template("{% if %}", &[]).unwrap_err();
         assert!(err.to_string().contains("模板渲染失败"), "{err}");
+        // 死分支与 raw 块不误报（评审 #66 一轮 F1 反转后：引擎先渲染，
+        // 扫描器只在未定义类报错后富化——{% if false %}/{% raw %} 里的
+        // 占位符不触发「未填」）
+        let vars1 = vec![("k".to_string(), "1".to_string())];
+        assert_eq!(
+            render_template("{% if false %}{{ neverused }}{% endif %}ok", &vars1).unwrap(),
+            "ok"
+        );
+        assert_eq!(
+            render_template("{% raw %}{{ y }}{% endraw %}", &vars1).unwrap(),
+            "{{ y }}"
+        );
+        // 生成面实弹：for 遍历字符串按字符（G4 口径）
+        let list = vec![("list".to_string(), "ab".to_string())];
+        assert_eq!(
+            render_template("{% for c in list %}{{ c }}-{% endfor %}", &list).unwrap(),
+            "a-b-"
+        );
     }
 }

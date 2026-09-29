@@ -7,6 +7,7 @@
 - **JS 模板参数化执行（命令小程序）**：@ 实参加 `--vars 键=值`（可重复累积，不收逗号分隔）同给即模板道。模板源先按 snippets 根解析（`--root` 旗标 > `BROWSE_SNIPPETS_ROOT` env > 内置缺省三序；`根/<名>` 原样与补 `.js` 两试，越根候选跳过守卫语义同 snippets show），未命中回落字面路径（#64 语义：绝对/相对皆可）；按 Jinja 语法渲染（minijinja，ADR-0009：Strict undefined、零 autoescape；`{{ 键 }}` 直插值、`| default()` 可选参、`{% for %}` 生成面），未填键网络前拦 exit 2 报全部未填键名并给 `--vars` 补齐 CTA。不给 `--vars` 即 #64 纯透传，字面大括号对天然不误伤（零静默漂移）；方言与 `--js` 两形态同用；`--root` 升为全局旗标（eval 面模板道与 snippets 子命令共用一根）。snippets 定位升格：从「可复用 JS 片段」升为「参数化 JS 命令小程序库」（代码驻库，一条命令一个可复用小程序）；workspace 存编排知识、snippets 存命令小程序，两层各司其职
 - **账本身份轮换**：ledger 签名私钥轮换（新 kid `81ca88268ec8142dea86b032f884abeeef8a24ec28180df8bb5762ede48c1395` 重烧进 PUBKEY_JWK 常量；过程与在册协调见 diary 当日批记）。总台在册新 kid 前，issue 写入道不可用
 - **新依赖 minijinja v2.24**（memo-map 传递一件）：本仓首个模板引擎依赖，选型与受控配置在册 ADR-0009
+- **评审一轮收口（F1 + G 面）**：F1 渲染权威序反转（引擎先渲染、带名扫描只在未定义类报错后富化：`{% if false %}`/`{% raw %}` 死分支占位符不再误报未填，与 `{% for %}` 生成面披露自洽）；autoescape 显式钉死 `AutoEscape::None`（原属隐式不变量）；G1 `--root` 求值面漏 `--vars` 显式用法错（不再静默失效被误读成文件不存在）；G2 `--root` 撤豁免补 Options 行；G3/G4/G6 文档句（show 全名 vs 模板道省 .js、--vars 值恒字符串循环按字符、敏感值走模板内 secrets 道）；G5 `keygen --force` 覆盖前自动落 0600 备份件并在回执点名（本日 5f66 私钥不可逆损失的直防）；G7（写入前配对告警）记档。轮换终态：新键 81ca8826 经 omc 键面在册（active），死面旧键 5f66 吊销（revoked），0bb0 待裁原样；新键首发实弹 = 账本 #66 立项
 - semver 判据结论（0.23.0 裁定）：能力新增取 minor（REQ-004 判据行）
 
 ## 0.22.1 - 2026-09-29
