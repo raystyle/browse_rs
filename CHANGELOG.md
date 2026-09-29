@@ -2,6 +2,12 @@
 
 版本级里程碑；逐批过程见 docs/diary。semver 判据在册 docs/requirements/REQ-004。
 
+## 0.22.0 - 2026-09-29
+
+- **#64 eval 面文件实参形态（`--js @<路径>` 直读执行）**：片段实参以 `@` 开头即读文件内容为片段体（方言与 `--js` 两形态通用；绝对/相对路径皆可），读失败报错带 CTA 直出 exit 2（网络前拦截，零 daemon）；先于 `--b64` 解码展开，`--b64 @<存 base64 的文件>` 组合形自然成立；stdin 管道与 REPL 形态不经此道，共存不互踩。展开收口在 `browse_cli::client::expand_at_args`（与 `decode_arg_b64` 同族单点）
+- **#65 snippets 库可配置外部根**：片段根三序 `--root` 旗标 > `BROWSE_SNIPPETS_ROOT` env > 内置缺省 `<state_dir>/snippets`（缺省态不变；env 根刻意不分 BROWSE_NAME 命名空间，与 workspace 同口径：片段是跨实例共享资产，配 prs_c2coe 仓内使用）；`browse snippets list/show` 读配置根，`<site>/<task>.js` 分层与首行 `//` 摘要约定不变，越出配置根的相对/绝对路径仍拦截（canonicalize 守卫随根走）。语义定位：workspace 存编排知识（域/页/意图技能），snippets 存编排功能脚本（可复用 JS 片段），两层各司其职
+- semver 判据结论（0.22.0 裁定）：能力新增取 minor（REQ-004 判据行）
+
 ## 0.21.0 - 2026-09-23
 
 - **#63 workspace 多仓加载（自定义技能仓）**：`browse workspace add <路径>`/`remove` 登记自定义技能仓，配置固化到应用状态目录 `~/.browse-rs/workspaces.json`（跨会话持久，不分 BROWSE_NAME 与仓本体跨实例口径一致）；多根序：`BROWSE_WORKSPACE` env 钉死单根最高优先（既有语义不变）> 配置清单序首优先 > 缺省仓垫底（同段被自定义仓覆盖时以自定义仓为准，未覆盖段默认仓仍可用）；技能格式同默认仓（domain-skills/<段>/ 与 page-skills/<slug>.md）；goto/fetch 点名与 site/page/list 读全吃多根（段命中序首仓整胜不混拼、清单跨根并集首见去重、全文读序首命中）；list 回执新增 roots 面

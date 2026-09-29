@@ -86,8 +86,13 @@ pub const COMMANDS: &[CmdSpec] = &[
         name: "eval",
         kind: CmdKind::Cli,
         signature: "browse '<片段>'",
-        args: &[arg!("snippet", "string", true)],
-        description: "求值方言片段（缺省形态；自动拉起 daemon 与引擎）。",
+        args: &[arg!(
+            "snippet",
+            "string",
+            true,
+            "@ 前缀即读文件内容为片段体"
+        )],
+        description: "求值方言片段（缺省形态；自动拉起 daemon 与引擎）。实参以 @ 开头即文件实参形态：读文件内容为片段体（绝对/相对路径皆可，读失败报错带下一步），与 --js 同形。",
         example: "browse 'return await currentTab()'",
     },
     CmdSpec {
@@ -109,12 +114,12 @@ pub const COMMANDS: &[CmdSpec] = &[
     CmdSpec {
         name: "js-flag",
         kind: CmdKind::Cli,
-        signature: "browse --js '<JS 源码>'",
+        signature: "browse --js '<JS 源码|@<路径>>'",
         args: &[
             arg!("js", "string", true),
             arg!("stdin", "any", false, "空实参时整段管道读"),
         ],
-        description: "全量 JS 受限旁路：不经方言解析器直发 Runtime.evaluate（returnByValue 加 awaitPromise），return 值序列化回传；模板字符串/正则/函数声明直接写，消多层引号转义。分工：方言管 CDP 编排，--js 管页面逻辑。空实参加管道 = 整段 stdin 一次求值（配 --b64 先解码）。不可序列化值（DOM 节点、Date、Map、RegExp 等，含容器内元素）在 returnByValue 下序列化成 {}，CLI 按空容器口径零输出；要值就在 JS 里自己 JSON.stringify 或取原语（.textContent/.outerHTML）。与 --repl 不同行。",
+        description: "全量 JS 受限旁路：不经方言解析器直发 Runtime.evaluate（returnByValue 加 awaitPromise），return 值序列化回传；模板字符串/正则/函数声明直接写，消多层引号转义。分工：方言管 CDP 编排，--js 管页面逻辑。空实参加管道 = 整段 stdin 一次求值（配 --b64 先解码）。文件实参形态：实参以 @ 开头即读文件内容为片段体（`browse --js @snip.js`；方言与 --js 两形态通用，绝对/相对路径皆可，读失败报错带下一步；先于 --b64 展开，`--b64 @x.b64` = 文件存 base64 的组合形；stdin 管道不经此道）。不可序列化值（DOM 节点、Date、Map、RegExp 等，含容器内元素）在 returnByValue 下序列化成 {}，CLI 按空容器口径零输出；要值就在 JS 里自己 JSON.stringify 或取原语（.textContent/.outerHTML）。与 --repl 不同行。",
         example: r#"browse --js 'return (() => { const f = s => s.length; return f("ab"); })()'"#,
     },
     CmdSpec {
@@ -369,17 +374,33 @@ pub const COMMANDS: &[CmdSpec] = &[
     CmdSpec {
         name: "snippets-list",
         kind: CmdKind::Cli,
-        signature: "browse snippets list [site]",
-        args: &[arg!("site", "string", false, "目录/路径子串过滤")],
-        description: "列片段库（组合生态）：状态目录 snippets/ 下递归走访（<site>/<task>.js 天然分层），每文件取首行 // 注释头当摘要。先查库再写新片段的纪律入口。",
+        signature: "browse snippets list [site] [--root <dir>]",
+        args: &[
+            arg!("site", "string", false, "目录/路径子串过滤"),
+            arg!(
+                "root",
+                "string",
+                false,
+                "--root 旗标 > BROWSE_SNIPPETS_ROOT env > 缺省状态目录 snippets/"
+            ),
+        ],
+        description: "列片段库（组合生态）：片段根下递归走访（<site>/<task>.js 天然分层），每文件取首行 // 注释头当摘要。先查库再写新片段的纪律入口。根可外置：--root 旗标或 BROWSE_SNIPPETS_ROOT env 指向外部仓（如 prs_c2coe 内片段目录），缺省仍内置状态目录 snippets/；语义分工：workspace 存编排知识（域/页/意图技能），snippets 存编排功能脚本（可复用 JS 片段）。",
         example: "browse snippets list",
     },
     CmdSpec {
         name: "snippets-show",
         kind: CmdKind::Cli,
-        signature: "browse snippets show <rel>",
-        args: &[arg!("rel", "string", true)],
-        description: "看片段全文；配合 --js 管道或 POST /eval 即「缺 helper 自己存」闭环。",
+        signature: "browse snippets show <rel> [--root <dir>]",
+        args: &[
+            arg!("rel", "string", true),
+            arg!(
+                "root",
+                "string",
+                false,
+                "同 list（根三序旗标 > env > 内置）"
+            ),
+        ],
+        description: "看片段全文；配合 --js 管道、--js @<路径> 或 POST /eval 即「缺 helper 自己存」闭环；越出片段根的相对路径仍拦截（根随 --root/BROWSE_SNIPPETS_ROOT 配置走）。",
         example: "browse snippets show x.test/search-title.js",
     },
     CmdSpec {
@@ -1608,7 +1629,7 @@ pub fn render_manual() -> String {
 
     // 意图路由表（#46）：想做什么用什么，一行一带；细节下钻 interaction 层
     out.push_str(
-        "\n意图路由（想做什么用什么；机制细节下钻 browse workspace（仓在 ~/.browse-rs/workspace），HTTP 契约 docs/guides/http-api.md）：\n  去页面并等可用 goto(url,opts)；等加载 waitLoad(s)；等导航事件 waitFor(frameNavigated,s)\n  找元素 findRefs(q)；拿结构 snapshot({depth}) 或 {ref} 子树；点击/填 clickRef/fillRef（ref 来自最近快照或 findRefs）\n  取回值/正文 pageEval(js) 或 session.Runtime.evaluate；多 tab listPageTargets/switchTab/currentTab\n  hover 菜单 hoverRef；右键双击 clickRef(ref,{button,clickCount})；滚轮 mouseWheel；拖拽 mouseDown-Move-Up 手拼\n  传文件 dropFiles；下文件 裸 Page.navigate 加 downloads()/downloadPath()；等特定响应 waitForResponse(pattern,s)\n  页面打不开/登不上 detect() 七判；console 错误 console({minLevel});JS 异常 jsErrors();请求对账 requests()/requestDetail()\n  仿真 emulate({viewport,UA}) / emulateMedia({colorScheme});授予权限 grantPermissions(perms);登录态热迁 cloneCookies(domains)\n  iframe/shadow 内容 snapshot({pierce:true});录制可读性 recordStart({cursor,showActions}) 加 recordChapter(title)\n  引擎层直出（需扩展域版引擎）：语义快照 semanticSnapshot / 变更推送 subscribeChanges / 响应等待 engineWaitForResponse / 截图差分 screenshotDiff\n  复用片段 browse snippets list/show；站点/机制知识 browse workspace list/site/page（goto/fetch/detect 回执自动点名）；门外语言 POST /eval；看板 GET /（只读）\n",
+        "\n意图路由（想做什么用什么；机制细节下钻 browse workspace（仓在 ~/.browse-rs/workspace），HTTP 契约 docs/guides/http-api.md）：\n  去页面并等可用 goto(url,opts)；等加载 waitLoad(s)；等导航事件 waitFor(frameNavigated,s)\n  找元素 findRefs(q)；拿结构 snapshot({depth}) 或 {ref} 子树；点击/填 clickRef/fillRef（ref 来自最近快照或 findRefs）\n  取回值/正文 pageEval(js) 或 session.Runtime.evaluate；多 tab listPageTargets/switchTab/currentTab\n  hover 菜单 hoverRef；右键双击 clickRef(ref,{button,clickCount})；滚轮 mouseWheel；拖拽 mouseDown-Move-Up 手拼\n  传文件 dropFiles；下文件 裸 Page.navigate 加 downloads()/downloadPath()；等特定响应 waitForResponse(pattern,s)\n  页面打不开/登不上 detect() 七判；console 错误 console({minLevel});JS 异常 jsErrors();请求对账 requests()/requestDetail()\n  仿真 emulate({viewport,UA}) / emulateMedia({colorScheme});授予权限 grantPermissions(perms);登录态热迁 cloneCookies(domains)\n  iframe/shadow 内容 snapshot({pierce:true});录制可读性 recordStart({cursor,showActions}) 加 recordChapter(title)\n  引擎层直出（需扩展域版引擎）：语义快照 semanticSnapshot / 变更推送 subscribeChanges / 响应等待 engineWaitForResponse / 截图差分 screenshotDiff\n  复用片段 browse snippets list/show（根可 --root/BROWSE_SNIPPETS_ROOT 外置）；站点/机制知识 browse workspace list/site/page（goto/fetch/detect 回执自动点名）；门外语言 POST /eval；看板 GET /（只读）\n",
     );
     out.push_str(
         "定位：给 agent（也给人）的浏览器驾驶 CLI；JS 方言片段驱动 clean-chrome，\
@@ -1896,7 +1917,7 @@ pub fn render_help() -> String {
         "\n片段方言：\n  const tabs = await listPageTargets()\n  await session.use(tabs[0].targetId)\n  await goto(\"https://example.com\", {waitIdle: true})\n  支持 await/const/return、字面量与成员下标；模板字符串 raw 可多行内嵌页面代码；函数与控制流走 --js；等加载用 goto()/waitLoad()。\n  完整语言面、全局函数与 session 方法清单：browse --llms\n",
     );
     out.push_str(
-        "\nEnvironment Variables:\n  BROWSE_PORT              daemon 端口（default: 9880）\n  BROWSE_NAME              命名实例：状态目录加派生端口 9900-9999，多实例并行\n  BROWSE_CHROME            chrome 路径（default: 走发现序：显式、托管 pin、祖先部署、常规路径）\n  BROWSE_PROFILE           spawn 引擎 user-data-dir（default: 固定 engine-profile，down 不删）\n  BROWSE_CDP_WS            钉死连接的 WS URL\n  BROWSE_NO_ATTACH=1       跳过附着探测，强制 spawn 隔离实例\n  BROWSE_EVAL_TIMEOUT      单次求值超时秒数（default: 300）\n  BROWSE_IDLE_TIMEOUT      引擎闲置回收毫秒（default: 3600000，0 关闭）\n  BROWSE_PROXY/BYPASS      引擎代理与旁路 --proxy-server/--proxy-bypass-list（同值旗标）\n  BROWSE_ENGINE_ARGS       引擎附加旗标，空格分隔直通 spawn argv（--engine-arg 同道；无显示会话 spawn 自动补 --headless，显式旗标优先）\n  BROWSE_SECRETS           dotenv 密钥文件（--secrets 同值；输出回显脱敏）\n  BROWSE_WORKSPACE         技能仓根（default: ~/.browse-rs/workspace，跨实例共享）\n  BROWSE_DOMAIN_SKILLS=0   关 goto/fetch 回执域名技能点名\n  BROWSE_PAGE_SKILLS=0     关 goto/detect 回执页面技能点名
+        "\nEnvironment Variables:\n  BROWSE_PORT              daemon 端口（default: 9880）\n  BROWSE_NAME              命名实例：状态目录加派生端口 9900-9999，多实例并行\n  BROWSE_CHROME            chrome 路径（default: 走发现序：显式、托管 pin、祖先部署、常规路径）\n  BROWSE_PROFILE           spawn 引擎 user-data-dir（default: 固定 engine-profile，down 不删）\n  BROWSE_CDP_WS            钉死连接的 WS URL\n  BROWSE_NO_ATTACH=1       跳过附着探测，强制 spawn 隔离实例\n  BROWSE_EVAL_TIMEOUT      单次求值超时秒数（default: 300）\n  BROWSE_IDLE_TIMEOUT      引擎闲置回收毫秒（default: 3600000，0 关闭）\n  BROWSE_PROXY/BYPASS      引擎代理与旁路 --proxy-server/--proxy-bypass-list（同值旗标）\n  BROWSE_ENGINE_ARGS       引擎附加旗标，空格分隔直通 spawn argv（--engine-arg 同道；无显示会话 spawn 自动补 --headless，显式旗标优先）\n  BROWSE_SECRETS           dotenv 密钥文件（--secrets 同值；输出回显脱敏）\n  BROWSE_WORKSPACE         技能仓根（default: ~/.browse-rs/workspace，跨实例共享）\n  BROWSE_SNIPPETS_ROOT     片段库根（default: 状态目录 snippets/；--root 旗标同值，旗标优先）\n  BROWSE_DOMAIN_SKILLS=0   关 goto/fetch 回执域名技能点名\n  BROWSE_PAGE_SKILLS=0     关 goto/detect 回执页面技能点名
   BROWSE_ENGINE_CONTEXT   操作回执显引擎紧凑行（default: 关；异常告警恒开）\n",
     );
     out.push_str("\n退出码：\n  0 成功 / 1 执行失败 / 2 用法错\n");

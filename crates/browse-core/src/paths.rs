@@ -175,6 +175,31 @@ pub fn write_workspace_config(roots: &[PathBuf]) -> std::io::Result<()> {
     std::fs::write(&path, serde_json::to_vec_pretty(&list).unwrap_or_default())
 }
 
+/// 返回片段库根（#65 可配置外部根）：`BROWSE_SNIPPETS_ROOT` env 显式
+/// 优先（指向外部仓，如 prs_c2coe 内片段目录；刻意不分 `BROWSE_NAME`
+/// 命名空间，与 workspace 同口径——片段是跨实例共享资产），缺省仍内置
+/// 态 `<state_dir>/snippets`。`browse snippets` 命令族从这定位片段库
+/// （`<site>/<task>.js` 分层与首行 `//` 摘要约定不变；越出库根的相对
+/// 路径仍被 show 面拦截）。CLI `--root` 旗标在本函数之上再盖一层
+/// （旗标 > env > 内置缺省）。
+///
+/// # Examples
+///
+/// ```
+/// if std::env::var_os("BROWSE_SNIPPETS_ROOT").is_none() {
+///     assert!(browse_core::paths::snippets_root().ends_with("snippets"));
+/// }
+/// ```
+pub fn snippets_root() -> PathBuf {
+    if let Some(p) = std::env::var_os("BROWSE_SNIPPETS_ROOT") {
+        let p = PathBuf::from(p);
+        if !p.as_os_str().is_empty() {
+            return p;
+        }
+    }
+    state_dir().join("snippets")
+}
+
 /// 返回 workspace 仓根：`BROWSE_WORKSPACE` 显式优先，缺省
 /// `<home>/.browse-rs/workspace`（home 解析同 [`state_dir_for`]，三平台
 /// USERPROFILE/HOME 双道）。何时用：技能触发层（#50/#51）与

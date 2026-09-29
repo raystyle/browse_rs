@@ -11,6 +11,7 @@ daemon 客户端：本地 HTTP 调用 + 首次使用自动拉起 detached daemon
 - `ensure_daemon` — daemon 不在跑时 detached 拉起 `browse --serve` 并探活到通；已在跑则直接返回。
 - `ensure_daemon_with_env` — 同 [`ensure_daemon`]，但给新拉起的 daemon 进程注入环境变量
 - `eval` — 把方言片段 POST 到 daemon 的 /eval 求值。
+- `expand_at_args` — `@` 文件实参展开（#64）：片段实参以 `@` 开头即读文件内容为片段体，
 - `health` — GET /health 取 daemon 状态面；daemon 不在时报可照抄的拉起提示。
 - `quit` — POST /quit 退 daemon，daemon 侧顺带只终结自起引擎（附着来源不动）。
 - `skills_passthrough_env` — 技能层透传环境（#50/#51）：拉起新 daemon 时把 CLI 进程里的 workspace

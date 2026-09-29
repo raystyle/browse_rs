@@ -326,6 +326,42 @@ pub fn decode_arg_b64(s: &str) -> Result<String> {
         .map_err(|_| anyhow!("-b 解码后不是 UTF-8 文本；下一步：确认原文是方言片段或 JS 源码文本"))
 }
 
+/// `@` 文件实参展开（#64）：片段实参以 `@` 开头即读文件内容为片段体，
+/// 其余实参原样保留。方言与 `--js` 两形态通用（同一实参道）；绝对与
+/// 相对路径皆可（相对即当前工作目录）。先于 `--b64` 解码展开，
+/// `--b64 @<存 base64 的文件>` 组合形自然成立；stdin 管道形态不经此道
+/// （管道内容是片段体本身，不前缀展开）。
+///
+/// # Errors
+///
+/// `@` 后路径读取失败（不存在、无权限、非 UTF-8 等）报带下一步提示的
+/// 错误（调用方直出 exit 2，与 `--b64` 坏串同族）。
+///
+/// # Examples
+///
+/// ```
+/// # use browse_cli::client::expand_at_args;
+/// // 非 @ 前缀实参原样保留
+/// let mut args = vec!["return 1".to_string()];
+/// expand_at_args(&mut args).unwrap();
+/// assert_eq!(args[0], "return 1");
+/// // 空 @ 前缀（裸 @）读不了，报错
+/// let mut bad = vec!["@".to_string()];
+/// assert!(expand_at_args(&mut bad).is_err());
+/// ```
+pub fn expand_at_args(snippets: &mut [String]) -> Result<()> {
+    for snip in snippets.iter_mut() {
+        if let Some(path) = snip.strip_prefix('@') {
+            *snip = std::fs::read_to_string(path).map_err(|e| {
+                anyhow!(
+                    "@实参读文件失败 {path}：{e}；下一步：核对路径与权限，或直接贴片段实参（cat 文件 | browse 管道亦可）"
+                )
+            })?;
+        }
+    }
+    Ok(())
+}
+
 /// GET /health 取 daemon 状态面；daemon 不在时报可照抄的拉起提示。
 ///
 /// # Errors
@@ -410,4 +446,63 @@ pub async fn quit() -> Result<()> {
         .await
         .context("POST /quit")?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// #64 文件实参形态：@ 前缀实参换成文件内容，其余实参不动；读失败
+    /// 报错带 CTA。纯文件系统，零网络。
+    #[test]
+    fn at_args_expand_from_file() {
+        // cwd 是进程全局态：与 env 敏感测试同锁串行（TEST_ENV_LOCK 惯例）
+        let _env_guard = crate::TEST_ENV_LOCK.lock().unwrap();
+        let dir = std::env::temp_dir().join(format!(
+            "browse-at-args-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0)
+        ));
+        std::fs::create_dir_all(&dir).expect("建临时目录");
+        let file = dir.join("snip.js");
+        std::fs::write(&file, "return 1 + 1").expect("写临时片段");
+        // 相对路径形态：以临时目录为 cwd 跑（子进程不行，这里直接拼相对名）
+        let mut args = vec![
+            "keep-me".to_string(),
+            format!("@{}", file.display()),
+            "@/definitely/not/here.js".to_string(),
+        ];
+        let prev = std::env::current_dir().expect("取 cwd");
+        std::env::set_current_dir(&dir).expect("切 cwd");
+        let r = expand_at_args(&mut args);
+        std::env::set_current_dir(prev).ok();
+        std::fs::remove_dir_all(&dir).ok();
+
+        // 第三个 @ 是坏路径：整批报错带 CTA，且错误文本点名坏路径
+        let err = r.expect_err("坏路径应报错");
+        assert!(
+            err.to_string().contains("@实参读文件失败"),
+            "错误应点名 @ 实失败：{err}"
+        );
+        assert!(
+            err.to_string().contains("/definitely/not/here.js"),
+            "错误应带路径：{err}"
+        );
+
+        // 去掉坏路径重跑：非 @ 实参原样、@ 相对路径（cwd 基准）展开成文件内容
+        let mut ok_args = vec!["keep-me".to_string(), "@snip.js".to_string()];
+        let prev = std::env::current_dir().expect("取 cwd");
+        std::fs::create_dir_all(&dir).expect("重建临时目录");
+        std::fs::write(&file, "return 1 + 1").expect("重写临时片段");
+        std::env::set_current_dir(&dir).expect("切 cwd");
+        let r = expand_at_args(&mut ok_args);
+        std::env::set_current_dir(prev).ok();
+        std::fs::remove_dir_all(&dir).ok();
+        r.expect("好路径应通过");
+        assert_eq!(ok_args[0], "keep-me", "非 @ 实参原样保留");
+        assert_eq!(ok_args[1], "return 1 + 1", "@ 实参换成文件内容");
+    }
 }

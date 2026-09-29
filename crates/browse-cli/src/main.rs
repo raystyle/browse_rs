@@ -58,10 +58,13 @@ enum Mode {
     IssueList { limit: u32, before: Option<u64> },
     /// `browse issue show <id>`：看 issue 详情。
     IssueShow(String),
-    /// `browse snippets list [site]`：列片段库（#44）。
-    SnippetsList(Option<String>),
-    /// `browse snippets show <rel>`：看片段全文（#44）。
-    SnippetsShow(String),
+    /// `browse snippets list [site] [--root <dir>]`：列片段库（#44；#65 根可外置）。
+    SnippetsList {
+        site: Option<String>,
+        root: Option<String>,
+    },
+    /// `browse snippets show <rel> [--root <dir>]`：看片段全文（#44；#65 根可外置）。
+    SnippetsShow { rel: String, root: Option<String> },
     /// `browse workspace status [--json]`：workspace 仓与 git 状态概览（#50/#51 配套）。
     WorkspaceStatus,
     /// `browse workspace install`：git clone 种子仓到仓根。
@@ -385,8 +388,30 @@ async fn main() -> Result<()> {
             }
             "snippets" if snippets.is_empty() && mode_is_eval(&mode) => {
                 match args.next("snippets").as_str() {
-                    "list" => mode = Mode::SnippetsList(args.next_opt()),
-                    "show" => mode = Mode::SnippetsShow(args.next_opt().unwrap_or_default()),
+                    "list" => {
+                        // #65 --root 旗标：外部片段库根（旗标 > env > 内置
+                        // 缺省）；[site] 位置过滤位保留
+                        let mut site = None;
+                        let mut root = None;
+                        while let Some(a) = args.next_opt() {
+                            match a.as_str() {
+                                "--root" => root = Some(args.next("--root")),
+                                other => site = Some(other.to_string()),
+                            }
+                        }
+                        mode = Mode::SnippetsList { site, root };
+                    }
+                    "show" => {
+                        let mut rel = String::new();
+                        let mut root = None;
+                        while let Some(a) = args.next_opt() {
+                            match a.as_str() {
+                                "--root" => root = Some(args.next("--root")),
+                                other => rel = other.to_string(),
+                            }
+                        }
+                        mode = Mode::SnippetsShow { rel, root };
+                    }
                     other => {
                         eprintln!("browse: snippets 子命令不认识 {other}（list/show，退出 2）");
                         std::process::exit(2);
@@ -531,6 +556,16 @@ async fn main() -> Result<()> {
     }
 
     // 维护命令：从 surface 目录重生成 schema/llms（提交 docs/surface/）
+    // @ 文件实参形态（#64）：实参以 @ 开头即读文件内容为片段体（方言与
+    // --js 两形态通用；绝对/相对路径皆可），读失败报错带 CTA；先于
+    // --b64 解码展开，`--b64 @<存 base64 的文件>` 组合形自然成立；
+    // stdin 管道形态不经此道（管道内容本身即片段体）
+    if snippets.iter().any(|s| s.starts_with('@')) {
+        browse_cli::client::expand_at_args(&mut snippets).unwrap_or_else(|e| {
+            eprintln!("{e:#}");
+            std::process::exit(2);
+        });
+    }
     // -b/--b64 通道（#22）：片段实参按 base64 解码（PowerShell 引号与
     // 编码一并绕开；方言与 --js 两形态通用），坏串报 CTA
     if b64 {
@@ -911,8 +946,8 @@ async fn main() -> Result<()> {
             Ok(())
         }
         // ---- 片段库（#44）：纯文件系统读，零协议改动，不经 daemon ----
-        Mode::SnippetsList(site) => {
-            let root = browse_core::paths::state_dir().join("snippets");
+        Mode::SnippetsList { site, root } => {
+            let root = snippets_root(root);
             let mut found = 0usize;
             visit_snippets(&root, &root, site.as_deref(), &mut |rel, header| {
                 found += 1;
@@ -926,7 +961,7 @@ async fn main() -> Result<()> {
             }
             Ok(())
         }
-        Mode::SnippetsShow(rel) => {
+        Mode::SnippetsShow { rel, root } => {
             if rel.is_empty() {
                 // 用法错直出 exit 2（#53 评审 F1：G-F 口径补齐——snippets
                 // show 从无 Mode 层缺参守卫，裸调曾落「片段 不存在」exit 1
@@ -936,7 +971,7 @@ async fn main() -> Result<()> {
                 );
                 std::process::exit(2);
             }
-            let root = browse_core::paths::state_dir().join("snippets");
+            let root = snippets_root(root);
             let path = root.join(&rel);
             // 越界守卫（#44 评审 F2）：canonicalize 后必须仍在库内，挡
             // 绝对路径、../ 与符号链接出库
@@ -1200,6 +1235,13 @@ impl Args {
 
 fn mode_is_eval(m: &Mode) -> bool {
     matches!(m, Mode::Eval)
+}
+
+/// #65 片段库根三序：`--root` 旗标 > `BROWSE_SNIPPETS_ROOT` env > 内置
+/// 缺省（后两层归 [`browse_core::paths::snippets_root`]，旗标在此再盖）。
+fn snippets_root(flag: Option<String>) -> std::path::PathBuf {
+    flag.map(std::path::PathBuf::from)
+        .unwrap_or_else(browse_core::paths::snippets_root)
 }
 
 // 旗标原样透传求值前置的 engine_up，不做参数束重构（与 up 面同一套旗标族）

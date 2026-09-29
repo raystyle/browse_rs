@@ -1,6 +1,6 @@
 {
   "crate": "browse-cli",
-  "version": "0.21.0",
+  "version": "0.22.0",
   "items": [
     {
       "path": "browse_cli::client",
@@ -51,6 +51,11 @@
       "path": "browse_cli::client::eval",
       "kind": "function",
       "docs": "把方言片段 POST 到 daemon 的 /eval 求值。\n\n返回最后一条语句的值；daemon 侧错误进 `Err`（错误串已是给人/agent 的下一步指令形态）。\n\n# Errors\n\nHTTP 失败或 daemon 求值失败（语法错、CDP 错、守卫拦截、超时）。"
+    },
+    {
+      "path": "browse_cli::client::expand_at_args",
+      "kind": "function",
+      "docs": "`@` 文件实参展开（#64）：片段实参以 `@` 开头即读文件内容为片段体，\n其余实参原样保留。方言与 `--js` 两形态通用（同一实参道）；绝对与\n相对路径皆可（相对即当前工作目录）。先于 `--b64` 解码展开，\n`--b64 @<存 base64 的文件>` 组合形自然成立；stdin 管道形态不经此道\n（管道内容是片段体本身，不前缀展开）。\n\n# Errors\n\n`@` 后路径读取失败（不存在、无权限、非 UTF-8 等）报带下一步提示的\n错误（调用方直出 exit 2，与 `--b64` 坏串同族）。\n\n# Examples\n\n```\n# use browse_cli::client::expand_at_args;\n// 非 @ 前缀实参原样保留\nlet mut args = vec![\"return 1\".to_string()];\nexpand_at_args(&mut args).unwrap();\nassert_eq!(args[0], \"return 1\");\n// 空 @ 前缀（裸 @）读不了，报错\nlet mut bad = vec![\"@\".to_string()];\nassert!(expand_at_args(&mut bad).is_err());\n```"
     },
     {
       "path": "browse_cli::client::health",

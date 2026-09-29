@@ -145,3 +145,135 @@ fn bail_arg_wording_is_subcommand_neutral() {
     assert!(err.contains("参数不认识 --bogus"), "{err}");
     assert!(!err.contains("issue 参数不认识"), "{err}");
 }
+
+/// #64 `@` 文件实参形态：读失败报错带 CTA 直出 exit 2（网络前拦截，
+/// 零 daemon）；方言与 `--js` 两形态通用。
+#[test]
+fn at_file_arg_read_failure_exits_2_with_cta() {
+    let (code, _, err) = run(&["--js", "@/no/such/browse-contract.js"], &[]);
+    assert_eq!(code, 2, "{err}");
+    assert!(err.contains("@实参读文件失败"), "{err}");
+    assert!(err.contains("下一步"), "CTA 应带下一步：{err}");
+    assert!(
+        err.contains("/no/such/browse-contract.js"),
+        "报错应点名路径：{err}"
+    );
+
+    // 方言形态（无 --js）同款
+    let (code, _, err) = run(&["-e", "@/no/such/browse-contract.js"], &[]);
+    assert_eq!(code, 2, "{err}");
+    assert!(err.contains("@实参读文件失败"), "{err}");
+}
+
+/// #64 共存形：argv 上有 `@` 实参时管道不被消费（`@` 错误先于 stdin
+/// 形态命中），两道不互踩；管道数据不落入 `@` 展开道。
+#[test]
+fn at_file_arg_coexists_with_stdin_pipe() {
+    let mut c = Command::new(env!("CARGO_BIN_EXE_browse"));
+    // stderr 须显式 piped：spawn 后的 wait_with_output 只回收自管道来的
+    // 句柄，继承态收不到子进程报错
+    c.args(["--js", "@/no/such/browse-contract.js"])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    let mut child = c.spawn().expect("起 browse");
+    use std::io::Write as _;
+    if let Some(mut stdin) = child.stdin.take() {
+        // 喂了管道也不抢道：argv @ 展开失败先行退出，管道形不触发
+        let _ = stdin.write_all(b"return 999");
+    }
+    let out = child.wait_with_output().expect("收 browse");
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert_eq!(out.status.code(), Some(2), "{err}");
+    assert!(
+        err.contains("@实参读文件失败"),
+        "argv @ 先于管道形态：{err}"
+    );
+}
+
+/// #65 片段库根三序（旗标 > env > 内置缺省）与越根拦截：
+/// `--root` 生效、env 生效、旗标盖过 env、无配置仍读内置
+/// `<state_dir>/snippets`、越出配置根的相对/绝对路径仍拦（exit 1）。
+#[test]
+fn snippets_root_flag_env_default_and_escape_guard() {
+    let st = TempState::new("root");
+    let root = std::path::Path::new(st.path()).join("root");
+    let site = root.join("x.test");
+    std::fs::create_dir_all(&site).expect("建站点目录");
+    std::fs::write(
+        site.join("title.js"),
+        "// 用途：取标题\nreturn document.title\n",
+    )
+    .expect("写片段");
+    // 越根探针：库根外的真文件
+    std::fs::write(
+        std::path::Path::new(st.path()).join("outside.js"),
+        "// 库外文件\n",
+    )
+    .expect("写库外探针");
+
+    // 旗标根生效
+    let (code, out, err) = run(
+        &["snippets", "list", "--root", &root.to_string_lossy()],
+        &[],
+    );
+    assert_eq!(code, 0, "{err}");
+    assert!(out.contains("x.test/title.js"), "旗标根应列出片段：{out}");
+    assert!(out.contains("取标题"), "首行 // 摘要约定不变：{out}");
+
+    // env 根生效（show 读全文）
+    let (code, out, err) = run(
+        &["snippets", "show", "x.test/title.js"],
+        &[("BROWSE_SNIPPETS_ROOT", &root.to_string_lossy())],
+    );
+    assert_eq!(code, 0, "{err}");
+    assert!(
+        out.contains("return document.title"),
+        "env 根应读出全文：{out}"
+    );
+
+    // 旗标 > env：env 指空目录、旗标指真库，以旗标为准
+    let empty = std::path::Path::new(st.path()).join("empty-root");
+    std::fs::create_dir_all(&empty).expect("建空根");
+    let (code, out, err) = run(
+        &["snippets", "list", "--root", &root.to_string_lossy()],
+        &[("BROWSE_SNIPPETS_ROOT", &empty.to_string_lossy())],
+    );
+    assert_eq!(code, 0, "{err}");
+    assert!(out.contains("x.test/title.js"), "旗标应盖过 env：{out}");
+
+    // 越根拦截：相对 ../ 与绝对路径两形（exit 1，CTA 在 stderr）
+    let (code, _, err) = run(
+        &["snippets", "show", "../outside.js"],
+        &[("BROWSE_SNIPPETS_ROOT", &root.to_string_lossy())],
+    );
+    assert_eq!(code, 1, "越根应拦（exit 1）：{err}");
+    assert!(err.contains("越出片段库"), "{err}");
+    let outside = std::path::Path::new(st.path()).join("outside.js");
+    let (code, _, err) = run(
+        &["snippets", "show", &outside.to_string_lossy()],
+        &[("BROWSE_SNIPPETS_ROOT", &root.to_string_lossy())],
+    );
+    assert_eq!(code, 1, "绝对路径越根应拦：{err}");
+    assert!(err.contains("越出片段库"), "{err}");
+
+    // 缺省不变：无 env 无旗标仍读内置 <state_dir>/snippets
+    let builtin = std::path::Path::new(st.path())
+        .join("snippets")
+        .join("y.site");
+    std::fs::create_dir_all(&builtin).expect("建内置库目录");
+    std::fs::write(builtin.join("task.js"), "// 用途：内置\nreturn 1\n").expect("写内置片段");
+    let mut c = Command::new(env!("CARGO_BIN_EXE_browse"));
+    c.args(["snippets", "list"])
+        .stdin(Stdio::null())
+        .env_remove("BROWSE_SNIPPETS_ROOT")
+        .env("BROWSE_NAME", st.path());
+    let out = c.output().expect("跑内置缺省形");
+    let text = String::from_utf8_lossy(&out.stdout);
+    assert_eq!(out.status.code(), Some(0), "{text}");
+    assert!(text.contains("y.site/task.js"), "缺省应读内置库：{text}");
+    assert!(
+        !text.contains("x.test/title.js"),
+        "外部根不应泄进缺省形：{text}"
+    );
+}

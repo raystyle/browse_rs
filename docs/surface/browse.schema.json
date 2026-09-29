@@ -423,12 +423,12 @@
       "type": "object"
     },
     "cli.eval": {
-      "description": "browse '<片段>' 求值方言片段（缺省形态；自动拉起 daemon 与引擎）。",
+      "description": "browse '<片段>' 求值方言片段（缺省形态；自动拉起 daemon 与引擎）。实参以 @ 开头即文件实参形态：读文件内容为片段体（绝对/相对路径皆可，读失败报错带下一步），与 --js 同形。",
       "example": "browse 'return await currentTab()'",
       "input": {
         "properties": {
           "snippet": {
-            "description": "",
+            "description": "缺省 @ 前缀即读文件内容为片段体",
             "type": "string"
           }
         },
@@ -569,7 +569,7 @@
       "type": "object"
     },
     "cli.js-flag": {
-      "description": "browse --js '<JS 源码>' 全量 JS 受限旁路：不经方言解析器直发 Runtime.evaluate（returnByValue 加 awaitPromise），return 值序列化回传；模板字符串/正则/函数声明直接写，消多层引号转义。分工：方言管 CDP 编排，--js 管页面逻辑。空实参加管道 = 整段 stdin 一次求值（配 --b64 先解码）。不可序列化值（DOM 节点、Date、Map、RegExp 等，含容器内元素）在 returnByValue 下序列化成 {}，CLI 按空容器口径零输出；要值就在 JS 里自己 JSON.stringify 或取原语（.textContent/.outerHTML）。与 --repl 不同行。",
+      "description": "browse --js '<JS 源码|@<路径>>' 全量 JS 受限旁路：不经方言解析器直发 Runtime.evaluate（returnByValue 加 awaitPromise），return 值序列化回传；模板字符串/正则/函数声明直接写，消多层引号转义。分工：方言管 CDP 编排，--js 管页面逻辑。空实参加管道 = 整段 stdin 一次求值（配 --b64 先解码）。文件实参形态：实参以 @ 开头即读文件内容为片段体（`browse --js @snip.js`；方言与 --js 两形态通用，绝对/相对路径皆可，读失败报错带下一步；先于 --b64 展开，`--b64 @x.b64` = 文件存 base64 的组合形；stdin 管道不经此道）。不可序列化值（DOM 节点、Date、Map、RegExp 等，含容器内元素）在 returnByValue 下序列化成 {}，CLI 按空容器口径零输出；要值就在 JS 里自己 JSON.stringify 或取原语（.textContent/.outerHTML）。与 --repl 不同行。",
       "example": "browse --js 'return (() => { const f = s => s.length; return f(\"ab\"); })()'",
       "input": {
         "properties": {
@@ -683,10 +683,14 @@
       "type": "object"
     },
     "cli.snippets-list": {
-      "description": "browse snippets list [site] 列片段库（组合生态）：状态目录 snippets/ 下递归走访（<site>/<task>.js 天然分层），每文件取首行 // 注释头当摘要。先查库再写新片段的纪律入口。",
+      "description": "browse snippets list [site] [--root <dir>] 列片段库（组合生态）：片段根下递归走访（<site>/<task>.js 天然分层），每文件取首行 // 注释头当摘要。先查库再写新片段的纪律入口。根可外置：--root 旗标或 BROWSE_SNIPPETS_ROOT env 指向外部仓（如 prs_c2coe 内片段目录），缺省仍内置状态目录 snippets/；语义分工：workspace 存编排知识（域/页/意图技能），snippets 存编排功能脚本（可复用 JS 片段）。",
       "example": "browse snippets list",
       "input": {
         "properties": {
+          "root": {
+            "description": "缺省 --root 旗标 > BROWSE_SNIPPETS_ROOT env > 缺省状态目录 snippets/",
+            "type": "string"
+          },
           "site": {
             "description": "缺省 目录/路径子串过滤",
             "type": "string"
@@ -699,12 +703,16 @@
       "type": "object"
     },
     "cli.snippets-show": {
-      "description": "browse snippets show <rel> 看片段全文；配合 --js 管道或 POST /eval 即「缺 helper 自己存」闭环。",
+      "description": "browse snippets show <rel> [--root <dir>] 看片段全文；配合 --js 管道、--js @<路径> 或 POST /eval 即「缺 helper 自己存」闭环；越出片段根的相对路径仍拦截（根随 --root/BROWSE_SNIPPETS_ROOT 配置走）。",
       "example": "browse snippets show x.test/search-title.js",
       "input": {
         "properties": {
           "rel": {
             "description": "",
+            "type": "string"
+          },
+          "root": {
+            "description": "缺省 同 list（根三序旗标 > env > 内置）",
             "type": "string"
           }
         },

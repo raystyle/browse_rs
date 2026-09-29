@@ -1,5 +1,5 @@
 <!-- browse_cli/index.md -->
-# browse-cli 0.21.0
+# browse-cli 0.22.0
 
 browse CLI 的可测半边：daemon 客户端（HTTP 调用 + 自动拉起）。
 
@@ -31,6 +31,7 @@ daemon 客户端：本地 HTTP 调用 + 首次使用自动拉起 detached daemon
 - `ensure_daemon` — daemon 不在跑时 detached 拉起 `browse --serve` 并探活到通；已在跑则直接返回。
 - `ensure_daemon_with_env` — 同 [`ensure_daemon`]，但给新拉起的 daemon 进程注入环境变量
 - `eval` — 把方言片段 POST 到 daemon 的 /eval 求值。
+- `expand_at_args` — `@` 文件实参展开（#64）：片段实参以 `@` 开头即读文件内容为片段体，
 - `health` — GET /health 取 daemon 状态面；daemon 不在时报可照抄的拉起提示。
 - `quit` — POST /quit 退 daemon，daemon 侧顺带只终结自起引擎（附着来源不动）。
 - `skills_passthrough_env` — 技能层透传环境（#50/#51）：拉起新 daemon 时把 CLI 进程里的 workspace
@@ -118,7 +119,7 @@ ledger.ohmygh.com（替代 issues.ohmygh.com 客户端面；旧服务只读保�
 
 
 <!-- browse_core/index.md -->
-# browse-core 0.21.0
+# browse-core 0.22.0
 
 browse CLI 的核心库：方言宿主、引擎策略、daemon HTTP API。
 
@@ -335,6 +336,7 @@ browser-harness-js 片段方言的语法分析器（纯函数）。
 - `engine_profile_dir` — 返回本实例引擎 profile（`<state>/engine-profile`；命名实例各自独占，
 - `instance_name` — 返回实例名（`BROWSE_NAME` 的非空值）；未设即默认实例（`None`）。
 - `read_workspace_config` — 读多仓配置（JSON 字符串数组，序即优先序）；文件缺失或坏形回空清单
+- `snippets_root` — 返回片段库根（#65 可配置外部根）：`BROWSE_SNIPPETS_ROOT` env 显式
 - `state_dir` — 返回本实例状态目录（`%USERPROFILE%\.browse-rs[\<name>]`）。
 - `state_dir_for` — 把实例名映射到状态目录的纯函数（同输入恒同输出，可单测）。
 - `workspace_config_path` — 多仓配置文件位（应用状态目录共享根，不分 BROWSE_NAME，与仓本体
@@ -599,7 +601,7 @@ list/site/page）。git 维护走 shell-out `git`（不引 git crate）：instal
 
 
 <!-- cdp/index.md -->
-# cdp 0.21.0
+# cdp 0.22.0
 
 Chrome DevTools Protocol（CDP）连接层：一条常驻 browser-level WebSocket 会话。
 
