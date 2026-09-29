@@ -176,9 +176,11 @@ pub fn write_workspace_config(roots: &[PathBuf]) -> std::io::Result<()> {
 }
 
 /// 返回片段库根（#65 可配置外部根）：`BROWSE_SNIPPETS_ROOT` env 显式
-/// 优先（指向外部仓，如 prs_c2coe 内片段目录；刻意不分 `BROWSE_NAME`
-/// 命名空间，与 workspace 同口径——片段是跨实例共享资产），缺省仍内置
-/// 态 `<state_dir>/snippets`。`browse snippets` 命令族从这定位片段库
+/// 优先（指向外部仓，如 prs_c2coe 内片段目录；env 根刻意不分
+/// `BROWSE_NAME` 命名空间，与 `BROWSE_WORKSPACE` 同口径——外部仓是
+/// 跨实例共享资产），缺省仍内置态 `<state_dir>/snippets`（随实例命名
+/// 空间分舱，评审一轮 G4：与 workspace 缺省的不分舱不同，勿混读）。
+/// `browse snippets` 命令族从这定位片段库
 /// （`<site>/<task>.js` 分层与首行 `//` 摘要约定不变；越出库根的相对
 /// 路径仍被 show 面拦截）。CLI `--root` 旗标在本函数之上再盖一层
 /// （旗标 > env > 内置缺省）。

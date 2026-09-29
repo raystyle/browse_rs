@@ -119,7 +119,7 @@ pub const COMMANDS: &[CmdSpec] = &[
             arg!("js", "string", true),
             arg!("stdin", "any", false, "空实参时整段管道读"),
         ],
-        description: "全量 JS 受限旁路：不经方言解析器直发 Runtime.evaluate（returnByValue 加 awaitPromise），return 值序列化回传；模板字符串/正则/函数声明直接写，消多层引号转义。分工：方言管 CDP 编排，--js 管页面逻辑。空实参加管道 = 整段 stdin 一次求值（配 --b64 先解码）。文件实参形态：实参以 @ 开头即读文件内容为片段体（`browse --js @snip.js`；方言与 --js 两形态通用，绝对/相对路径皆可，读失败报错带下一步；先于 --b64 展开，`--b64 @x.b64` = 文件存 base64 的组合形；stdin 管道不经此道）。不可序列化值（DOM 节点、Date、Map、RegExp 等，含容器内元素）在 returnByValue 下序列化成 {}，CLI 按空容器口径零输出；要值就在 JS 里自己 JSON.stringify 或取原语（.textContent/.outerHTML）。与 --repl 不同行。",
+        description: "全量 JS 受限旁路：不经方言解析器直发 Runtime.evaluate（returnByValue 加 awaitPromise），return 值序列化回传；模板字符串/正则/函数声明直接写，消多层引号转义。分工：方言管 CDP 编排，--js 管页面逻辑。空实参加管道 = 整段 stdin 一次求值（配 --b64 先解码）。文件实参形态：实参以字面 @ 开头即读文件内容为片段体（前导空白即不触发、保持字面；`browse --js @snip.js`；方言与 --js 两形态通用，绝对/相对路径皆可，读失败报错带下一步；先于 --b64 展开，`--b64 @x.b64` = 文件存 base64 的组合形；stdin 管道不经此道）。不可序列化值（DOM 节点、Date、Map、RegExp 等，含容器内元素）在 returnByValue 下序列化成 {}，CLI 按空容器口径零输出；要值就在 JS 里自己 JSON.stringify 或取原语（.textContent/.outerHTML）。与 --repl 不同行。",
         example: r#"browse --js 'return (() => { const f = s => s.length; return f("ab"); })()'"#,
     },
     CmdSpec {

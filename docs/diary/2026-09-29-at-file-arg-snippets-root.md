@@ -21,3 +21,21 @@
 ## 封版 v0.22.0
 
 能力新增取 minor（REQ-004 判据行）；release.ps1 三平台直发，播种流水自动接力。账本 #64/#65 留 open（只增不关不删，关闭归 omc）。
+
+## 评审一轮（browse-codex-review，发版后补闸）
+
+门禁语句后置说明：本批随总台工单令直推 main 并发 v0.22.0，评审是发版后补闸（工单含发布令，闸门语义由二轮快核接管增量面）。回执 1 F + 7 G + 四核 CONFIRM。
+
+- F1 必修（采纳）：snippets 解析臂收集循环吞未知旗标，`snippets list x --bogus` 从基线 exit 2 变静默 exit 0（`--root=` 形同踩），坏旗标契约破口。修复：两臂加 `other if starts_with('-') => bail_arg`，基线复位；arg_contract 此前对 snippets 族坏旗标零覆盖，补 snippets_arg_face_after_review_round1 锁（评审方指出的测试盲区属实）
+- G1 采纳（随 F1 并入）：首位置位胜出，多余位置位用法错（旧形余参静默落外层 catch-all 也是暗坑）
+- G2 采纳：显式配置根不存在报配置错 exit 1（拼错根与真空库可分）；内置缺省根不在册维持「片段库为空」exit 0（#44 bootstrap 契约，既有测试钉着）
+- G4 采纳：paths.rs 文档句澄清 env 根不分舱与内置缺省根随实例分舱的区别（workspace 缺省也不分舱，三者勿混读）
+- G5 采纳：裸 @ 特例文案（不再落「读文件失败 ：」悬空冒号形）
+- G6 采纳：空串 --root 视同未给（与 env 空串回落同规）
+- G7 采纳：js-flag 手册补「字面前缀，前导空白即不触发」半句
+- G3 记档不修：list 面符号链接不过滤（存量，#44 时代行为），越根守卫在 show 面（读内容道）是安全边界，list 只印首行 // 摘要；#65 导向外部仓后若要收口另立 issue
+- 四核 CONFIRM：@ 展开边界（REPL/stdin 确不经此道、序与文案同构）、根三序与越根守卫（canonicalize 随根走、env 根不受 BROWSE_NAME 影响）、解析臂回归（即 F1/G1，余项成立）、surface 披露无过诺无漏诺
+
+## 封版 v0.22.1
+
+修复批取 patch（REQ-004 判据行）；二轮快核放行后推 main、tag、release.ps1 直发。

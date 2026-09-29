@@ -352,6 +352,11 @@ pub fn decode_arg_b64(s: &str) -> Result<String> {
 pub fn expand_at_args(snippets: &mut [String]) -> Result<()> {
     for snip in snippets.iter_mut() {
         if let Some(path) = snip.strip_prefix('@') {
+            // 裸 @（路径空）特例文案（评审一轮 G5）：不落「读文件失败 ：」
+            // 的悬空冒号形
+            if path.is_empty() {
+                anyhow::bail!("@ 后缺文件路径；下一步：browse --js @<路径>（绝对或相对皆可）");
+            }
             *snip = std::fs::read_to_string(path).map_err(|e| {
                 anyhow!(
                     "@实参读文件失败 {path}：{e}；下一步：核对路径与权限，或直接贴片段实参（cat 文件 | browse 管道亦可）"

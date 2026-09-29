@@ -277,3 +277,49 @@ fn snippets_root_flag_env_default_and_escape_guard() {
         "外部根不应泄进缺省形：{text}"
     );
 }
+
+/// 评审一轮 F1/G1/G2/G5 修复锁：snippets 族坏旗标与多余位置位回 bail
+/// exit 2（基线契约复位）；显式配置根不存在报配置错 exit 1（拼错根与
+/// 真空库可分），内置缺省根不在册维持空库引导面（#44 契约）；裸 @
+/// 出「@ 后缺文件路径」。
+#[test]
+fn snippets_arg_face_after_review_round1() {
+    // F1：未知旗标（list 与 show 两臂）与 --root= 形回 bail exit 2
+    let (code, _, err) = run(&["snippets", "list", "x", "--bogus"], &[]);
+    assert_eq!(code, 2, "{err}");
+    assert!(err.contains("参数不认识 --bogus"), "{err}");
+    let (code, _, err) = run(&["snippets", "show", "x.js", "--root="], &[]);
+    assert_eq!(code, 2, "{err}");
+    assert!(err.contains("参数不认识 --root="), "{err}");
+
+    // G1：多余位置位用法错（首位置位胜出语义的另一半）
+    let (code, _, err) = run(&["snippets", "list", "a", "b"], &[]);
+    assert_eq!(code, 2, "{err}");
+    assert!(err.contains("site 过滤位"), "{err}");
+    let (code, _, err) = run(&["snippets", "show", "a.js", "b.js"], &[]);
+    assert_eq!(code, 2, "{err}");
+    assert!(err.contains("rel 位"), "{err}");
+
+    // G2：显式根（env 形）不存在报配置错 exit 1；旗标形同款
+    let (code, _, err) = run(
+        &["snippets", "list"],
+        &[("BROWSE_SNIPPETS_ROOT", "/no/such/root")],
+    );
+    assert_eq!(code, 1, "{err}");
+    assert!(err.contains("片段库目录不存在"), "{err}");
+    assert!(err.contains("核对 --root / BROWSE_SNIPPETS_ROOT"), "{err}");
+    let (code, _, err) = run(&["snippets", "list", "--root", "/no/such/root"], &[]);
+    assert_eq!(code, 1, "{err}");
+    assert!(err.contains("片段库目录不存在"), "{err}");
+
+    // G2 对照：内置缺省根不在册维持「片段库为空」exit 0（#44 契约不破）
+    let snips = TempState::new("g2");
+    let (code, _, err) = run(&["snippets", "list"], &[("BROWSE_NAME", snips.path())]);
+    assert_eq!(code, 0, "{err}");
+    assert!(err.contains("片段库为空"), "{err}");
+
+    // G5：裸 @ 特例文案（不再落悬空冒号形）
+    let (code, _, err) = run(&["--js", "@"], &[]);
+    assert_eq!(code, 2, "{err}");
+    assert!(err.contains("@ 后缺文件路径"), "{err}");
+}

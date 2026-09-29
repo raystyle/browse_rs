@@ -396,7 +396,17 @@ async fn main() -> Result<()> {
                         while let Some(a) = args.next_opt() {
                             match a.as_str() {
                                 "--root" => root = Some(args.next("--root")),
-                                other => site = Some(other.to_string()),
+                                // 评审一轮 F1：-- 前缀未知旗标（含 --root= 等
+                                // 形）照旧 bail，不静默吃成位置位；G1：首位
+                                // 置位胜出，多余位置位用法错
+                                other if other.starts_with('-') => bail_arg(other),
+                                other if site.is_none() => site = Some(other.to_string()),
+                                other => {
+                                    eprintln!(
+                                        "browse: snippets list 只要一个 site 过滤位（{other} 多余，退出 2）"
+                                    );
+                                    std::process::exit(2);
+                                }
                             }
                         }
                         mode = Mode::SnippetsList { site, root };
@@ -407,7 +417,15 @@ async fn main() -> Result<()> {
                         while let Some(a) = args.next_opt() {
                             match a.as_str() {
                                 "--root" => root = Some(args.next("--root")),
-                                other => rel = other.to_string(),
+                                // 同 list：F1 未知旗标 bail + G1 首位置位胜出
+                                other if other.starts_with('-') => bail_arg(other),
+                                other if rel.is_empty() => rel = other.to_string(),
+                                other => {
+                                    eprintln!(
+                                        "browse: snippets show 只要一个 rel 位（{other} 多余，退出 2）"
+                                    );
+                                    std::process::exit(2);
+                                }
                             }
                         }
                         mode = Mode::SnippetsShow { rel, root };
@@ -947,7 +965,16 @@ async fn main() -> Result<()> {
         }
         // ---- 片段库（#44）：纯文件系统读，零协议改动，不经 daemon ----
         Mode::SnippetsList { site, root } => {
-            let root = snippets_root(root);
+            let (root, explicit) = snippets_root(root);
+            // 评审一轮 G2：显式配置根（旗标/env）不存在时报配置错而非
+            // 「片段库为空」——拼错根与真空库可分；内置缺省根不在册时
+            // 仍走空库引导面（#44 契约）
+            if explicit && !root.is_dir() {
+                bail!(
+                    "片段库目录不存在（{}）；下一步：核对 --root / BROWSE_SNIPPETS_ROOT 配置，或先建目录再 browse snippets list",
+                    root.display()
+                );
+            }
             let mut found = 0usize;
             visit_snippets(&root, &root, site.as_deref(), &mut |rel, header| {
                 found += 1;
@@ -971,7 +998,7 @@ async fn main() -> Result<()> {
                 );
                 std::process::exit(2);
             }
-            let root = snippets_root(root);
+            let (root, _explicit) = snippets_root(root);
             let path = root.join(&rel);
             // 越界守卫（#44 评审 F2）：canonicalize 后必须仍在库内，挡
             // 绝对路径、../ 与符号链接出库
@@ -1238,10 +1265,17 @@ fn mode_is_eval(m: &Mode) -> bool {
 }
 
 /// #65 片段库根三序：`--root` 旗标 > `BROWSE_SNIPPETS_ROOT` env > 内置
-/// 缺省（后两层归 [`browse_core::paths::snippets_root`]，旗标在此再盖）。
-fn snippets_root(flag: Option<String>) -> std::path::PathBuf {
-    flag.map(std::path::PathBuf::from)
-        .unwrap_or_else(browse_core::paths::snippets_root)
+/// 缺省（后两层归 [`browse_core::paths::snippets_root`]，旗标在此再盖；
+/// 空串旗标视同未给，与 env 空串回落同规——评审一轮 G6）。返回
+/// `(根, 是否显式配置)`：显式根不存在时 list 面报配置错（评审一轮 G2，
+/// 拼错根与真空库可分），内置缺省根不存在维持「片段库为空」引导面
+/// （bootstrap 友好，#44 契约不破）。
+fn snippets_root(flag: Option<String>) -> (std::path::PathBuf, bool) {
+    if let Some(f) = flag.filter(|f| !f.is_empty()) {
+        return (std::path::PathBuf::from(f), true);
+    }
+    let explicit = std::env::var_os("BROWSE_SNIPPETS_ROOT").is_some_and(|v| !v.is_empty());
+    (browse_core::paths::snippets_root(), explicit)
 }
 
 // 旗标原样透传求值前置的 engine_up，不做参数束重构（与 up 面同一套旗标族）
