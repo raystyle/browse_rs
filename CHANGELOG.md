@@ -4,7 +4,8 @@
 
 ## 0.22.1 - 2026-09-29
 
-- **#64/#65 评审一轮修复（F1 + G 收口）**：F1 snippets 族解析臂吞未知旗标（`snippets list x --bogus` 旧形 exit 2，0.22.0 静默吃成位置位出误导性成功），`--` 前缀未知旗标（含 `--root=` 形）回 bail exit 2 基线契约复位；G1 首位置位胜出、多余位置位用法错（`snippets list a b` exit 2）；G2 显式配置根（`--root`/env）不存在时报配置错 exit 1（拼错根与真空库可分），内置缺省根不在册维持「片段库为空」引导面（#44 契约不破）；G5 裸 `@` 特例文案「@ 后缺文件路径」；G6 空串 `--root` 视同未给（与 env 空串回落同规）；G4 paths 文档句澄清（env 根不分 BROWSE_NAME，内置缺省根随实例分舱，与 workspace 缺省不同勿混读）；G7 js-flag 手册补「字面前缀，前导空白即不触发」。G3（list 面符号链接不过滤，存量）记档不修：越根守卫在 show 面（读内容道），list 只印首行摘要。测试：arg_contract 新增 snippets_arg_face_after_review_round1（F1 双臂、G1 双形、G2 显式/缺省对照、G5）
+- **#64/#65 评审一轮修复（F1 + G 收口）**：F1 snippets 族解析臂吞未知旗标（`snippets list x --bogus` 旧形 exit 2，0.22.0 静默吃成位置位出误导性成功），`--` 前缀未知旗标（含 `--root=` 形）回 bail exit 2 基线契约复位；G1 首位置位胜出、多余位置位用法错（`snippets list a b` exit 2）；G2 显式配置根（`--root`/env）不存在时报配置错 exit 1（拼错根与真空库可分），内置缺省根不在册维持「片段库为空」引导面（#44 契约不破）；G5 裸 `@` 特例文案「@ 后缺文件路径」（二轮 G9 覆盖方言与 `--js` 双形）；G6 空串 `--root` 视同未给（与 env 空串回落同规）；G4 paths 文档句澄清（env 根不分 BROWSE_NAME，内置缺省根随实例分舱，与 workspace 缺省不同勿混读）；G7 js-flag 手册补「字面前缀，前导空白即不触发」。G3（list 面符号链接不过滤，存量）记档不修：越根守卫在 show 面（读内容道），list 只印首行摘要。测试：arg_contract 新增 snippets_arg_face_after_review_round1（F1 双臂、G1 双形、G2 显式/缺省对照、G5）
+- **评审二轮收口（F2 + G8/G9/G10）**：F2 版本一致性随批（0.22.0 批的锁与 aidoc 投影在 bump 后未重生成即提交的漂移，本批起构建刷锁与投影重生成在门禁之后、提交之前完成，`cargo metadata --locked` 与 `cargo aidoc --check --strict` 进门禁循环）；G8 「谁算显式配置」谓词单源化（paths 层新增 `snippets_root_explicit`，CLI 层不再自判 env 空串）；G10 显式根存在但不是目录分面报「片段库根不是目录」exit 1（arg_contract 增 snippets_explicit_root_not_a_dir）
 - semver 判据结论（0.22.1 裁定）：修复批取 patch（REQ-004 判据行）
 
 ## 0.22.0 - 2026-09-29

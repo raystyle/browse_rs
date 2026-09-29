@@ -966,10 +966,16 @@ async fn main() -> Result<()> {
         // ---- 片段库（#44）：纯文件系统读，零协议改动，不经 daemon ----
         Mode::SnippetsList { site, root } => {
             let (root, explicit) = snippets_root(root);
-            // 评审一轮 G2：显式配置根（旗标/env）不存在时报配置错而非
-            // 「片段库为空」——拼错根与真空库可分；内置缺省根不在册时
-            // 仍走空库引导面（#44 契约）
+            // 评审一轮 G2 + 二轮 G10：显式配置根（旗标/env）不存在或
+            // 不是目录时报配置错而非「片段库为空」——拼错根与真空库
+            // 可分；内置缺省根不在册时仍走空库引导面（#44 契约）
             if explicit && !root.is_dir() {
+                if root.exists() {
+                    bail!(
+                        "片段库根不是目录（{}）；下一步：核对 --root / BROWSE_SNIPPETS_ROOT 配置",
+                        root.display()
+                    );
+                }
                 bail!(
                     "片段库目录不存在（{}）；下一步：核对 --root / BROWSE_SNIPPETS_ROOT 配置，或先建目录再 browse snippets list",
                     root.display()
@@ -1265,17 +1271,20 @@ fn mode_is_eval(m: &Mode) -> bool {
 }
 
 /// #65 片段库根三序：`--root` 旗标 > `BROWSE_SNIPPETS_ROOT` env > 内置
-/// 缺省（后两层归 [`browse_core::paths::snippets_root`]，旗标在此再盖；
-/// 空串旗标视同未给，与 env 空串回落同规——评审一轮 G6）。返回
-/// `(根, 是否显式配置)`：显式根不存在时 list 面报配置错（评审一轮 G2，
-/// 拼错根与真空库可分），内置缺省根不存在维持「片段库为空」引导面
-/// （bootstrap 友好，#44 契约不破）。
+/// 缺省（env 腿的「谁算显式」单源归
+/// [`browse_core::paths::snippets_root_explicit`]，评审二轮 G8；空串
+/// 旗标视同未给，与 env 空串回落同规——评审一轮 G6）。返回
+/// `(根, 是否显式配置)`：显式根不存在/不是目录时 list 面报配置错
+/// （评审一轮 G2、二轮 G10，拼错根与真空库可分），内置缺省根不存在
+/// 维持「片段库为空」引导面（bootstrap 友好，#44 契约不破）。
 fn snippets_root(flag: Option<String>) -> (std::path::PathBuf, bool) {
     if let Some(f) = flag.filter(|f| !f.is_empty()) {
         return (std::path::PathBuf::from(f), true);
     }
-    let explicit = std::env::var_os("BROWSE_SNIPPETS_ROOT").is_some_and(|v| !v.is_empty());
-    (browse_core::paths::snippets_root(), explicit)
+    match browse_core::paths::snippets_root_explicit() {
+        Some(p) => (p, true),
+        None => (browse_core::paths::snippets_root(), false),
+    }
 }
 
 // 旗标原样透传求值前置的 engine_up，不做参数束重构（与 up 面同一套旗标族）

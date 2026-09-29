@@ -36,6 +36,17 @@
 - G3 记档不修：list 面符号链接不过滤（存量，#44 时代行为），越根守卫在 show 面（读内容道）是安全边界，list 只印首行 // 摘要；#65 导向外部仓后若要收口另立 issue
 - 四核 CONFIRM：@ 展开边界（REPL/stdin 确不经此道、序与文案同构）、根三序与越根守卫（canonicalize 随根走、env 根不受 BROWSE_NAME 影响）、解析臂回归（即 F1/G1，余项成立）、surface 披露无过诺无漏诺
 
+## 评审二轮（browse-codex-review 快核）
+
+回执：F1/G1-G7 全验收，另出 F2 必修 + G8/G9/G10 + 三问答复。
+
+- F2 必修（采纳）：修复批把版本 bump 放在门禁与 aidoc 之后，b0f0fd0 提交里 Cargo.lock 与 aidoc 投影仍 0.22.0（metadata --locked 101、aidoc --check exit 2，评审方实弹双红）。本批序复位：代码改、build 刷锁、aidoc 重生成、全门禁、提交依序走完再落笔；--locked 两条进门禁循环（教训与「doc 后补未 regen aidoc」同族：投影与锁都是派生物，bump 后必须重生成再提交）
+- G8 采纳：谓词单源。paths 层新增 snippets_root_explicit（env 非空判定唯一裁定点），CLI 层 snippets_root 不再自判 env，防 list 配置错面与 show 路径面日后漂移
+- G9 采纳：裸 @ CTA 覆盖方言与 --js 双形
+- G10 采纳：显式根存在但不是目录分面「片段库根不是目录」exit 1，arg_contract 增 snippets_explicit_root_not_a_dir
+- 三问：负首字符位置位属病态可弃（评审方同意，基线 0.12.1 虽 exit 0 但仓级口径本就 - 前缀 bail，是拉回不是新不一致）；G2 explicit 判定经 G8 收敛后无第二真相；G1 无新回归（show '' x.js 的空串哨兵形记档，病态）
+- 评审方另注：其跑 aidoc 时顺带刷了 Cargo.lock，已还原回提交态并留期望投影于 /tmp 供比对（工作树交还干净）
+
 ## 封版 v0.22.1
 
-修复批取 patch（REQ-004 判据行）；二轮快核放行后推 main、tag、release.ps1 直发。
+修复批取 patch（REQ-004 判据行）；三行快核 CONFIRM 后推 main、tag、release.ps1 直发。

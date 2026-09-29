@@ -175,8 +175,25 @@ pub fn write_workspace_config(roots: &[PathBuf]) -> std::io::Result<()> {
     std::fs::write(&path, serde_json::to_vec_pretty(&list).unwrap_or_default())
 }
 
-/// 返回片段库根（#65 可配置外部根）：`BROWSE_SNIPPETS_ROOT` env 显式
-/// 优先（指向外部仓，如 prs_c2coe 内片段目录；env 根刻意不分
+/// 返回 env 显式片段根（#65）：`BROWSE_SNIPPETS_ROOT` 非空时的值。
+/// 「谁算显式配置」的唯一裁定点（评审二轮 G8：谓词单源，CLI 层不再
+/// 自判 env 空串，防 list 配置错面与 show 路径面漂移）。
+///
+/// # Examples
+///
+/// ```
+/// if std::env::var_os("BROWSE_SNIPPETS_ROOT").is_none() {
+///     assert!(browse_core::paths::snippets_root_explicit().is_none());
+/// }
+/// ```
+pub fn snippets_root_explicit() -> Option<PathBuf> {
+    std::env::var_os("BROWSE_SNIPPETS_ROOT")
+        .filter(|v| !v.is_empty())
+        .map(PathBuf::from)
+}
+
+/// 返回片段库根（#65 可配置外部根）：[`snippets_root_explicit`] 的 env
+/// 显式值优先（指向外部仓，如 prs_c2coe 内片段目录；env 根刻意不分
 /// `BROWSE_NAME` 命名空间，与 `BROWSE_WORKSPACE` 同口径——外部仓是
 /// 跨实例共享资产），缺省仍内置态 `<state_dir>/snippets`（随实例命名
 /// 空间分舱，评审一轮 G4：与 workspace 缺省的不分舱不同，勿混读）。
@@ -193,13 +210,7 @@ pub fn write_workspace_config(roots: &[PathBuf]) -> std::io::Result<()> {
 /// }
 /// ```
 pub fn snippets_root() -> PathBuf {
-    if let Some(p) = std::env::var_os("BROWSE_SNIPPETS_ROOT") {
-        let p = PathBuf::from(p);
-        if !p.as_os_str().is_empty() {
-            return p;
-        }
-    }
-    state_dir().join("snippets")
+    snippets_root_explicit().unwrap_or_else(|| state_dir().join("snippets"))
 }
 
 /// 返回 workspace 仓根：`BROWSE_WORKSPACE` 显式优先，缺省

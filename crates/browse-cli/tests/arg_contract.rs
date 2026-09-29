@@ -323,3 +323,18 @@ fn snippets_arg_face_after_review_round1() {
     assert_eq!(code, 2, "{err}");
     assert!(err.contains("@ 后缺文件路径"), "{err}");
 }
+
+/// 评审二轮 G10：显式根存在但不是目录（指到文件）报「不是目录」配置错
+/// exit 1，与「目录不存在」分面。
+#[test]
+fn snippets_explicit_root_not_a_dir() {
+    let st = TempState::new("g10");
+    let file = std::path::Path::new(st.path()).join("a-file");
+    std::fs::write(&file, "x").expect("写探针文件");
+    let (code, _, err) = run(
+        &["snippets", "list", "--root", &file.to_string_lossy()],
+        &[],
+    );
+    assert_eq!(code, 1, "{err}");
+    assert!(err.contains("片段库根不是目录"), "{err}");
+}

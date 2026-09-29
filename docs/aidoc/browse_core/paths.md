@@ -15,7 +15,8 @@
 - `engine_profile_dir` — 返回本实例引擎 profile（`<state>/engine-profile`；命名实例各自独占，
 - `instance_name` — 返回实例名（`BROWSE_NAME` 的非空值）；未设即默认实例（`None`）。
 - `read_workspace_config` — 读多仓配置（JSON 字符串数组，序即优先序）；文件缺失或坏形回空清单
-- `snippets_root` — 返回片段库根（#65 可配置外部根）：`BROWSE_SNIPPETS_ROOT` env 显式
+- `snippets_root` — 返回片段库根（#65 可配置外部根）：[`snippets_root_explicit`] 的 env
+- `snippets_root_explicit` — 返回 env 显式片段根（#65）：`BROWSE_SNIPPETS_ROOT` 非空时的值。
 - `state_dir` — 返回本实例状态目录（`%USERPROFILE%\.browse-rs[\<name>]`）。
 - `state_dir_for` — 把实例名映射到状态目录的纯函数（同输入恒同输出，可单测）。
 - `workspace_config_path` — 多仓配置文件位（应用状态目录共享根，不分 BROWSE_NAME，与仓本体
