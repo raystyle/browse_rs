@@ -48,6 +48,6 @@ F1 反转验收（碰撞形实测未触发漏网）、G1/G2/G5/G7/五核一逐�
 - G9 采纳：F1 富化判据从措辞启发式（msg contains "undefined"）换结构化 `e.kind() == ErrorKind::UndefinedError`（耐引擎版本变化）
 - G10 记档：备份件 ed25519.key.bak-* 无自动清理（每次 --force 留一件，属有意的保守；要 prune 另立 issue）；0bb0 旧键吊销属总台待裁项，跟踪口在 ai_ccoe 09-22 键面日记与本节（悬空引用防呆：0bb0 = browse-rs 更名前疑似旧钥，active）
 
-## 待办（总台协调面）
+## 发版 v0.23.0（用户令「继续 直到发版」）
 
-本地 commit 不 push（派单令）；发布 0.23.0 待总台协调（评审已 CONFIRM）；发版后三平台六件资产名 + 播种/CI/docs run id 回执评审格收轮。
+三笔 1eec525 加 09e6f29 加 174908b 推 main（2a8f898..174908b），tag v0.23.0；release.ps1 三平台构建冒烟直发六件（linux tar.gz / win-gnu zip / mac arm64 tar.gz 各带 sha256 边车）；播种 run 36578267235、main ci run 36578104447、docs run 36578104892 三绿全挂 174908b。评审格收轮回执（资产名 + run id）已发。账本 #66 留 open（关单归 omc）。
