@@ -8,6 +8,7 @@ description = "Rune 编排面：browse rune 子命令的 VM、cdp 模块与执�
 
 [dependencies]
 rune = { version = "0.14", default-features = false, features = ["std", "tokio", "emit"] }
+minijinja = "2.24"
 rune-modules = { version = "0.14", default-features = false, features = ["json", "time"] }
 cdp = { path = "../cdp" }
 tokio = { workspace = true }

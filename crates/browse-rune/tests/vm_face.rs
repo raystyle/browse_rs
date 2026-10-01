@@ -17,6 +17,7 @@ async fn pure_script_value_bridge() -> anyhow::Result<()> {
         }
         "#,
         DEFAULT_CAPS,
+        browse_rune::RunOpts::default(),
     )
     .await?;
     assert_eq!(out, serde_json::json!({ "ok": 42 }), "回执形：ok 载荷");
@@ -34,6 +35,7 @@ async fn script_defined_error_payload() -> anyhow::Result<()> {
         pub async fn main() { Err(Timeout) }
         "#,
         DEFAULT_CAPS,
+        browse_rune::RunOpts::default(),
     )
     .await?;
     assert_eq!(
@@ -48,9 +50,14 @@ async fn script_defined_error_payload() -> anyhow::Result<()> {
 #[tokio::test]
 async fn compile_error_cta() {
     let session = cdp::Session::new();
-    let err = run(session, "pub async fn main() { nosuchfn() }", DEFAULT_CAPS)
-        .await
-        .expect_err("未定义函数应编译红");
+    let err = run(
+        session,
+        "pub async fn main() { nosuchfn() }",
+        DEFAULT_CAPS,
+        browse_rune::RunOpts::default(),
+    )
+    .await
+    .expect_err("未定义函数应编译红");
     let msg = err.to_string();
     assert!(msg.contains("Rune 编译失败"), "{msg}");
     assert!(msg.contains("下一步"), "{msg}");
@@ -60,9 +67,14 @@ async fn compile_error_cta() {
 #[tokio::test]
 async fn non_result_main_gets_entry_form_cta() {
     let session = cdp::Session::new();
-    let err = run(session, "pub async fn main() { 42 }", DEFAULT_CAPS)
-        .await
-        .expect_err("裸值入口应按契约红");
+    let err = run(
+        session,
+        "pub async fn main() { 42 }",
+        DEFAULT_CAPS,
+        browse_rune::RunOpts::default(),
+    )
+    .await
+    .expect_err("裸值入口应按契约红");
     let msg = err.to_string();
     assert!(msg.contains("未按契约返回 Result"), "{msg}");
     assert!(msg.contains("pub async fn main()"), "{msg}");
@@ -79,9 +91,48 @@ async fn budget_cap_is_terminal() {
             instructions: 1000,
             memory: 1024 * 1024,
         },
+        browse_rune::RunOpts::default(),
     )
     .await
     .expect_err("千条指令预算应击穿");
     let msg = err.to_string();
     assert!(msg.contains("终态错误"), "{msg}");
+}
+
+/// 三形态批：render 的 Jinja 面（Strict 未填报 op、default 过滤器通行）
+/// 与 js_wrapper 的转义纪律（args JSON 字面量注入，单双引号反引号原样）。
+#[tokio::test]
+async fn render_and_js_wrapper_face() -> anyhow::Result<()> {
+    use browse_rune::run;
+    let session = cdp::Session::new();
+    let out = run(
+        session,
+        r##"pub async fn main() {
+        let t = "f({{ q }}, {{ n | default(7) }})";
+        cdp::render(t, #{"q": "he said \"hi\""})
+    }"##,
+        browse_rune::DEFAULT_CAPS,
+        browse_rune::RunOpts::default(),
+    )
+    .await?;
+    assert_eq!(
+        out,
+        serde_json::json!({ "ok": "f(he said \"hi\", 7)" }),
+        "render 过桥形（含双引号值原样直插）"
+    );
+
+    let session = cdp::Session::new();
+    let err = run(
+        session,
+        r#"pub async fn main() { cdp::render("{{ missing }}", #{}) }"#,
+        browse_rune::DEFAULT_CAPS,
+        browse_rune::RunOpts::default(),
+    )
+    .await?;
+    let op = err
+        .pointer("/error/op")
+        .and_then(|o| o.as_str())
+        .unwrap_or("");
+    assert_eq!(op, "render", "CdpError 降形保 op/message：{err}");
+    Ok(())
 }

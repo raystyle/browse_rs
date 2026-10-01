@@ -224,11 +224,11 @@ pub async fn eval(code: &str, new_tab: bool, js: bool) -> Result<Value> {
 /// # Errors
 ///
 /// HTTP 失败或 daemon 执行失败（编译错、VM 终态、限额击穿、超时）。
-pub async fn rune(code: &str) -> Result<Value> {
+pub async fn rune(code: &str, root: Option<String>, stdin: Option<String>) -> Result<Value> {
     let c = client();
     let resp = c
         .post(format!("{}/rune", http()))
-        .json(&json!({ "code": code }))
+        .json(&json!({ "code": code, "root": root, "stdin": stdin }))
         .send()
         .await
         .context("POST /rune")?;

@@ -41,6 +41,13 @@ pub struct RuneRequest {
     /// json/time/cdp 三模块，双限额与错误约定见 docs/adr/ADR-0009 与
     /// crates/browse-rune）。
     pub code: String,
+    /// snippets 根覆写（三形态批：`js_lib` 解析位；旗标 > env > 内置，
+    /// CLI 侧收口后递入）。
+    #[serde(default)]
+    pub root: Option<String>,
+    /// 管道参数道捕获串（`cdp::stdin()` 的值；无管道不传）。
+    #[serde(default)]
+    pub stdin: Option<String>,
 }
 
 /// 描述 POST /engine/up 的请求体。
@@ -319,9 +326,18 @@ async fn rune_handler(
             return err_response(e);
         }
     }
+    let root = std::path::PathBuf::from(
+        req.root
+            .clone()
+            .unwrap_or_else(|| crate::paths::snippets_root().to_string_lossy().into_owned()),
+    );
+    let opts = browse_rune::RunOpts {
+        snippets_root: root,
+        stdin: req.stdin.clone().unwrap_or_default(),
+    };
     let outcome = tokio::time::timeout(
         eval_timeout(),
-        browse_rune::run(d.host.session(), &req.code, browse_rune::DEFAULT_CAPS),
+        browse_rune::run(d.host.session(), &req.code, browse_rune::DEFAULT_CAPS, opts),
     )
     .await;
     let value = match outcome {

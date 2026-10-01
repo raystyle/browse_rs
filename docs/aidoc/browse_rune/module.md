@@ -11,11 +11,12 @@ object`、数组对数组），DOM 节点只留 [`ObjHandle`] 不透明句柄；
 
 ## Functions
 
-- `cdp_module` — 注册 `cdp` 模块（方案八函数面）：`goto`/`eval`/`eval_handle`/`call`/
+- `cdp_module` — 注册 `cdp` 模块（方案八函数面 + 三形态批四函数）：`goto`/`eval`/
 
 ## Types
 
 - `CdpError` — 脚本可见的 CDP 失败型（方案错误约定）：`op` 是失败操作名，`message`
 - `Cleanup` — 执行收尾（方案边界条款 + 评审 #67 一轮 G1/G2）：整组释放本执行
+- `ModuleCtx` — 模块构建上下文（#67 三形态运行时批）：会话与两条输入通道（snippets
 - `ObjHandle` — DOM 节点不透明句柄：`eval_handle` 产出，`call`/`release` 消费；脚本
 

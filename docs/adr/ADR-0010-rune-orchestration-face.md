@@ -22,6 +22,10 @@ superseded_by: null
 - 坏：第三语言面（方言/`--js`/Rune）带来学习与手册面成本（`--llms` 120 帽内已挤行）；结果回传走字符串桥（逃逸包装所迫，VM 内序列化对脚本自造错误型落到 Debug 兜底）；`call` 的 this 绑定要求 `function(){…}` 形（箭头函数词法 this，CDP 语义如实披露）
 - 缓解：三面分工写进手册（方言管受限编排、`--js` 管页面逻辑、rune 管宿主侧全控制流）；隔离世界只属 rune 面（方言/`--js` 主世界契约不变）
 
+## 增补（2026-10-01，三形态运行时批）
+
+小程序三形态定位（用户定谳）：rn 脚本小程序（js+cdp 双能力）、方言命令（cdp）、js 小程序（js）。rn 形态增 `cdp::js`/`cdp::js_lib`/`cdp::render`/`cdp::stdin` 四函数与输入三通道（文件、管道源码、管道参数）。**两世界分工修订**：原文「Chrome 只经隔离世界碰页面」修订为 eval 族（eval/eval_handle/click 等）走隔离世界轻探针，js 族（js/js_lib）走主世界全量页面逻辑（`--js` 同语义，页面函数可调），rn 形态按需双世界选用。minijinja 引擎配置（Strict 加零 autoescape）在 browse-cli 与 browse-rune 各持一份，由 ADR-0009 钉住同构；js_lib 的库解析与 CLI 侧 load_template_ext 属库内双轨（同一语义两处实现，漂移由各自测试锁）。
+
 ## Alternatives
 
 - chromiumoxide（方案原文）：被否。自有 cdp crate 协议完整（652 方法）、生产验证、域策略守卫在 `Session::call` 层；引第二套 CDP 栈重复且守卫面要重建

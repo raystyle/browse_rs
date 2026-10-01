@@ -48,8 +48,12 @@
 | `click(sel)` | `-> Result<()>` | 隔离世界定位取中心点，`Input.dispatchMouseEvent` 真实点击；未命中报错 |
 | `type_text(sel, text)` | `-> Result<()>` | 聚焦后 `Input.insertText` 插在插入点（不清空原值）；未命中报错 |
 | `wait_sel(sel, ms)` | `-> Result<bool>` | 百毫秒轮询，超时返 `false` 不报错（脚本自裁 `Timeout`） |
+| `js(src, args)` | `-> Result<Value>` | 内联 JS 小程序体（`--js` 同语义**主世界**执行、页面函数可调）；args 对象 JSON 字面量注入（引号天然安全） |
+| `js_lib(name, vars)` | `-> Result<Value>` | 直调 snippets 库内 `.js` 小程序（名原样与补 `.js` 两试），vars 做 Jinja 渲染（#66 全同管线）后主世界执行 |
+| `render(tpl, vars)` | `-> Result<String>` | 运行时 Jinja（Strict；未填键走 `CdpError{op:"render"}`） |
+| `stdin()` | `-> String` | 管道参数道捕获串（CLI 有实参时管道串经请求体 stdin 字段递入；无管道空串） |
 
-边界：八函数都在主 frame（iframe 内不可编排，frame 形后续批）；执行器会自动追加 `__browse_rune_wrap__` 包装函数（用户脚本请勿用同名）。
+边界：函数都在主 frame（iframe 内不可编排，frame 形后续批）；执行器会自动追加 `__browse_rune_wrap__` 包装函数（用户脚本请勿用同名）。输入三通道：`browse rune <script|@名>`（文件/实参道）、`cat plan.rn | browse rune`（管道即源码）、`browse rune @名 < data`（管道即参数，脚本内 `cdp::stdin()` 读）。请求体可选字段 `root`（js_lib 的片段库根，旗标 > env > 内置）与 `stdin`。
 
 响应 envelope 与 `/eval` 同形（`ok`/`value`/`engineContext` 或 `ok:false`/`error`）；`value` 是 rune 回执：`{"ok": <main 成功载荷>}` 或 `{"error": <脚本可见失败载荷>}`（脚本自造 `Timeout` 型、`cdp::CdpError{op,message}` 都属后者）。编译错、VM 终态（含限额击穿）、超时走 `error` 面。细节与脚本写法见 `browse --llms` 的 rune 条目与 crates/browse-rune 文档。
 

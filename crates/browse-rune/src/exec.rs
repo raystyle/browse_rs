@@ -18,7 +18,7 @@ use std::sync::Arc;
 use anyhow::{Result, anyhow};
 use serde_json::{Value, json};
 
-use crate::module::cdp_module;
+use crate::module::{ModuleCtx, cdp_module};
 
 /// 双限额（方案条款：执行时套两层；原生函数自己尊重预算——本模块的
 /// 长动作都有界：goto 等 15s、wait_sel 按参）。
@@ -36,13 +36,23 @@ pub const DEFAULT_CAPS: Caps = Caps {
     memory: 16 * 1024 * 1024,
 };
 
+/// 执行选项（三形态批）：snippets 根（`js_lib` 解析位）与管道参数串
+/// （`cdp::stdin()` 的值）。
+#[derive(Debug, Clone, Default)]
+pub struct RunOpts {
+    /// `js_lib` 的片段库根（daemon 侧三序收口后的终值）。
+    pub snippets_root: std::path::PathBuf,
+    /// 管道参数道捕获串（无管道即空串）。
+    pub stdin: String,
+}
+
 /// 自动追加的结果回传包装（入口恒 `pub async fn main()`）。
 const WRAPPER: &str = r#"
 pub async fn __browse_rune_wrap__() {
     let r = main().await;
     match r {
         Ok(v) => cdp::__result(format!("ok:{}", match json::to_string(v) { Ok(s) => s, Err(_) => format!("{:?}", v) })),
-        Err(e) => cdp::__result(format!("err:{}", match json::to_string(e) { Ok(s) => s, Err(_) => format!("{:?}", e) })),
+        Err(e) => cdp::__result(format!("err:{}", match cdp::__describe(e) { Some(s) => s, None => format!("{:?}", e) })),
     }
 }
 "#;
@@ -55,13 +65,23 @@ pub async fn __browse_rune_wrap__() {
 /// # Errors
 ///
 /// 编译失败、VM 终态错误、双限额击穿、结果回传道异常。
-pub async fn run(session: Arc<cdp::Session>, source: &str, caps: Caps) -> Result<Value> {
-    run_with_cleanup(session, source, caps).await
+pub async fn run(
+    session: Arc<cdp::Session>,
+    source: &str,
+    caps: Caps,
+    opts: RunOpts,
+) -> Result<Value> {
+    run_with_cleanup(session, source, caps, opts).await
 }
 
 /// [`run`] 的实现腿：收尾清账（对象组释放加引导脚本注销）。
-async fn run_with_cleanup(session: Arc<cdp::Session>, source: &str, caps: Caps) -> Result<Value> {
-    let cleanup = run_capture_cleanup(session, source, caps).await;
+async fn run_with_cleanup(
+    session: Arc<cdp::Session>,
+    source: &str,
+    caps: Caps,
+    opts: RunOpts,
+) -> Result<Value> {
+    let cleanup = run_capture_cleanup(session, source, caps, opts).await;
     let (out, cleanup) = cleanup;
     if let Some(c) = &cleanup {
         c.run().await;
@@ -74,8 +94,9 @@ async fn run_capture_cleanup(
     session: Arc<cdp::Session>,
     source: &str,
     caps: Caps,
+    opts: RunOpts,
 ) -> (Result<Value>, Option<crate::module::Cleanup>) {
-    match run_raw(session, source, caps).await {
+    match run_raw(session, source, caps, opts).await {
         (out, Some(c)) => (out, Some(c)),
         (out, None) => (out, None),
     }
@@ -85,13 +106,19 @@ async fn run_raw(
     session: Arc<cdp::Session>,
     source: &str,
     caps: Caps,
+    opts: RunOpts,
 ) -> (Result<Value>, Option<crate::module::Cleanup>) {
     let result_slot = Arc::new(std::sync::Mutex::new(None::<String>));
     let mut context = match rune::Context::with_default_modules() {
         Ok(c) => c,
         Err(e) => return (Err(anyhow!("Rune 上下文构建失败：{e}")), None),
     };
-    let (module, cleanup) = match cdp_module(session, result_slot.clone()) {
+    let (module, cleanup) = match cdp_module(ModuleCtx {
+        session,
+        result_slot: result_slot.clone(),
+        snippets_root: opts.snippets_root,
+        stdin: opts.stdin,
+    }) {
         Ok(v) => v,
         Err(e) => return (Err(anyhow!("cdp 模块注册失败：{e}")), None),
     };

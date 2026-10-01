@@ -2783,9 +2783,14 @@ async fn rune_orchestration_roundtrip() {
             Ok(#{"title": cdp::eval("document.title").await?, "out": out, "body": tag})
         }
     "##;
-    let receipt = browse_rune::run(session, script, browse_rune::DEFAULT_CAPS)
-        .await
-        .expect("rune 脚本执行失败");
+    let receipt = browse_rune::run(
+        session,
+        script,
+        browse_rune::DEFAULT_CAPS,
+        browse_rune::RunOpts::default(),
+    )
+    .await
+    .expect("rune 脚本执行失败");
     assert_eq!(
         receipt,
         serde_json::json!({
@@ -2799,4 +2804,81 @@ async fn rune_orchestration_roundtrip() {
     );
     engine.shutdown().await.expect("shutdown");
     clean_profile().await;
+}
+
+/// #67 三形态批真 chrome 端到端：js（主世界页面函数 + args 注入）、
+/// js_lib（片段库 Jinja 管线）、render、stdin 参数道全链。
+#[tokio::test]
+async fn rune_three_channel_integration() {
+    if !gated() {
+        eprintln!("skip: BROWSE_E2E 未设 1");
+        return;
+    }
+    let _seq = SEQ.lock().await;
+    clean_profile().await;
+    let lib_root = std::env::temp_dir().join(format!(
+        "browse-rune-lib-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_millis()
+    ));
+    std::fs::create_dir_all(lib_root.join("x.test")).expect("建库");
+    std::fs::write(
+        lib_root.join("x.test/double.js"),
+        "// 用途：翻倍\nreturn {{ n }} * 2\n",
+    )
+    .expect("写库内 js");
+    let session = cdp::Session::new();
+    let engine = Engine::new(session.clone());
+    engine
+        .ensure(&EngineSpec::Auto {
+            chrome: None,
+            headless: true,
+            pipe: false,
+            profile: None,
+            proxy: None,
+            proxy_bypass: None,
+            isolated: false,
+            engine_args: Vec::new(),
+        })
+        .await
+        .expect("三形态 e2e 引擎起不来");
+    let script = r##"pub async fn main() {
+        cdp::goto("data:text/html,<title>3ch</title><script>window.triple = (x) => x * 3; window.q = 'it \"works\"'</script>").await?;
+        let via_page_fn = cdp::js("return triple(args.n)", #{"n": 7}).await?;
+        let quotes = cdp::js("return window.q + '|' + args.s", #{"s": "say \"hi\""}).await?;
+        let via_lib = cdp::js_lib("x.test/double", #{"n": 21}).await?;
+        let rendered = cdp::render("{{ n }}x", #{"n": 5})?;
+        let pipe = cdp::stdin();
+        Ok(#{"page_fn": via_page_fn, "quotes": quotes, "lib": via_lib, "render": rendered, "stdin": pipe})
+    }"##;
+    let receipt = browse_rune::run(
+        session,
+        script,
+        browse_rune::DEFAULT_CAPS,
+        browse_rune::RunOpts {
+            snippets_root: lib_root.clone(),
+            stdin: "pipe-data".to_string(),
+        },
+    )
+    .await
+    .expect("三形态脚本执行失败");
+    assert_eq!(
+        receipt,
+        serde_json::json!({
+            "ok": {
+                "page_fn": 21,
+                "quotes": "it \"works\"|say \"hi\"",
+                "lib": 42,
+                "render": "5x",
+                "stdin": "pipe-data",
+            }
+        }),
+        "三形态全链回执：{receipt}"
+    );
+    engine.shutdown().await.expect("shutdown");
+    clean_profile().await;
+    let _ = std::fs::remove_dir_all(&lib_root);
 }

@@ -664,7 +664,7 @@
       "type": "object"
     },
     "cli.rune": {
-      "description": "browse rune <script.rn|@名> [--vars k=v] [--root <dir>] Rune 编排面（命令小程序的宿主侧全控制流形态）：脚本在独立 VM 跑（Rune 语言，入口 pub async fn main() 返回 Result），经自注册 cdp 模块做效果——goto/eval/eval_handle/call/release/click/type_text/wait_sel 八函数全走自有 CDP 会话，Chrome 只经隔离世界 Runtime.evaluate 碰页面；宿主只装 json/time/cdp 三模块，双限额（指令与分配），未填模板键网络前拦 exit 2。错误二分：cdp::CdpError{op,message} 与脚本自造 Timeout 属脚本可见失败，VM 错误是终态。eval_handle 句柄经 clone 复用，call 的函数体用 function(){...} 形收 this（箭头函数是词法 this 不接绑定）。方言/--js 契约零动。",
+      "description": "browse rune <script.rn|@名> [--vars k=v] [--root <dir>] Rune 编排面（三形态运行时之一：rn 脚本小程序握 js+cdp 双能力，方言命令管 cdp、js 小程序管 js）：脚本在独立 VM 跑（Rune 语言，入口 pub async fn main() 返回 Result），经自注册 cdp 模块做效果：goto/eval/eval_handle/call/release/click/type_text/wait_sel 八函数走隔离世界轻探针，js(src,args) 内联 JS 小程序体与 js_lib(name,vars) 库内 .js 小程序走主世界全量页面逻辑（--js 同语义，页面函数可调；args/vars 对象 JSON 字面量注入引号天然安全），render(tpl,vars) 运行时 Jinja，stdin() 读管道参数道。输入三通道：文件/实参、管道源码（无实参时 cat plan.rn | browse rune）、管道参数（有实参时）。双限额（指令与分配），未填模板键网络前拦 exit 2。错误二分：cdp::CdpError{op,message} 与脚本自造 Timeout 属脚本可见失败，VM 错误是终态。eval_handle 句柄经 clone 复用，call 的函数体用 function(){…} 形收 this。方言/--js 契约零动。",
       "example": "browse rune @x.test/fill-form --vars q=hello",
       "input": {
         "properties": {

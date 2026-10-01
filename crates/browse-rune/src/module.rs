@@ -67,6 +67,10 @@ pub(crate) struct CdpState {
     /// addScriptToEvaluateOnNewDocument 的注册 identifier（收尾注销用，
     /// 评审 #67 一轮 G1）。独立 std 锁：Drop 兜底道不可 await/blocking_lock。
     script_id: std::sync::Mutex<Option<i64>>,
+    /// `js_lib` 的片段库根。
+    snippets_root: std::path::PathBuf,
+    /// 管道参数道捕获串。
+    stdin: String,
 }
 
 const WORLD_NAME: &str = "browse-rune";
@@ -158,6 +162,57 @@ impl CdpState {
         Ok(r)
     }
 
+    /// 主世界全量 JS 求值（`--js` 同语义：页面真 V8、页面函数可调）：
+    /// 无 contextId 即主世界；异常文本进 `CdpError`。js/js_lib 的执行腿。
+    async fn eval_main_world(&self, wrapped: &str) -> Result<Value, CdpError> {
+        let r = self
+            .session
+            .call(
+                "Runtime.evaluate",
+                json!({ "expression": wrapped, "returnByValue": true, "awaitPromise": true }),
+            )
+            .await
+            .map_err(|e| cdp_err("js", format!("Runtime.evaluate: {e:#}")))?;
+        if let Some(exc) = r.pointer("/exceptionDetails/text").and_then(Value::as_str) {
+            let detail = r
+                .pointer("/exceptionDetails/exception/description")
+                .and_then(Value::as_str)
+                .unwrap_or(exc);
+            return Err(cdp_err("js", detail));
+        }
+        Ok(r)
+    }
+
+    /// 片段库解析（js_lib 专用）：`根/<名>` 原样与补 `.js` 两试，越根
+    /// 候选跳过；未命中报错列试过的位（与 CLI 侧 load_template_ext 同
+    /// 语义，daemon 侧第二实现属库内双轨，ADR-0010 注记）。
+    fn resolve_js_lib(&self, name: &str) -> Result<(String, String), CdpError> {
+        if name.is_empty() {
+            return Err(cdp_err("js_lib", "缺库名"));
+        }
+        let mut tried: Vec<String> = Vec::new();
+        if self.snippets_root.canonicalize().is_ok() {
+            for cand in [self.snippets_root.join(name), {
+                let mut p = self.snippets_root.join(name);
+                p.set_extension("js");
+                p
+            }] {
+                if let (Ok(canon), Ok(root_canon)) =
+                    (cand.canonicalize(), self.snippets_root.canonicalize())
+                    && canon.starts_with(&root_canon)
+                    && let Ok(body) = std::fs::read_to_string(&canon)
+                {
+                    return Ok((canon.display().to_string(), body));
+                }
+                tried.push(cand.display().to_string());
+            }
+        }
+        Err(cdp_err(
+            "js_lib",
+            format!("库内 js 小程序 {name} 未命中（试过：{}）", tried.join("、")),
+        ))
+    }
+
     /// CDP `RemoteObject` 的 value 腿过 serde 桥成 rune 值（`() ↔ null`、
     /// `#{ } ↔ object`、数组对数组；value 缺席即 undefined 形单位值）。
     fn bridge(r: &Value) -> Result<RuneValue, CdpError> {
@@ -169,16 +224,54 @@ impl CdpState {
     }
 }
 
-/// 注册 `cdp` 模块（方案八函数面）：`goto`/`eval`/`eval_handle`/`call`/
-/// `release`/`click`/`type_text`/`wait_sel`，全部返回 `Result`。
+/// 模块构建上下文（#67 三形态运行时批）：会话与两条输入通道（snippets
+/// 根供 `js_lib`，管道串供 `stdin()`）。
+pub struct ModuleCtx {
+    /// 自有 cdp crate 的会话（句柄留 Rust 侧，不进脚本全局）。
+    pub session: Arc<cdp::Session>,
+    /// 结果回传槽（执行器所有）。
+    pub result_slot: Arc<std::sync::Mutex<Option<String>>>,
+    /// `js_lib` 的片段库根（daemon 侧三序收口后的终值）。
+    pub snippets_root: std::path::PathBuf,
+    /// 管道参数道捕获串（`cdp::stdin()` 的值；无管道即空串）。
+    pub stdin: String,
+}
+
+/// 运行时 Jinja 引擎（ADR-0009 同配置：Strict undefined、零 autoescape；
+/// 与命令小程序 CLI 侧渲染同一套约定，配置五行在两处各持一份由
+/// ADR-0009 钉住）。
+fn jinja_env() -> &'static minijinja::Environment<'static> {
+    static ENV: std::sync::OnceLock<minijinja::Environment<'static>> = std::sync::OnceLock::new();
+    ENV.get_or_init(|| {
+        let mut env = minijinja::Environment::new();
+        env.set_undefined_behavior(minijinja::UndefinedBehavior::Strict);
+        env.set_auto_escape_callback(|_| minijinja::AutoEscape::None);
+        env
+    })
+}
+
+/// js 体的包裹器（纯函数便于单测）：体原样入、args 经
+/// `serde_json::to_string` 做 JSON 字面量注入——单双引号与反引号天然
+/// 安全，杜绝手工拼接道（#67 三形态批转义纪律）。
+fn js_wrapper(src: &str, args_json: &str) -> String {
+    format!("(async (args) => {{\n{src}\n}})({args_json})")
+}
+
+/// 注册 `cdp` 模块（方案八函数面 + 三形态批四函数）：`goto`/`eval`/
+/// `eval_handle`/`call`/`release`/`click`/`type_text`/`wait_sel` 加
+/// `js`/`js_lib`/`render`/`stdin`，全部返回 `Result`（`render`/`stdin`
+/// 不可失败面直接返值）。
 ///
 /// # Errors
 ///
 /// 模块注册失败（函数签名或类型登记冲突）。
-pub fn cdp_module(
-    session: Arc<cdp::Session>,
-    result_slot: Arc<std::sync::Mutex<Option<String>>>,
-) -> Result<(Module, Cleanup), rune::ContextError> {
+pub fn cdp_module(ctx: ModuleCtx) -> Result<(Module, Cleanup), rune::ContextError> {
+    let ModuleCtx {
+        session,
+        result_slot,
+        snippets_root,
+        stdin,
+    } = ctx;
     let mut m = Module::with_crate("cdp")?;
     m.ty::<CdpError>()?;
     m.ty::<ObjHandle>()?;
@@ -201,6 +294,8 @@ pub fn cdp_module(
         world: tokio::sync::Mutex::new(WorldCtx::default()),
         object_group: format!("browse-rune-{}", next_group_seq()),
         script_id: std::sync::Mutex::new(None),
+        snippets_root,
+        stdin,
     });
 
     {
@@ -393,6 +488,86 @@ pub fn cdp_module(
         })
         .build()?;
     }
+    // 错误载荷降形（vm_face 实弹抓的坑）：json 模块与 Debug 协议对外部
+    // 类型都出「object at 0x…」占位，CdpError 的 op/message 会丢——宿主
+    // 侧专降 JSON 形，wrapper 的 Err 臂消费（其余错误值照旧 json/Debug）
+    m.function("__describe", |v: RuneValue| -> Option<String> {
+        let cloned = v.clone();
+        match <CdpError as rune::FromValue>::from_value(cloned) {
+            Ok(e) => {
+                let op = serde_json::to_string(&e.op).unwrap_or_else(|_| "\"?\"".into());
+                let msg = serde_json::to_string(&e.message).unwrap_or_else(|_| "\"?\"".into());
+                Some(format!("{{\"op\":{op},\"message\":{msg}}}"))
+            }
+            Err(_) => match serde_json::to_string(&v) {
+                Ok(s2) if !s2.contains("object at") => Some(s2),
+                _ => None,
+            },
+        }
+    })
+    .build()?;
+
+    // ---- 三形态批：js 集成（内联 js / 库内 js / 运行时 jinja / 管道参数） ----
+    {
+        let st = state.clone();
+        m.function("js", move |src: String, args: RuneValue| {
+            let st = st.clone();
+            async move {
+                // args 对象经 serde 成 JSON 字面量注入（单双引号反引号
+                // 天然安全；体原样入包裹器零拼接）
+                let args_json = serde_json::to_string(
+                    &serde_json::to_value(&args).unwrap_or(serde_json::Value::Null),
+                )
+                .unwrap_or_else(|_| "null".to_string());
+                let r = st.eval_main_world(&js_wrapper(&src, &args_json)).await?;
+                CdpState::bridge(&r)
+            }
+        })
+        .build()?;
+    }
+    {
+        let st = state.clone();
+        m.function("js_lib", move |name: String, vars: RuneValue| {
+            let st = st.clone();
+            async move {
+                let (_path, body) = match st.resolve_js_lib(&name) {
+                    Ok(v) => v,
+                    Err(e) => return Err(e),
+                };
+                // #66 全同管线：vars 对象做 Jinja 渲染（Strict；未填键报错
+                // 带 op=js_lib），渲染产物进主世界执行（args 空对象占位）
+                let vars_json = serde_json::to_value(&vars).unwrap_or(serde_json::Value::Null);
+                let rendered = match jinja_env().render_str(&body, vars_json) {
+                    Ok(t) => t,
+                    Err(e) => {
+                        return Err(cdp_err(
+                            "js_lib",
+                            format!("模板渲染失败：{e}（未填键补 vars 或模板给 default）"),
+                        ));
+                    }
+                };
+                let r = st.eval_main_world(&js_wrapper(&rendered, "{}")).await?;
+                CdpState::bridge(&r)
+            }
+        })
+        .build()?;
+    }
+    m.function("render", |tpl: String, vars: RuneValue| {
+        let vars_json = serde_json::to_value(&vars).unwrap_or(serde_json::Value::Null);
+        match jinja_env().render_str(&tpl, vars_json) {
+            Ok(out) => Ok(out),
+            Err(e) => Err(cdp_err(
+                "render",
+                format!("模板渲染失败：{e}（未填键补 vars 或模板给 default）"),
+            )),
+        }
+    })
+    .build()?;
+    {
+        let st = state.clone();
+        m.function("stdin", move || st.stdin.clone()).build()?;
+    }
+
     Ok((
         m,
         Cleanup {

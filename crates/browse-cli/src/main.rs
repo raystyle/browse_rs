@@ -1282,11 +1282,32 @@ async fn main() -> Result<()> {
         // ---- Rune 编排面（#67）：@ 名走 snippets 根(.rn 两试)或字面路径，
         // --vars 同 #66 模板道渲染，POST /rune 由 daemon 在隔离世界执行 ----
         Mode::Rune { script } => {
-            let Some(target) = script else {
-                eprintln!(
-                    "browse: rune 缺脚本实参；用法：browse rune <script.rn|@名> [--vars k=v]（退出 2）"
-                );
-                std::process::exit(2);
+            // 输入三通道（三形态批）：文件/实参道、管道源码道（无实参时
+            // cat plan.rn | browse rune，对齐 --js 管道先例）、管道参数道
+            // （有实参时管道串经 RuneRequest 进 cdp::stdin()）
+            let piped: Option<String> = if std::io::stdin().is_terminal() {
+                None
+            } else {
+                let mut buf = String::new();
+                match std::io::Read::read_to_string(&mut std::io::stdin(), &mut buf) {
+                    Ok(_) => Some(buf),
+                    Err(e) => {
+                        eprintln!("browse: rune 读管道失败：{e}（退出 2）");
+                        std::process::exit(2);
+                    }
+                }
+            };
+            let (target, stdin_param, piped_source) = match script {
+                Some(t) => (Some(t), piped, None),
+                None => match piped.as_deref().map(str::trim) {
+                    Some(src) if !src.is_empty() => (None, None, Some(src.to_string())),
+                    _ => {
+                        eprintln!(
+                            "browse: rune 缺脚本实参且无管道；用法：browse rune <script.rn|@名> [--vars k=v]，或 cat plan.rn | browse rune（退出 2）"
+                        );
+                        std::process::exit(2);
+                    }
+                },
             };
             // --vars 形状校验先于读文件（评审 #67 一轮 G7：坏形即刻报，
             // 不让文件错掩盖参数错）；--cookies/--new-tab 是 eval 前置
@@ -1311,30 +1332,37 @@ async fn main() -> Result<()> {
                 })
                 .collect();
             let (root, _explicit) = snippets_root(snippets_root_flag.clone());
-            let at_form = target.starts_with('@');
-            if !at_form && snippets_root_flag.is_some() {
-                // 评审 #67 一轮 G7：字面路径形 --root 不生效（根只服务 @ 名）
-                eprintln!(
-                    "提示：--root 只对 @ 名生效，字面路径形不读片段库根（{}）",
-                    root.display()
-                );
-            }
-            let body = if let Some(name) = target.strip_prefix('@') {
-                match browse_cli::client::load_template_ext(name, &root, "rn", "脚本") {
-                    Ok((_p, b)) => b,
-                    Err(e) => {
-                        eprintln!("{e:#}");
-                        std::process::exit(2);
-                    }
-                }
-            } else {
-                match std::fs::read_to_string(&target) {
-                    Ok(b) => b,
-                    Err(e) => {
+            let body = match &piped_source {
+                Some(src) => src.clone(),
+                None => {
+                    let target = target.expect("文件道在位（管道源码道已分流）");
+                    let at_form = target.starts_with('@');
+                    if !at_form && snippets_root_flag.is_some() {
+                        // 三形态批后 --root 双生效面：@ 名解析（CLI 侧）与
+                        // js_lib（经 daemon）；字面路径本体不走根解析
                         eprintln!(
-                            "browse: rune 读脚本失败 {target}：{e}；下一步：核对路径，或 @名 走 snippets 根（browse snippets list 看在册）（退出 2）"
+                            "提示：--root 生效面是 @ 名解析与 js_lib（经 daemon），字面路径本体不读片段库根（{}）",
+                            root.display()
                         );
-                        std::process::exit(2);
+                    }
+                    if let Some(name) = target.strip_prefix('@') {
+                        match browse_cli::client::load_template_ext(name, &root, "rn", "脚本") {
+                            Ok((_p, b)) => b,
+                            Err(e) => {
+                                eprintln!("{e:#}");
+                                std::process::exit(2);
+                            }
+                        }
+                    } else {
+                        match std::fs::read_to_string(&target) {
+                            Ok(b) => b,
+                            Err(e) => {
+                                eprintln!(
+                                    "browse: rune 读脚本失败 {target}：{e}；下一步：核对路径，或 @名 走 snippets 根（browse snippets list 看在册）（退出 2）"
+                                );
+                                std::process::exit(2);
+                            }
+                        }
                     }
                 }
             };
@@ -1370,7 +1398,7 @@ async fn main() -> Result<()> {
                 engine_args,
             })
             .await?;
-            match browse_cli::client::rune(&body).await {
+            match browse_cli::client::rune(&body, snippets_root_flag.clone(), stdin_param).await {
                 Ok(v) => {
                     println!("{}", serde_json::to_string_pretty(&v)?);
                     Ok(())

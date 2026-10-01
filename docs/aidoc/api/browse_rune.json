@@ -1,6 +1,6 @@
 {
   "crate": "browse-rune",
-  "version": "0.24.1",
+  "version": "0.25.0",
   "items": [
     {
       "path": "browse_rune::exec",
@@ -16,6 +16,11 @@
       "path": "browse_rune::exec::DEFAULT_CAPS",
       "kind": "constant",
       "docs": "缺省限额：指令一千万（编排脚本量级富余），分配 16MB。"
+    },
+    {
+      "path": "browse_rune::exec::RunOpts",
+      "kind": "struct",
+      "docs": "执行选项（三形态批）：snippets 根（`js_lib` 解析位）与管道参数串\n（`cdp::stdin()` 的值）。"
     },
     {
       "path": "browse_rune::exec::run",
@@ -38,6 +43,11 @@
       "docs": "执行收尾（方案边界条款 + 评审 #67 一轮 G1/G2）：整组释放本执行\n对象组，注销世界引导脚本注册。best-effort：会话已断时静默（清账\n失败不掩盖脚本结果）。"
     },
     {
+      "path": "browse_rune::module::ModuleCtx",
+      "kind": "struct",
+      "docs": "模块构建上下文（#67 三形态运行时批）：会话与两条输入通道（snippets\n根供 `js_lib`，管道串供 `stdin()`）。"
+    },
+    {
       "path": "browse_rune::module::ObjHandle",
       "kind": "struct",
       "docs": "DOM 节点不透明句柄：`eval_handle` 产出，`call`/`release` 消费；脚本\n侧拿不到 objectId 字面量（防拼错与跨组泄漏）。"
@@ -45,7 +55,7 @@
     {
       "path": "browse_rune::module::cdp_module",
       "kind": "function",
-      "docs": "注册 `cdp` 模块（方案八函数面）：`goto`/`eval`/`eval_handle`/`call`/\n`release`/`click`/`type_text`/`wait_sel`，全部返回 `Result`。\n\n# Errors\n\n模块注册失败（函数签名或类型登记冲突）。"
+      "docs": "注册 `cdp` 模块（方案八函数面 + 三形态批四函数）：`goto`/`eval`/\n`eval_handle`/`call`/`release`/`click`/`type_text`/`wait_sel` 加\n`js`/`js_lib`/`render`/`stdin`，全部返回 `Result`（`render`/`stdin`\n不可失败面直接返值）。\n\n# Errors\n\n模块注册失败（函数签名或类型登记冲突）。"
     }
   ]
 }

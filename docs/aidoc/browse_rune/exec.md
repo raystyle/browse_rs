@@ -22,6 +22,7 @@ Rune 执行器（账本 #67）：一套 `Context` 编译一次，VM 经
 ## Types
 
 - `Caps` — 双限额（方案条款：执行时套两层；原生函数自己尊重预算——本模块的
+- `RunOpts` — 执行选项（三形态批）：snippets 根（`js_lib` 解析位）与管道参数串
 
 ## Constants
 

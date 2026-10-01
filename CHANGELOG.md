@@ -2,6 +2,12 @@
 
 版本级里程碑；逐批过程见 docs/diary。semver 判据在册 docs/requirements/REQ-004。
 
+## 0.25.0 - 2026-10-01
+
+- **Rune 三形态运行时定位与 js/cdp/jinja 集成（ADR-0010 增补）**：小程序三形态定谳：rn 脚本小程序（js+cdp 双能力，宿主编排）、方言命令（cdp）、js 小程序（js）；rn 形态新增四函数：`cdp::js(src, args)`（内联 JS 小程序体，`--js` 同语义主世界执行、页面函数可调；args 对象经 `serde_json::to_string` 做 JSON 字面量注入，单双引号反引号天然安全，js 体原样入包裹器零拼接）、`cdp::js_lib(name, vars)`（直调 snippets 库内 `.js` 小程序，#66 全同 Jinja 渲染管线后主世界执行，名原样与补 .js 两试、越根候选跳过）、`cdp::render(tpl, vars)`（运行时 Jinja，ADR-0009 同配置 Strict 加零 autoescape）、`cdp::stdin()`（管道参数道）。输入三通道：文件/实参道、管道源码道（无实参时 `cat plan.rn | browse rune`）、管道参数道（有实参时管道串进 `cdp::stdin()`）；`--root` 双生效面（@ 名解析 CLI 侧 + js_lib 经 daemon 三序）；POST /rune 增 root 与 stdin 可选字段。两世界分工定谳：eval 族隔离世界轻探针，js 族主世界全量页面逻辑（ADR-0010 原文修订）
+- **错误载荷降形（vm_face 实弹抓出的坑）**：json 模块与 Debug 协议对外部类型都出「object at 0x」占位，`?` 传播的 `CdpError` 载荷丢 op/message：宿主侧 `__describe` 专降 JSON 形（`{"op","message"}`），脚本自造型回落 VM 内 Debug（Timeout 等保真）
+- semver 判据结论（0.25.0 裁定）：能力新增取 minor（REQ-004 判据行）
+
 ## 0.24.1 - 2026-10-01
 
 - **#67 评审遗留收口（三轮 G10 + 一轮 G2）**：G10 尾置全局旗标分面文案：子命令收集环（rune/snippets 族）遇到认识的全局旗标尾置报「是全局旗标，要置于子命令与脚本位之前」（消「认识却说参数不认识」的措辞矛盾；未知旗标保持原 bail 面），名册常量与解析臂同步纪律在册；G2 超时丢弃清账 drop-guard：`Cleanup` 增 Drop 兜底（主 future 被 daemon 超时 drop 时，借当前 tokio 运行时排程 releaseObjectGroup 与引导脚本注销；显式 run() 先置 settled 防双跑），script_id 移出 tokio 锁成独立 std 锁（Drop 面不可 await/blocking_lock），并修 std 锁守卫跨 await 的 !Send 面。测试：arg_contract 增 tail_global_flag_gets_position_cta（rune 与 snippets 双面 + 未知旗标对照）
