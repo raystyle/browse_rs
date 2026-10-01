@@ -34,6 +34,14 @@
 - G7 采纳：@ 名未命中文案语境化（「脚本 X 未命中」，load_template_ext 增 kind 标签）；--vars 形状校验先于读文件；字面路径形 --root 给 stderr 提示（不生效但不拦）；__browse_rune_wrap__ 保留名与 iframe 边界写进 http-api
 - rune e2e 全量套曾单红一次：同命令双跑 e2e 互踩 profile（我方操作面），复跑 6/6 绿
 
-## 待办
+## 评审二轮与三行快核
 
-评审二轮快核后 CONFIRM；放行后推 main 发 0.24.0；账本 #67 留 open（关单归 omc）。
+二轮回执 F2 必修：上批修复回执有三项声称落地实未进提交（G4 解析臂与断言、type_text 守卫、surface --root 参数行）——根因是我用 python 字符串替换改码且未断言命中，三个「ok」打印骗了回执。本批改 Edit 工具（失配即红）逐项落并 grep 验证；G8（--new-tab 显式不支持）、G9（空名文案语境化）随批。三行快核 **CONFIRM**（评审方 git show --stat 加 grep 加三实弹复验）。
+
+- G10 记档（下批候选）：尾置全局旗标（rune s.rn --headless）报「参数不认识」与 snippets 族口径一致不拦；更整齐道是内环收完脚本位即 break 回外层（外层认全家族），一改收拢 G1/G3 两面
+- 评审方附记采纳进批纪律：回执里每个「已落」项附一条 grep 或实弹输出（本轮三次失实都被 git show --stat 抓出）；python 静默替换禁用，改 Edit 断言制
+- 评审方探针残留披露在案（/tmp/rev67*，进程已收；我方两个 dev daemon 按名未碰）
+
+## 发版 v0.24.0
+
+三笔 e391c8b 加 3279a11 加 af6344a 推 main（88b92fa..af6344a），tag v0.24.0；release.ps1 三平台构建冒烟直发六件；播种 run 36848738661、main ci run 36848391900、docs run 36848391914 三绿全挂 af6344a。评审格收轮回执（资产名 + run id）已发。账本 #67 留 open（关单归 omc）。
