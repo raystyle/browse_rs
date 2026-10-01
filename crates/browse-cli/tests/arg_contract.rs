@@ -496,3 +496,26 @@ fn rune_arg_contract() {
         "脚本位后的 --vars 正常收（不走 bail）：{err}"
     );
 }
+
+/// #67 三轮 G10：子命令收集环里「认识的全局旗标尾置」报位置 CTA（不再
+/// 「参数不认识」的措辞矛盾），未知旗标保持原 bail 面；rune 与 snippets
+/// 两族同口径。
+#[test]
+fn tail_global_flag_gets_position_cta() {
+    let (code, _, err) = run(&["rune", "x.rn", "--headless"], &[]);
+    assert_eq!(code, 2, "{err}");
+    assert!(
+        err.contains("是全局旗标，要置于子命令与脚本位之前"),
+        "{err}"
+    );
+    let (code, _, err) = run(&["snippets", "list", "x", "--json"], &[]);
+    assert_eq!(code, 2, "{err}");
+    assert!(
+        err.contains("是全局旗标，要置于子命令与脚本位之前"),
+        "{err}"
+    );
+    // 未知旗标保持原面（不误升位置 CTA）
+    let (code, _, err) = run(&["rune", "x.rn", "--bogus"], &[]);
+    assert_eq!(code, 2, "{err}");
+    assert!(err.contains("参数不认识 --bogus"), "{err}");
+}

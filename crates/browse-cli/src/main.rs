@@ -406,7 +406,7 @@ async fn main() -> Result<()> {
                     match a.as_str() {
                         "--vars" => vars.push(args.next("--vars")),
                         "--root" => snippets_root_flag = Some(args.next("--root")),
-                        other if other.starts_with('-') => bail_arg(other),
+                        other if other.starts_with('-') => bail_flag_in_subcommand(other),
                         other if script.is_none() => script = Some(other.to_string()),
                         other => {
                             eprintln!("browse: rune 只要一个脚本位（{other} 多余，退出 2）");
@@ -430,7 +430,7 @@ async fn main() -> Result<()> {
                                 // 评审一轮 F1：-- 前缀未知旗标（含 --root= 等
                                 // 形）照旧 bail，不静默吃成位置位；G1：首位
                                 // 置位胜出，多余位置位用法错
-                                other if other.starts_with('-') => bail_arg(other),
+                                other if other.starts_with('-') => bail_flag_in_subcommand(other),
                                 other if site.is_none() => site = Some(other.to_string()),
                                 other => {
                                     eprintln!(
@@ -453,7 +453,7 @@ async fn main() -> Result<()> {
                                     snippets_root_flag = Some(args.next("--root"));
                                 }
                                 // 同 list：F1 未知旗标 bail + G1 首位置位胜出
-                                other if other.starts_with('-') => bail_arg(other),
+                                other if other.starts_with('-') => bail_flag_in_subcommand(other),
                                 other if rel.is_empty() => rel = other.to_string(),
                                 other => {
                                     eprintln!(
@@ -1426,6 +1426,54 @@ async fn main() -> Result<()> {
 fn bail_arg(a: &str) -> ! {
     eprintln!("browse: 参数不认识 {a}（用法错，退出 2）");
     std::process::exit(2);
+}
+
+/// 全局旗标名册（评审 #67 三轮 G10）：子命令收集环遇到「认识的全局旗标
+/// 尾置」时报位置错而非「参数不认识」，消措辞矛盾。与 main 解析臂手工
+/// 同步（旗标增删时同步此表;漂移由 surface_contract 旗标抽取测试旁证）。
+const KNOWN_GLOBAL_FLAGS: &[&str] = &[
+    "--eval",
+    "-e",
+    "--gen-surface",
+    "--serve",
+    "--bind",
+    "--connect",
+    "--new-tab",
+    "--ws",
+    "--port",
+    "--chrome",
+    "--profile",
+    "--headless",
+    "--pipe",
+    "--proxy",
+    "--proxy-bypass",
+    "--engine-arg",
+    "--isolated",
+    "--idle-timeout",
+    "--cookies",
+    "--secrets",
+    "--js",
+    "--b64",
+    "--json",
+    "--llms",
+    "--repl",
+    "--full",
+    "-h",
+    "--help",
+    "-V",
+    "--version",
+    "--vars",
+    "--root",
+];
+
+/// 子命令收集环的旗标 bail 分面（评审 #67 三轮 G10）：认识的全局旗标
+/// 尾置给位置 CTA（前置形即合法），未知旗标走 bail_arg 原面。
+fn bail_flag_in_subcommand(a: &str) -> ! {
+    if KNOWN_GLOBAL_FLAGS.contains(&a) {
+        eprintln!("browse: {a} 是全局旗标，要置于子命令与脚本位之前（尾置形不收；退出 2）");
+        std::process::exit(2);
+    }
+    bail_arg(a)
 }
 
 /// CLI 实参游标，必值与旗标收集两口分面。单口混用会互踩：必值守卫直出

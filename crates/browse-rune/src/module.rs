@@ -53,9 +53,6 @@ impl ObjHandle {
 struct WorldCtx {
     /// `Runtime.evaluate` 要的 executionContextId。
     context_id: i64,
-    /// addScriptToEvaluateOnNewDocument 的注册 identifier（收尾注销用，
-    /// 评审 #67 一轮 G1：防每执行重复注册无界增长）。
-    script_id: Option<i64>,
 }
 
 /// cdp 模块的会话侧状态：会话句柄加当前隔离世界。
@@ -67,6 +64,9 @@ pub(crate) struct CdpState {
     /// 对象组名（每执行随机后缀，评审 #67 一轮 G2：并行执行不互踩
     /// 他组句柄；今有 eval_lock 串行兜底，随机组是纵深）。
     object_group: String,
+    /// addScriptToEvaluateOnNewDocument 的注册 identifier（收尾注销用，
+    /// 评审 #67 一轮 G1）。独立 std 锁：Drop 兜底道不可 await/blocking_lock。
+    script_id: std::sync::Mutex<Option<i64>>,
 }
 
 const WORLD_NAME: &str = "browse-rune";
@@ -97,7 +97,7 @@ impl CdpState {
             .and_then(Value::as_str)
             .ok_or_else(|| cdp_err("ensure_world", "取主 frame id 失败"))?
             .to_string();
-        if w.script_id.is_none() {
+        if self.script_id.lock().map(|g| g.is_none()).unwrap_or(false) {
             let r = self
                 .session
                 .call(
@@ -108,7 +108,9 @@ impl CdpState {
                 .map_err(|e| {
                     cdp_err("ensure_world", format!("addScriptToEvaluateOnNewDocument: {e:#}"))
                 })?;
-            w.script_id = r.get("identifier").and_then(Value::as_i64);
+            if let Ok(mut g) = self.script_id.lock() {
+                *g = r.get("identifier").and_then(Value::as_i64);
+            }
         }
         let world = self
             .session
@@ -198,6 +200,7 @@ pub fn cdp_module(
         session: session.clone(),
         world: tokio::sync::Mutex::new(WorldCtx::default()),
         object_group: format!("browse-rune-{}", next_group_seq()),
+        script_id: std::sync::Mutex::new(None),
     });
 
     {
@@ -390,7 +393,14 @@ pub fn cdp_module(
         })
         .build()?;
     }
-    Ok((m, Cleanup { session, state }))
+    Ok((
+        m,
+        Cleanup {
+            session,
+            state,
+            settled: std::sync::atomic::AtomicBool::new(false),
+        },
+    ))
 }
 
 /// 对象组序号（每执行独立组名用）。
@@ -406,12 +416,21 @@ fn next_group_seq() -> u64 {
 pub struct Cleanup {
     session: Arc<cdp::Session>,
     state: Arc<CdpState>,
+    /// 已清账闸（显式 `run()` 先置位；Drop 兜底见此即让）。
+    settled: std::sync::atomic::AtomicBool,
 }
 
 impl Cleanup {
-    /// 清账腿：`Runtime.releaseObjectGroup`（本执行随机组）与
+    /// 显式清账腿：`Runtime.releaseObjectGroup`（本执行随机组）与
     /// `Page.removeScriptToEvaluateOnNewDocument`（本次注册的引导）。
+    /// 先置 settled 再干活：清账 future 自身被丢弃时不双跑。
     pub async fn run(&self) {
+        self.settled
+            .store(true, std::sync::atomic::Ordering::SeqCst);
+        self.cleanup_inner().await;
+    }
+
+    async fn cleanup_inner(&self) {
         let _ = self
             .session
             .call(
@@ -419,7 +438,10 @@ impl Cleanup {
                 json!({ "objectGroup": self.state.object_group }),
             )
             .await;
-        if let Some(id) = self.state.world.lock().await.script_id.take() {
+        // 先取出 id 即弃守卫：std 锁守卫不可跨 await（跨即 future !Send，
+        // axum Handler 界破）
+        let script_id = self.state.script_id.lock().ok().and_then(|mut g| g.take());
+        if let Some(id) = script_id {
             let _ = self
                 .session
                 .call(
@@ -427,6 +449,40 @@ impl Cleanup {
                     json!({ "identifier": id }),
                 )
                 .await;
+        }
+    }
+}
+
+impl Drop for Cleanup {
+    /// 超时丢弃兜底（评审 #67 一轮 G2 收口）：daemon 超时 drop 执行
+    /// future 时清账仍要走——借当前 tokio 运行时排程清账任务；无运行时
+    /// 上下文（同步测试态）或已显式清账时静默让位。
+    fn drop(&mut self) {
+        if self.settled.load(std::sync::atomic::Ordering::SeqCst) {
+            return;
+        }
+        self.settled
+            .store(true, std::sync::atomic::Ordering::SeqCst);
+        let session = self.session.clone();
+        let group = self.state.object_group.clone();
+        let script_id = self.state.script_id.lock().ok().and_then(|mut g| g.take());
+        if let Ok(handle) = tokio::runtime::Handle::try_current() {
+            handle.spawn(async move {
+                let _ = session
+                    .call(
+                        "Runtime.releaseObjectGroup",
+                        json!({ "objectGroup": group }),
+                    )
+                    .await;
+                if let Some(id) = script_id {
+                    let _ = session
+                        .call(
+                            "Page.removeScriptToEvaluateOnNewDocument",
+                            json!({ "identifier": id }),
+                        )
+                        .await;
+                }
+            });
         }
     }
 }
