@@ -21,6 +21,8 @@
 
 vm_face 增 render_and_js_wrapper_face（render 过桥含双引号值、Strict 未填报 op 结构化降形）与六件全绿；e2e 增 rune_three_channel_integration（真 chrome：js 主世界页面函数 triple(7)=21、引号值往返、js_lib 库内 Jinja 21 乘 2=42、render 5x、stdin 参数道，五键回执锁定）。实弹装机面（BROWSE_NAME 隔离实例）：管道参数道 js=42 加 lib=40 加 stdin=hello-pipe；管道源码道同脚本同果 stdin 空串；--root 经 daemon 喂到 js_lib 实证。坑实录：json 模块与 Debug 协议对外部类型都出「object at 0x」占位（CdpError 的 ? 传播载荷丢 op/message），宿主侧 __describe 专降 JSON 形、脚本自造型回落 VM 内 Debug 双轨；旧 daemon 残留两吃缺函数假象（收割重启即愈）；一次过宽 pkill 可能波及 9902 他人实例（自愈面在，对方下次调用自动重拉）。[实证: fmt、clippy -D warnings、test --workspace 全绿、vm_face 6、e2e 真 chrome 7 件（含三通道）、aidoc --check --strict、metadata --locked、surface_contract 8（--llms 恰 120）、PEVO]
 
-## 发版 v0.25.0
+## 评审与发版 v0.25.0
 
-能力新增取 minor；评审闸门走 browse-codex-review，与 0.24.1（已本地 commit 4851c4d，e2e 6/6 后台补验绿）同场送审，双 tag 双发。
+同场双批送审（4851c4d 加 e646825）：一轮回执零 F 直接 CONFIRM（五核全过：G10 分面无误伤、G2 Drop 正确性、js 注入闭合性按构造逐项、__describe 三态实测、管道双义含空管道格）加 G1 至 G7；G1（root 终值防 CLI/长命 daemon env 分叉）、G2（args/vars 不可 JSON 化显式报错）、G3（js 体 return 出值披露）、G5（名册伪旁证措辞）一行级随手修（4f85578），G4 记账口径修正（逐目标行加总 227），G6（js_wrapper 单测/Drop 断言/三通道自动测试）与 G7（管道 EOF 提示、嗅探边界注记、清账任务无超时）记档下批。三行快核 CONFIRM。
+
+发版裁定：0.24.1 中间 patch 不单独发（release.ps1 版本闸对工作树 0.25.0 必红，且 minor 全含其内容；仓内「随批发未单独发版」先例 0.15.2），CHANGELOG 标注随 0.25.0 合并发布。三笔 4851c4d 加 e646825 加 4f85578 加 docs 7df57ea 推 main（eb0e022..7df57ea），tag v0.25.0；release.ps1 三平台直发六件；播种 run 36867577960、ci run 36867379570、docs run 36867379301 三绿全挂 7df57ea。评审格收轮回执已发。账本 #67 留 open（关单归 omc）。
