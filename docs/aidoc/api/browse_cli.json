@@ -70,7 +70,7 @@
     {
       "path": "browse_cli::client::load_template_ext",
       "kind": "function",
-      "docs": "[`load_template`] 的扩展名变体（#67：Rune 脚本用 `.rn`）。\n\n# Errors\n\n同 [`load_template`]：所有候选位都不存在或读失败。"
+      "docs": "[`load_template`] 的扩展名与语境标签变体（#67：Rune 脚本用 `.rn` 与\n「脚本」文案；评审 #67 一轮 G7）。\n\n# Errors\n\n同 [`load_template`]：所有候选位都不存在或读失败。"
     },
     {
       "path": "browse_cli::client::parse_vars_arg",

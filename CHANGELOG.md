@@ -6,6 +6,7 @@
 
 - **Rune 编排面（`browse rune`，ADR-0010）**：宿主侧全控制流编排脚本（Rune 语言，入口 `pub async fn main()` 返回 `Result`），经自注册 `cdp` 模块做效果：goto/eval/eval_handle/call/release/click/type_text/wait_sel 八函数全走自有 CDP 会话（非 chromiumoxide，652 方法与域策略守卫复用），Chrome 只经隔离世界（worldName `browse-rune`，每 tab `createIsolatedWorld` 加导航前同名引导脚本）`Runtime.evaluate` 碰页面；宿主只装 json/time/cdp 三模块（不装 rune-modules full，页面请求走浏览器网络栈），脚本无 `block_on`；双限额（指令一千万加分配 16MB，`runtime::budget` 与 `alloc::limit`）；错误二分（`cdp::CdpError{op,message}` 与脚本自造 `Timeout` 属脚本可见失败走 `{"error":…}` 回执，VM 错误含限额击穿是终态不重试）；参数 `serde_json` 字面量注入（禁拼选择器进 JS 字符串）；DOM 只留不透明 `ObjHandle`（CLONE 协议可复用，`call` 用 `function(){…}` 形收 this）；对象组执行收尾整组 `releaseObjectGroup`。CLI `browse rune <script.rn|@名>`（`@` 走 snippets 根三序与 `.rn` 两试回落字面路径，`--vars` 同命令小程序模板道）；daemon 增 `POST /rune`（与 `/eval` 同槽同超时同 envelope）。方言与 `--js` 契约零动（隔离世界只属 rune 面）
 - **新 crate crates/browse-rune 与新依赖 rune v0.14 加 rune-modules（json/time 特性）**：结果桥形为字符串回传道（`send_execute` 逃逸包装穿不透 serde 与 FromValue，探针定案在册 ADR-0010）
+- **评审一轮收口（F1 + G1 至 G7）**：F1 非 Result 入口文案点名契约（回传包装对裸值 main 不生效，vm_face 断言锁）；G1 世界引导脚本捕获 identifier 收尾注销（防每执行重复注册无界积压）；G2 对象组每执行随机组名（并行纵深；超时 drop 面记档）；G3 rune 臂接 engine_up 全旗标族（--cookies 显式报不支持）；G4 rune 解析臂对齐 snippets 族口径（未知旗标 bail、多余位用法错）；G5 http-api 八函数签名表加 surface --root 参数行；G6 Ok 载荷 Debug 兜底对称化加 type_text 未命中守卫；G7 文案语境化（脚本/模板）、--vars 先校验后读文件、字面路径 --root 提示、保留名与 iframe 边界披露
 - semver 判据结论（0.24.0 裁定）：能力新增取 minor（REQ-004 判据行）
 
 ## 0.23.0 - 2026-09-29

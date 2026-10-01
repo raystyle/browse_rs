@@ -20,6 +20,20 @@
 
 单测 vm_face 四件（ok 载荷过桥、脚本错误型 Debug 兜底、编译错 CTA 带诊断 span、千条指令预算击穿终态）；arg_contract rune 四臂（缺实参、@ 未命中列候选零 daemon、--vars 坏形、模板未填键点名零 daemon）；e2e rune_orchestration_roundtrip（真 chrome：goto 加 wait_sel 加 click 触发页面 handler 加 eval_handle 加 call（function 形 this）加 release，回执三键锁定，BROWSE_E2E 门控 SEQ 互斥）。实弹冒烟：模板参出 `{"ok":"vars-ok"}`、@名加根出 `{"ok":"plain"}`、type_text 全链出 `{"ok":"hello rune"}`、click 链 out=clicked 加 body=BODY。坑实录：本机 9880 被装机 daemon 反复占位（旧码 404 空体 EOF 假象）与 engine-profile 单实例锁，冒烟改 BROWSE_NAME 隔离实例加 BROWSE_CHROME 显式递托管 chrome 后全通；debug 二进制改 browse-rune 后须重链 browse-cli 才带新模块（常驻 daemon 也要收割重启才吃新码）。[实证: fmt、clippy -D warnings 零告警、test --workspace 全绿、doc-test、doc、aidoc --check --strict、metadata --locked、surface_contract 8（--llms 恰 120）、PEVO、e2e 6 过（真 chrome）]
 
+## 评审一轮（browse-codex-review）
+
+回执 F1 必修 + G1 至 G7 + 五核 CONFIRM（隔离世界并发面、双限额线程迁移不架空【评审方源码加实弹双证：Budget/Memory 逐 poll 装回 TLS，探针 I/J 分配帽与多线程指令帽真拦】、结果回传道兜底链、__wrap__ 注入边界、与既有面零互踩）。二轮探针面评审方自建四线程 runtime 实弹，未复跑 e2e 属其口径声明。
+
+- F1 必修（采纳）：非 Result 入口的裸值 main 使回传包装失效，旧文案「结果回传道异常」误导。修：文案点名入口契约（「脚本 main 未按契约返回 Result（入口形要 pub async fn main() 返回 Ok(..)/Err(..)）」），vm_face 增 non_result_main_gets_entry_form_cta 断言
+- G1 采纳：世界引导脚本原是每执行注册无注销（identifier 丢弃，跑 N 次积 N 条）。修：捕获 identifier，收尾 Cleanup 注销（removeScriptToEvaluateOnNewDocument）
+- G2 采纳半：对象组改每执行随机组名 browse-rune-<序号>（并行纵深）；超时 drop future 时收尾不执行、句柄待下次 rune 或 target 销毁回收（记档：daemon 超时面的 drop-guard 属后续批）
+- G3 采纳：rune 臂接 engine_up 全旗标族（--ws/--port/--chrome/--headless/--pipe/--profile/--proxy/--proxy-bypass/--isolated/--engine-arg/--secrets 不再静默失效）；--cookies 是 eval 前置热迁流程，rune 面显式 exit 2 报不支持
+- G4 采纳：rune 解析臂对齐 snippets 族口径（- 前缀未知旗标 bail、多余脚本位用法错；旧形余位静默落外层 catch-all），arg_contract 增双臂
+- G5 采纳：http-api.md 增八函数签名表（参数序、返回形、错误与边界：call 的 function 形 this、type_text 插入点不清空、wait_sel 超时返 false）；surface rune 条目补 --root 参数行
+- G6 采纳：Ok 载荷 json 化失败改 Debug 兜底（与 Err 侧对称，不再静默 null）；type_text 增选择器未命中守卫（与 click 同款报错，防文本插错焦点元素）
+- G7 采纳：@ 名未命中文案语境化（「脚本 X 未命中」，load_template_ext 增 kind 标签）；--vars 形状校验先于读文件；字面路径形 --root 给 stderr 提示（不生效但不拦）；__browse_rune_wrap__ 保留名与 iframe 边界写进 http-api
+- rune e2e 全量套曾单红一次：同命令双跑 e2e 互踩 profile（我方操作面），复跑 6/6 绿
+
 ## 待办
 
-评审闸门走 browse-codex-review；放行后推 main 发 0.24.0；账本 #67 留 open（关单归 omc）。
+评审二轮快核后 CONFIRM；放行后推 main 发 0.24.0；账本 #67 留 open（关单归 omc）。

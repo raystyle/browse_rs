@@ -53,8 +53,9 @@ impl ObjHandle {
 struct WorldCtx {
     /// `Runtime.evaluate` 要的 executionContextId。
     context_id: i64,
-    /// addScriptToEvaluateOnNewDocument 是否已随会话注册（幂等闸）。
-    bootstrap_registered: bool,
+    /// addScriptToEvaluateOnNewDocument 的注册 identifier（收尾注销用，
+    /// 评审 #67 一轮 G1：防每执行重复注册无界增长）。
+    script_id: Option<i64>,
 }
 
 /// cdp 模块的会话侧状态：会话句柄加当前隔离世界。
@@ -63,10 +64,12 @@ pub(crate) struct CdpState {
     session: Arc<cdp::Session>,
     /// 隔离世界缓存（导航后由 goto 置空重建）。
     world: tokio::sync::Mutex<WorldCtx>,
+    /// 对象组名（每执行随机后缀，评审 #67 一轮 G2：并行执行不互踩
+    /// 他组句柄；今有 eval_lock 串行兜底，随机组是纵深）。
+    object_group: String,
 }
 
 const WORLD_NAME: &str = "browse-rune";
-const OBJECT_GROUP: &str = "browse-rune";
 
 fn cdp_err(op: &str, message: impl std::fmt::Display) -> CdpError {
     CdpError {
@@ -94,8 +97,9 @@ impl CdpState {
             .and_then(Value::as_str)
             .ok_or_else(|| cdp_err("ensure_world", "取主 frame id 失败"))?
             .to_string();
-        if !w.bootstrap_registered {
-            self.session
+        if w.script_id.is_none() {
+            let r = self
+                .session
                 .call(
                     "Page.addScriptToEvaluateOnNewDocument",
                     json!({ "source": "/* browse-rune world bootstrap */", "worldName": WORLD_NAME }),
@@ -104,7 +108,7 @@ impl CdpState {
                 .map_err(|e| {
                     cdp_err("ensure_world", format!("addScriptToEvaluateOnNewDocument: {e:#}"))
                 })?;
-            w.bootstrap_registered = true;
+            w.script_id = r.get("identifier").and_then(Value::as_i64);
         }
         let world = self
             .session
@@ -133,7 +137,7 @@ impl CdpState {
         });
         if handle {
             params["returnByValue"] = json!(false);
-            params["objectGroup"] = json!(OBJECT_GROUP);
+            params["objectGroup"] = json!(self.object_group);
         } else {
             params["returnByValue"] = json!(true);
         }
@@ -172,7 +176,7 @@ impl CdpState {
 pub fn cdp_module(
     session: Arc<cdp::Session>,
     result_slot: Arc<std::sync::Mutex<Option<String>>>,
-) -> Result<Module, rune::ContextError> {
+) -> Result<(Module, Cleanup), rune::ContextError> {
     let mut m = Module::with_crate("cdp")?;
     m.ty::<CdpError>()?;
     m.ty::<ObjHandle>()?;
@@ -191,8 +195,9 @@ pub fn cdp_module(
         .build()?;
     }
     let state = Arc::new(CdpState {
-        session,
+        session: session.clone(),
         world: tokio::sync::Mutex::new(WorldCtx::default()),
+        object_group: format!("browse-rune-{}", next_group_seq()),
     });
 
     {
@@ -376,16 +381,43 @@ pub fn cdp_module(
         })
         .build()?;
     }
-    Ok(m)
+    Ok((m, Cleanup { session, state }))
 }
 
-/// 执行收尾的对象组清账：目标销毁/执行结束整组释放（方案边界条款）。
-/// best-effort：会话已断时静默（清账失败不掩盖脚本结果）。
-pub(crate) async fn release_object_group(session: &Arc<cdp::Session>) {
-    let _ = session
-        .call(
-            "Runtime.releaseObjectGroup",
-            json!({ "objectGroup": OBJECT_GROUP }),
-        )
-        .await;
+/// 对象组序号（每执行独立组名用）。
+fn next_group_seq() -> u64 {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static SEQ: AtomicU64 = AtomicU64::new(1);
+    SEQ.fetch_add(1, Ordering::Relaxed)
+}
+
+/// 执行收尾（方案边界条款 + 评审 #67 一轮 G1/G2）：整组释放本执行
+/// 对象组，注销世界引导脚本注册。best-effort：会话已断时静默（清账
+/// 失败不掩盖脚本结果）。
+pub struct Cleanup {
+    session: Arc<cdp::Session>,
+    state: Arc<CdpState>,
+}
+
+impl Cleanup {
+    /// 清账腿：`Runtime.releaseObjectGroup`（本执行随机组）与
+    /// `Page.removeScriptToEvaluateOnNewDocument`（本次注册的引导）。
+    pub async fn run(&self) {
+        let _ = self
+            .session
+            .call(
+                "Runtime.releaseObjectGroup",
+                json!({ "objectGroup": self.state.object_group }),
+            )
+            .await;
+        if let Some(id) = self.state.world.lock().await.script_id.take() {
+            let _ = self
+                .session
+                .call(
+                    "Page.removeScriptToEvaluateOnNewDocument",
+                    json!({ "identifier": id }),
+                )
+                .await;
+        }
+    }
 }

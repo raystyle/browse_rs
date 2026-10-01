@@ -566,10 +566,11 @@ pub fn render_template(body: &str, vars: &[(String, String)]) -> Result<String> 
 /// assert!(err.to_string().contains("no/such/tmpl"), "{}", err);
 /// ```
 pub fn load_template(name: &str, root: &std::path::Path) -> Result<(String, String)> {
-    load_template_ext(name, root, "js")
+    load_template_ext(name, root, "js", "模板")
 }
 
-/// [`load_template`] 的扩展名变体（#67：Rune 脚本用 `.rn`）。
+/// [`load_template`] 的扩展名与语境标签变体（#67：Rune 脚本用 `.rn` 与
+/// 「脚本」文案；评审 #67 一轮 G7）。
 ///
 /// # Errors
 ///
@@ -578,6 +579,7 @@ pub fn load_template_ext(
     name: &str,
     root: &std::path::Path,
     ext: &str,
+    kind: &str,
 ) -> Result<(String, String)> {
     if name.is_empty() {
         anyhow::bail!("@ 后缺模板名；下一步：browse --js @<库内名|路径> --vars 键=值");
@@ -611,7 +613,7 @@ pub fn load_template_ext(
     }
     tried.push(name.to_string());
     anyhow::bail!(
-        "模板 {name} 未命中（试过：{}）；下一步：browse snippets list 看库内在册，或核对文件路径",
+        "{kind} {name} 未命中（试过：{}）；下一步：browse snippets list 看库内在册，或核对文件路径",
         tried.join("、")
     );
 }

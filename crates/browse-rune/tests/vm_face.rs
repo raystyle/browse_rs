@@ -56,6 +56,18 @@ async fn compile_error_cta() {
     assert!(msg.contains("下一步"), "{msg}");
 }
 
+/// 非 Result 入口（评审一轮 F1）：文案点名入口契约，不误报回传道异常。
+#[tokio::test]
+async fn non_result_main_gets_entry_form_cta() {
+    let session = cdp::Session::new();
+    let err = run(session, "pub async fn main() { 42 }", DEFAULT_CAPS)
+        .await
+        .expect_err("裸值入口应按契约红");
+    let msg = err.to_string();
+    assert!(msg.contains("未按契约返回 Result"), "{msg}");
+    assert!(msg.contains("pub async fn main()"), "{msg}");
+}
+
 /// 指令预算击穿：VmError 终态（不重试面）。
 #[tokio::test]
 async fn budget_cap_is_terminal() {

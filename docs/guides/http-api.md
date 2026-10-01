@@ -36,6 +36,21 @@
 
 脚本在 daemon 侧独立 VM 执行（Rune 语言，入口恒 `pub async fn main()` 且返回 `Result`；`?` 传播 `cdp::CdpError`）。宿主只装 json/time/cdp 三模块；cdp 模块八函数 `goto`/`eval`/`eval_handle`/`call`/`release`/`click`/`type_text`/`wait_sel`，全走自有 CDP 会话，Chrome 只经隔离世界（worldName `browse-rune`）`Runtime.evaluate` 碰页面。双限额（指令一千万、分配 16MB）；对象组执行收尾整组释放。
 
+八函数签名（`Result` 的 `E` 恒 `cdp::CdpError`）：
+
+| 函数 | 形 | 说明 |
+|---|---|---|
+| `goto(url)` | `-> Result<String>` | `Page.navigate` 加等 readyState 脱 loading（上限 15s）；返回 frameId |
+| `eval(expr)` | `-> Result<Value>` | 隔离世界求值（`awaitPromise` 加 `returnByValue`）；`() ↔ null`、对象/数组直桥 |
+| `eval_handle(expr)` | `-> Result<ObjHandle>` | 同上不取值，返回不透明句柄（对象组记账） |
+| `call(handle, fn_src)` | `-> Result<Value>` | `Runtime.callFunctionOn`；`fn_src` 用 `function(){…}` 形收 `this`（箭头函数是词法 this） |
+| `release(handle)` | `-> Result<()>` | 释放单个句柄 |
+| `click(sel)` | `-> Result<()>` | 隔离世界定位取中心点，`Input.dispatchMouseEvent` 真实点击；未命中报错 |
+| `type_text(sel, text)` | `-> Result<()>` | 聚焦后 `Input.insertText` 插在插入点（不清空原值）；未命中报错 |
+| `wait_sel(sel, ms)` | `-> Result<bool>` | 百毫秒轮询，超时返 `false` 不报错（脚本自裁 `Timeout`） |
+
+边界：八函数都在主 frame（iframe 内不可编排，frame 形后续批）；执行器会自动追加 `__browse_rune_wrap__` 包装函数（用户脚本请勿用同名）。
+
 响应 envelope 与 `/eval` 同形（`ok`/`value`/`engineContext` 或 `ok:false`/`error`）；`value` 是 rune 回执：`{"ok": <main 成功载荷>}` 或 `{"error": <脚本可见失败载荷>}`（脚本自造 `Timeout` 型、`cdp::CdpError{op,message}` 都属后者）。编译错、VM 终态（含限额击穿）、超时走 `error` 面。细节与脚本写法见 `browse --llms` 的 rune 条目与 crates/browse-rune 文档。
 
 ```bash

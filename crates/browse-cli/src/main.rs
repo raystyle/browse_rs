@@ -1274,9 +1274,28 @@ async fn main() -> Result<()> {
                 );
                 std::process::exit(2);
             };
+            // --vars 形状校验先于读文件（评审 #67 一轮 G7：坏形即刻报，
+            // 不让文件错掩盖参数错）
+            let parsed_vars: Vec<(String, String)> = vars
+                .iter()
+                .map(|v| {
+                    browse_cli::client::parse_vars_arg(v).unwrap_or_else(|| {
+                        eprintln!("browse: --vars 要 键=值 形（得到 {v}；退出 2）");
+                        std::process::exit(2);
+                    })
+                })
+                .collect();
             let (root, _explicit) = snippets_root(snippets_root_flag.clone());
+            let at_form = target.starts_with('@');
+            if !at_form && snippets_root_flag.is_some() {
+                // 评审 #67 一轮 G7：字面路径形 --root 不生效（根只服务 @ 名）
+                eprintln!(
+                    "提示：--root 只对 @ 名生效，字面路径形不读片段库根（{}）",
+                    root.display()
+                );
+            }
             let body = if let Some(name) = target.strip_prefix('@') {
-                match browse_cli::client::load_template_ext(name, &root, "rn") {
+                match browse_cli::client::load_template_ext(name, &root, "rn", "脚本") {
                     Ok((_p, b)) => b,
                     Err(e) => {
                         eprintln!("{e:#}");
@@ -1295,19 +1314,10 @@ async fn main() -> Result<()> {
                 }
             };
             // --vars 模板道（与 #66 同一道）：给了即渲染（未填键 exit 2 带键名）
-            let body = if vars.is_empty() {
+            let body = if parsed_vars.is_empty() {
                 body
             } else {
-                let parsed: Vec<(String, String)> = vars
-                    .iter()
-                    .map(|v| {
-                        browse_cli::client::parse_vars_arg(v).unwrap_or_else(|| {
-                            eprintln!("browse: --vars 要 键=值 形（得到 {v}；退出 2）");
-                            std::process::exit(2);
-                        })
-                    })
-                    .collect();
-                match browse_cli::client::render_template(&body, &parsed) {
+                match browse_cli::client::render_template(&body, &parsed_vars) {
                     Ok(b) => b,
                     Err(e) => {
                         eprintln!("{e:#}");
@@ -1315,7 +1325,33 @@ async fn main() -> Result<()> {
                     }
                 }
             };
-            browse_cli::client::ensure_daemon().await?;
+            // 引擎/连接旗标族照 eval 面生效（评审 #67 一轮 G3：--ws/--port/
+            // --chrome/--headless/--pipe/--profile/--proxy/--isolated/
+            // --engine-arg/--secrets 不再静默失效；--cookies 是 eval 前置
+            // 的热迁流程，rune 面显式报不支持）
+            if cookies_csv.is_some() {
+                eprintln!(
+                    "browse: --cookies 尚不支持 rune 面（属引擎起后的登录态热迁流程；退出 2）"
+                );
+                std::process::exit(2);
+            }
+            if let Some(f) = &secrets {
+                browse_core::load_secrets(f)?;
+            }
+            client::ensure_daemon().await?;
+            client::engine_up(client::UpParams {
+                headless,
+                chrome,
+                ws,
+                port,
+                pipe,
+                profile,
+                proxy,
+                proxy_bypass,
+                isolated,
+                engine_args,
+            })
+            .await?;
             match browse_cli::client::rune(&body).await {
                 Ok(v) => {
                     println!("{}", serde_json::to_string_pretty(&v)?);

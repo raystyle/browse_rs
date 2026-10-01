@@ -18,7 +18,7 @@ use std::sync::Arc;
 use anyhow::{Result, anyhow};
 use serde_json::{Value, json};
 
-use crate::module::{cdp_module, release_object_group};
+use crate::module::cdp_module;
 
 /// 双限额（方案条款：执行时套两层；原生函数自己尊重预算——本模块的
 /// 长动作都有界：goto 等 15s、wait_sel 按参）。
@@ -41,7 +41,7 @@ const WRAPPER: &str = r#"
 pub async fn __browse_rune_wrap__() {
     let r = main().await;
     match r {
-        Ok(v) => cdp::__result(format!("ok:{}", match json::to_string(v) { Ok(s) => s, Err(_) => "null" })),
+        Ok(v) => cdp::__result(format!("ok:{}", match json::to_string(v) { Ok(s) => s, Err(_) => format!("{:?}", v) })),
         Err(e) => cdp::__result(format!("err:{}", match json::to_string(e) { Ok(s) => s, Err(_) => format!("{:?}", e) })),
     }
 }
@@ -56,20 +56,62 @@ pub async fn __browse_rune_wrap__() {
 ///
 /// 编译失败、VM 终态错误、双限额击穿、结果回传道异常。
 pub async fn run(session: Arc<cdp::Session>, source: &str, caps: Caps) -> Result<Value> {
-    let out = run_raw(session.clone(), source, caps).await;
-    release_object_group(&session).await;
+    run_with_cleanup(session, source, caps).await
+}
+
+/// [`run`] 的实现腿：收尾清账（对象组释放加引导脚本注销）。
+async fn run_with_cleanup(session: Arc<cdp::Session>, source: &str, caps: Caps) -> Result<Value> {
+    let cleanup = run_capture_cleanup(session, source, caps).await;
+    let (out, cleanup) = cleanup;
+    if let Some(c) = &cleanup {
+        c.run().await;
+    }
     out
 }
 
-async fn run_raw(session: Arc<cdp::Session>, source: &str, caps: Caps) -> Result<Value> {
+/// 裸执行腿：返回结果与收尾器（None = 编译前失败，无清账面）。
+async fn run_capture_cleanup(
+    session: Arc<cdp::Session>,
+    source: &str,
+    caps: Caps,
+) -> (Result<Value>, Option<crate::module::Cleanup>) {
+    match run_raw(session, source, caps).await {
+        (out, Some(c)) => (out, Some(c)),
+        (out, None) => (out, None),
+    }
+}
+
+async fn run_raw(
+    session: Arc<cdp::Session>,
+    source: &str,
+    caps: Caps,
+) -> (Result<Value>, Option<crate::module::Cleanup>) {
     let result_slot = Arc::new(std::sync::Mutex::new(None::<String>));
-    let mut context = rune::Context::with_default_modules()?;
-    context.install(rune_modules::json::module(true)?)?;
-    context.install(rune_modules::time::module(true)?)?;
-    context.install(cdp_module(session, result_slot.clone())?)?;
+    let mut context = match rune::Context::with_default_modules() {
+        Ok(c) => c,
+        Err(e) => return (Err(anyhow!("Rune 上下文构建失败：{e}")), None),
+    };
+    let (module, cleanup) = match cdp_module(session, result_slot.clone()) {
+        Ok(v) => v,
+        Err(e) => return (Err(anyhow!("cdp 模块注册失败：{e}")), None),
+    };
+    let build_ctx = (|| -> Result<(), anyhow::Error> {
+        context.install(rune_modules::json::module(true).map_err(|e| anyhow!("{e}"))?)?;
+        context.install(rune_modules::time::module(true).map_err(|e| anyhow!("{e}"))?)?;
+        context.install(module).map_err(|e| anyhow!("{e}"))?;
+        Ok(())
+    })();
+    if let Err(e) = build_ctx {
+        return (Err(e), Some(cleanup));
+    }
 
     let mut sources = rune::Sources::new();
-    sources.insert(rune::Source::new("script", format!("{source}\n{WRAPPER}"))?)?;
+    let inserted = rune::Source::new("script", format!("{source}\n{WRAPPER}"))
+        .map_err(|e| anyhow!("{e}"))
+        .and_then(|src| sources.insert(src).map_err(|e| anyhow!("{e}")));
+    if let Err(e) = inserted {
+        return (Err(e), Some(cleanup));
+    }
     let mut diagnostics = rune::Diagnostics::new();
     let built = rune::prepare(&mut sources)
         .with_context(&context)
@@ -82,44 +124,70 @@ async fn run_raw(session: Arc<cdp::Session>, source: &str, caps: Caps) -> Result
             let mut buf = rune::termcolor::Buffer::no_color();
             let _ = diagnostics.emit(&mut buf, &sources);
             let text = String::from_utf8_lossy(buf.as_slice()).trim().to_string();
-            anyhow::bail!(
-                "Rune 编译失败：{e}\n{text}\n下一步：修脚本语法（入口 pub async fn main()）"
+            return (
+                Err(anyhow!(
+                    "Rune 编译失败：{e}\n{text}\n下一步：修脚本语法（入口 pub async fn main() 返回 Result）"
+                )),
+                Some(cleanup),
             );
         }
     };
 
     use rune::alloc::clone::TryClone;
-    let rt = Arc::new(context.runtime()?);
-    let vm = rune::Vm::new(rt, Arc::new(unit)).try_clone()?;
-    let exec = vm.send_execute(["__browse_rune_wrap__"], ())?;
+    let vm = match (|| -> Result<rune::Vm> {
+        let rt = Arc::new(context.runtime().map_err(|e| anyhow!("{e}"))?);
+        let vm = rune::Vm::new(rt, Arc::new(unit));
+        vm.try_clone().map_err(|e| anyhow!("{e}"))
+    })() {
+        Ok(v) => v,
+        Err(e) => return (Err(e), Some(cleanup)),
+    };
+    let exec = match vm.send_execute(["__browse_rune_wrap__"], ()) {
+        Ok(e) => e,
+        Err(e) => return (Err(anyhow!("Rune 入口派发失败：{e}")), Some(cleanup)),
+    };
     // 双限额：budget 管指令数，limit 管分配；两层都是 Future 包装可组合
     let budgeted = rune::runtime::budget::with(caps.instructions, exec.async_complete());
     let limited = rune::alloc::limit::with(caps.memory, budgeted);
     let result: rune::runtime::VmResult<rune::runtime::Value> = limited.await;
-    result.into_result().map_err(|e| {
-        anyhow!(
-            "Rune VM 终态错误（不重试）：{e}；下一步：看脚本逻辑与限额（指令 {}、分配 {}）",
-            caps.instructions,
-            caps.memory
-        )
-    })?;
+    if let Err(e) = result.into_result() {
+        return (
+            Err(anyhow!(
+                "Rune VM 终态错误（不重试）：{e}；下一步：看脚本逻辑与限额（指令 {}、分配 {}）",
+                caps.instructions,
+                caps.memory
+            )),
+            Some(cleanup),
+        );
+    }
 
-    let payload = result_slot
-        .lock()
-        .ok()
-        .and_then(|mut g| g.take())
-        .ok_or_else(|| {
-            anyhow!(
-                "结果回传道异常（脚本未走 __result 包装）；下一步：报告 browse issue，附脚本与回执"
-            )
-        })?;
-    let (tag, body) = payload.split_once(':').ok_or_else(|| {
-        anyhow!("结果回传道异常（载荷无标签形：{payload}）；下一步：报告 browse issue")
-    })?;
-    let value = serde_json::from_str(body).unwrap_or_else(|_| Value::String(body.to_string()));
-    match tag {
+    let payload = result_slot.lock().ok().and_then(|mut g| g.take());
+    let Some(payload) = payload else {
+        // 评审 #67 一轮 F1：最常见根因是 main 未按契约返回 Result（裸值
+        // 入口使回传包装匹配失效），文案点名入口形
+        return (
+            Err(anyhow!(
+                "脚本 main 未按契约返回 Result（入口形要 pub async fn main() 返回 Ok(..)/Err(..)；裸值入口的回传包装不生效）；下一步：修入口形后重跑"
+            )),
+            Some(cleanup),
+        );
+    };
+    let Some((tag, body)) = payload.split_once(':') else {
+        return (
+            Err(anyhow!(
+                "结果回传道异常（载荷无标签形：{payload}）；下一步：报告 browse issue"
+            )),
+            Some(cleanup),
+        );
+    };
+    let (tag, body) = (tag.to_string(), body.to_string());
+    let value = serde_json::from_str(&body).unwrap_or_else(|_| Value::String(body.to_string()));
+    let out = match tag.as_str() {
         "ok" => Ok(json!({ "ok": value })),
         "err" => Ok(json!({ "error": value })),
-        other => anyhow::bail!("结果回传道异常（未知标签 {other}）；下一步：报告 browse issue"),
-    }
+        other => Err(anyhow!(
+            "结果回传道异常（未知标签 {other}）；下一步：报告 browse issue"
+        )),
+    };
+    (out, Some(cleanup))
 }
