@@ -1398,7 +1398,11 @@ async fn main() -> Result<()> {
                 engine_args,
             })
             .await?;
-            match browse_cli::client::rune(&body, snippets_root_flag.clone(), stdin_param).await {
+            // 评审双批 G1：递根三序终值（旗标 > env > 内置在此收口），防 CLI 与
+            // 长命 daemon 两侧 env 各解一次的分叉
+            match browse_cli::client::rune(&body, Some(root.display().to_string()), stdin_param)
+                .await
+            {
                 Ok(v) => {
                     println!("{}", serde_json::to_string_pretty(&v)?);
                     Ok(())
@@ -1458,7 +1462,7 @@ fn bail_arg(a: &str) -> ! {
 
 /// 全局旗标名册（评审 #67 三轮 G10）：子命令收集环遇到「认识的全局旗标
 /// 尾置」时报位置错而非「参数不认识」，消措辞矛盾。与 main 解析臂手工
-/// 同步（旗标增删时同步此表;漂移由 surface_contract 旗标抽取测试旁证）。
+/// 同步（旗标增删时同步此表（无自动旁证，漂移由评审面盯））。
 const KNOWN_GLOBAL_FLAGS: &[&str] = &[
     "--eval",
     "-e",

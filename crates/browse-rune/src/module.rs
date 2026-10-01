@@ -515,10 +515,19 @@ pub fn cdp_module(ctx: ModuleCtx) -> Result<(Module, Cleanup), rune::ContextErro
             async move {
                 // args 对象经 serde 成 JSON 字面量注入（单双引号反引号
                 // 天然安全；体原样入包裹器零拼接）
-                let args_json = serde_json::to_string(
-                    &serde_json::to_value(&args).unwrap_or(serde_json::Value::Null),
-                )
-                .unwrap_or_else(|_| "null".to_string());
+                // 评审双批 G2：args 不可 JSON 化显式报错（外部类型静默降
+                // null 会让 JS 侧报类型错，误导根因）
+                let args_val = match serde_json::to_value(&args) {
+                    Ok(v) => v,
+                    Err(e) => {
+                        return Err(cdp_err(
+                            "js",
+                            format!("args 不可 JSON 化：{e}（外部类型先在脚本内转基本值）"),
+                        ));
+                    }
+                };
+                let args_json =
+                    serde_json::to_string(&args_val).unwrap_or_else(|_| "null".to_string());
                 let r = st.eval_main_world(&js_wrapper(&src, &args_json)).await?;
                 CdpState::bridge(&r)
             }
@@ -536,7 +545,15 @@ pub fn cdp_module(ctx: ModuleCtx) -> Result<(Module, Cleanup), rune::ContextErro
                 };
                 // #66 全同管线：vars 对象做 Jinja 渲染（Strict；未填键报错
                 // 带 op=js_lib），渲染产物进主世界执行（args 空对象占位）
-                let vars_json = serde_json::to_value(&vars).unwrap_or(serde_json::Value::Null);
+                let vars_json = match serde_json::to_value(&vars) {
+                    Ok(v) => v,
+                    Err(e) => {
+                        return Err(cdp_err(
+                            "js_lib",
+                            format!("vars 不可 JSON 化：{e}（外部类型先在脚本内转基本值）"),
+                        ));
+                    }
+                };
                 let rendered = match jinja_env().render_str(&body, vars_json) {
                     Ok(t) => t,
                     Err(e) => {
@@ -553,7 +570,15 @@ pub fn cdp_module(ctx: ModuleCtx) -> Result<(Module, Cleanup), rune::ContextErro
         .build()?;
     }
     m.function("render", |tpl: String, vars: RuneValue| {
-        let vars_json = serde_json::to_value(&vars).unwrap_or(serde_json::Value::Null);
+        let vars_json = match serde_json::to_value(&vars) {
+            Ok(v) => v,
+            Err(e) => {
+                return Err(cdp_err(
+                    "render",
+                    format!("vars 不可 JSON 化：{e}（外部类型先在脚本内转基本值）"),
+                ));
+            }
+        };
         match jinja_env().render_str(&tpl, vars_json) {
             Ok(out) => Ok(out),
             Err(e) => Err(cdp_err(

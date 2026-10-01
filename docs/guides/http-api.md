@@ -48,7 +48,7 @@
 | `click(sel)` | `-> Result<()>` | 隔离世界定位取中心点，`Input.dispatchMouseEvent` 真实点击；未命中报错 |
 | `type_text(sel, text)` | `-> Result<()>` | 聚焦后 `Input.insertText` 插在插入点（不清空原值）；未命中报错 |
 | `wait_sel(sel, ms)` | `-> Result<bool>` | 百毫秒轮询，超时返 `false` 不报错（脚本自裁 `Timeout`） |
-| `js(src, args)` | `-> Result<Value>` | 内联 JS 小程序体（`--js` 同语义**主世界**执行、页面函数可调）；args 对象 JSON 字面量注入（引号天然安全） |
+| `js(src, args)` | `-> Result<Value>` | 内联 JS 小程序体（**主世界**执行、页面函数可调）；args 对象 JSON 字面量注入（引号天然安全）；体须用 `return` 出值（裸表达式得 null，与 `--js` 的完成值语义不同） |
 | `js_lib(name, vars)` | `-> Result<Value>` | 直调 snippets 库内 `.js` 小程序（名原样与补 `.js` 两试），vars 做 Jinja 渲染（#66 全同管线）后主世界执行 |
 | `render(tpl, vars)` | `-> Result<String>` | 运行时 Jinja（Strict；未填键走 `CdpError{op:"render"}`） |
 | `stdin()` | `-> String` | 管道参数道捕获串（CLI 有实参时管道串经请求体 stdin 字段递入；无管道空串） |
