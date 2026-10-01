@@ -663,6 +663,28 @@
       "output": "runtime JSON（回值随页面与 CDP 而定）",
       "type": "object"
     },
+    "cli.rune": {
+      "description": "browse rune <script.rn|@名> [--vars k=v] [--root <dir>] Rune 编排面（命令小程序的宿主侧全控制流形态）：脚本在独立 VM 跑（Rune 语言，入口 pub async fn main() 返回 Result），经自注册 cdp 模块做效果——goto/eval/eval_handle/call/release/click/type_text/wait_sel 八函数全走自有 CDP 会话，Chrome 只经隔离世界 Runtime.evaluate 碰页面；宿主只装 json/time/cdp 三模块，双限额（指令与分配），未填模板键网络前拦 exit 2。错误二分：cdp::CdpError{op,message} 与脚本自造 Timeout 属脚本可见失败，VM 错误是终态。eval_handle 句柄经 clone 复用，call 的函数体用 function(){...} 形收 this（箭头函数是词法 this 不接绑定）。方言/--js 契约零动。",
+      "example": "browse rune @x.test/fill-form --vars q=hello",
+      "input": {
+        "properties": {
+          "script": {
+            "description": "缺省 @ 前缀走 snippets 根(.rn 两试)或字面路径",
+            "type": "string"
+          },
+          "vars": {
+            "description": "缺省 模板道（Jinja 渲染源码后编译，同命令小程序）",
+            "type": "string"
+          }
+        },
+        "required": [
+          "script"
+        ],
+        "type": "object"
+      },
+      "output": "runtime JSON（回值随页面与 CDP 而定）",
+      "type": "object"
+    },
     "cli.self-update": {
       "description": "browse update 自更新 browse 二进制（镜像 stable 段优先：判新读 latest 标记、下载取资产，缺或坏回落 GitHub，sha256 锚校验，自证回滚；ark 管理安装拦走 ark）。",
       "example": "browse update",

@@ -9,6 +9,7 @@ repository.workspace = true
 [dependencies]
 anyhow = { workspace = true }
 axum = { workspace = true }
+browse-rune = { path = "../browse-rune" }
 cdp = { path = "../cdp" }
 futures = { workspace = true }
 reqwest = { workspace = true, features = ["blocking"] }

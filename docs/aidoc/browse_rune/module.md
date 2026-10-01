@@ -1,0 +1,20 @@
+# browse-rune::module
+
+自注册 `cdp` 模块（账本 #67）：八个效果函数全走自有 [`cdp::Session`]
+的 `call`，Chrome 只经隔离世界 `Runtime.evaluate` 碰页面。
+
+纪律：参数经 `serde_json::to_string` 做成 JS 字面量再传入（禁止把
+选择器拼进 JS 字符串）；小结果走 JSON 过桥（`() ↔ null`、`#{ } ↔
+object`、数组对数组），DOM 节点只留 [`ObjHandle`] 不透明句柄；对象
+组随会话记账（本组恒名 `browse-rune`，执行收尾整组
+`Runtime.releaseObjectGroup`）；会话句柄留 Rust 侧，不进脚本全局。
+
+## Functions
+
+- `cdp_module` — 注册 `cdp` 模块（方案八函数面）：`goto`/`eval`/`eval_handle`/`call`/
+
+## Types
+
+- `CdpError` — 脚本可见的 CDP 失败型（方案错误约定）：`op` 是失败操作名，`message`
+- `ObjHandle` — DOM 节点不透明句柄：`eval_handle` 产出，`call`/`release` 消费；脚本
+

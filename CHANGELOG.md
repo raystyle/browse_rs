@@ -2,6 +2,12 @@
 
 版本级里程碑；逐批过程见 docs/diary。semver 判据在册 docs/requirements/REQ-004。
 
+## 0.24.0 - 2026-10-01
+
+- **Rune 编排面（`browse rune`，ADR-0010）**：宿主侧全控制流编排脚本（Rune 语言，入口 `pub async fn main()` 返回 `Result`），经自注册 `cdp` 模块做效果：goto/eval/eval_handle/call/release/click/type_text/wait_sel 八函数全走自有 CDP 会话（非 chromiumoxide，652 方法与域策略守卫复用），Chrome 只经隔离世界（worldName `browse-rune`，每 tab `createIsolatedWorld` 加导航前同名引导脚本）`Runtime.evaluate` 碰页面；宿主只装 json/time/cdp 三模块（不装 rune-modules full，页面请求走浏览器网络栈），脚本无 `block_on`；双限额（指令一千万加分配 16MB，`runtime::budget` 与 `alloc::limit`）；错误二分（`cdp::CdpError{op,message}` 与脚本自造 `Timeout` 属脚本可见失败走 `{"error":…}` 回执，VM 错误含限额击穿是终态不重试）；参数 `serde_json` 字面量注入（禁拼选择器进 JS 字符串）；DOM 只留不透明 `ObjHandle`（CLONE 协议可复用，`call` 用 `function(){…}` 形收 this）；对象组执行收尾整组 `releaseObjectGroup`。CLI `browse rune <script.rn|@名>`（`@` 走 snippets 根三序与 `.rn` 两试回落字面路径，`--vars` 同命令小程序模板道）；daemon 增 `POST /rune`（与 `/eval` 同槽同超时同 envelope）。方言与 `--js` 契约零动（隔离世界只属 rune 面）
+- **新 crate crates/browse-rune 与新依赖 rune v0.14 加 rune-modules（json/time 特性）**：结果桥形为字符串回传道（`send_execute` 逃逸包装穿不透 serde 与 FromValue，探针定案在册 ADR-0010）
+- semver 判据结论（0.24.0 裁定）：能力新增取 minor（REQ-004 判据行）
+
 ## 0.23.0 - 2026-09-29
 
 - **JS 模板参数化执行（命令小程序）**：@ 实参加 `--vars 键=值`（可重复累积，不收逗号分隔）同给即模板道。模板源先按 snippets 根解析（`--root` 旗标 > `BROWSE_SNIPPETS_ROOT` env > 内置缺省三序；`根/<名>` 原样与补 `.js` 两试，越根候选跳过守卫语义同 snippets show），未命中回落字面路径（#64 语义：绝对/相对皆可）；按 Jinja 语法渲染（minijinja，ADR-0009：Strict undefined、零 autoescape；`{{ 键 }}` 直插值、`| default()` 可选参、`{% for %}` 生成面），未填键网络前拦 exit 2 报全部未填键名并给 `--vars` 补齐 CTA。不给 `--vars` 即 #64 纯透传，字面大括号对天然不误伤（零静默漂移）；方言与 `--js` 两形态同用；`--root` 升为全局旗标（eval 面模板道与 snippets 子命令共用一根）。snippets 定位升格：从「可复用 JS 片段」升为「参数化 JS 命令小程序库」（代码驻库，一条命令一个可复用小程序）；workspace 存编排知识、snippets 存命令小程序，两层各司其职

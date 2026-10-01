@@ -222,7 +222,7 @@ fn faces_free_of_internal_ids() {
             .get(i + 1 + digits)
             .is_some_and(|x| x.is_ascii_alphanumeric());
         if (1..=3).contains(&digits) && !followed_alnum {
-            let peek = &corpus[i..corpus.len().min(i + 24)];
+            let peek: String = corpus[i..].chars().take(24).collect();
             panic!("对外面出现裸 #NN 台账号：{peek}");
         }
     }

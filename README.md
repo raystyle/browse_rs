@@ -110,6 +110,7 @@ browse 'await fillRef("e2", "hello")'                 # 按引用填输入
 browse 'await clickRef("e3")'                         # 按引用点击（遮挡守卫）
 browse --js @snips/title.js                           # @ 文件实参：直读文件为片段体（方言与 --js 通用，绝对/相对路径皆可）
 browse --js @x.test/mul --vars n=6                    # 命令小程序：@ 库内模板 + --vars 传参（Jinja {{ 键 }} 渲染，未填键 exit 2 报键名）
+browse rune @x.test/fill-form --vars q=hello          # Rune 编排面：宿主侧全控制流脚本（cdp::goto/eval/click…，隔离世界碰页面）
 browse 'return await screenshot()'                    # 截图；pdf()/recordStart() 同族
 browse 'await routeBlock("*://ads.example.com/*")'    # 拦网；routeMock 本地假应答
 browse 'return await detectBrowsers()'                # 探测可附着浏览器

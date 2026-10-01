@@ -1,6 +1,6 @@
 {
   "crate": "browse-core",
-  "version": "0.23.0",
+  "version": "0.24.0",
   "items": [
     {
       "path": "browse_core::chrome_mgr",
@@ -686,6 +686,11 @@
       "path": "browse_core::server::EvalRequest",
       "kind": "struct",
       "docs": "描述 POST /eval 的请求体。"
+    },
+    {
+      "path": "browse_core::server::RuneRequest",
+      "kind": "struct",
+      "docs": "描述 POST /rune 的请求体（账本 #67：Rune 编排面）。"
     },
     {
       "path": "browse_core::server::serve",

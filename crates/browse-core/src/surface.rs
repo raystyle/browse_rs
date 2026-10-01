@@ -298,6 +298,27 @@ pub const COMMANDS: &[CmdSpec] = &[
         example: "browse fetch https://example.com",
     },
     CmdSpec {
+        name: "rune",
+        kind: CmdKind::Cli,
+        signature: "browse rune <script.rn|@名> [--vars k=v] [--root <dir>]",
+        args: &[
+            arg!(
+                "script",
+                "string",
+                true,
+                "@ 前缀走 snippets 根(.rn 两试)或字面路径"
+            ),
+            arg!(
+                "vars",
+                "string",
+                false,
+                "模板道（Jinja 渲染源码后编译，同命令小程序）"
+            ),
+        ],
+        description: "Rune 编排面（命令小程序的宿主侧全控制流形态）：脚本在独立 VM 跑（Rune 语言，入口 pub async fn main() 返回 Result），经自注册 cdp 模块做效果——goto/eval/eval_handle/call/release/click/type_text/wait_sel 八函数全走自有 CDP 会话，Chrome 只经隔离世界 Runtime.evaluate 碰页面；宿主只装 json/time/cdp 三模块，双限额（指令与分配），未填模板键网络前拦 exit 2。错误二分：cdp::CdpError{op,message} 与脚本自造 Timeout 属脚本可见失败，VM 错误是终态。eval_handle 句柄经 clone 复用，call 的函数体用 function(){...} 形收 this（箭头函数是词法 this 不接绑定）。方言/--js 契约零动。",
+        example: "browse rune @x.test/fill-form --vars q=hello",
+    },
+    CmdSpec {
         name: "issue-new",
         kind: CmdKind::Cli,
         signature: "browse issue new <标题> --acceptance <验收> [--kind bug|improvement] [--body <正文>] [--dry-run]",
@@ -1638,7 +1659,7 @@ pub fn render_manual() -> String {
 
     // 意图路由表（#46）：想做什么用什么，一行一带；细节下钻 interaction 层
     out.push_str(
-        "\n意图路由（想做什么用什么；机制细节下钻 browse workspace（仓在 ~/.browse-rs/workspace），HTTP 契约 docs/guides/http-api.md）：\n  去页面并等可用 goto(url,opts)；等加载 waitLoad(s)；等导航事件 waitFor(frameNavigated,s)\n  找元素 findRefs(q)；拿结构 snapshot({depth}) 或 {ref} 子树；点击/填 clickRef/fillRef（ref 来自最近快照或 findRefs）\n  取回值/正文 pageEval(js) 或 session.Runtime.evaluate；多 tab listPageTargets/switchTab/currentTab\n  hover 菜单 hoverRef；右键双击 clickRef(ref,{button,clickCount})；滚轮 mouseWheel；拖拽 mouseDown-Move-Up 手拼\n  传文件 dropFiles；下文件 裸 Page.navigate 加 downloads()/downloadPath()；等特定响应 waitForResponse(pattern,s)\n  页面打不开/登不上 detect() 七判；console 错误 console({minLevel});JS 异常 jsErrors();请求对账 requests()/requestDetail()\n  仿真 emulate({viewport,UA}) / emulateMedia({colorScheme});授予权限 grantPermissions(perms);登录态热迁 cloneCookies(domains)\n  iframe/shadow 内容 snapshot({pierce:true});录制可读性 recordStart({cursor,showActions}) 加 recordChapter(title)\n  引擎层直出（需扩展域版引擎）：语义快照 semanticSnapshot / 变更推送 subscribeChanges / 响应等待 engineWaitForResponse / 截图差分 screenshotDiff\n  复用命令小程序 browse snippets list/show 加 @ 实参 --vars 传参执行（根可 --root/BROWSE_SNIPPETS_ROOT 外置）；站点/机制知识 browse workspace list/site/page（goto/fetch/detect 回执自动点名）；门外语言 POST /eval；看板 GET /（只读）\n",
+        "\n意图路由（想做什么用什么；机制细节下钻 browse workspace（仓在 ~/.browse-rs/workspace），HTTP 契约 docs/guides/http-api.md）：\n  去页面并等可用 goto(url,opts)；等加载 waitLoad(s)、等导航事件 waitFor(frameNavigated,s)\n  找元素 findRefs(q)；拿结构 snapshot({depth}) 或 {ref} 子树；点击/填 clickRef/fillRef（ref 来自最近快照或 findRefs）\n  取回值/正文 pageEval(js) 或 session.Runtime.evaluate；多 tab listPageTargets/switchTab/currentTab\n  hover 菜单 hoverRef；右键双击 clickRef(ref,{button,clickCount})；滚轮 mouseWheel；拖拽 mouseDown-Move-Up 手拼\n  传/下文件 dropFiles 与 downloads()/downloadPath()；等特定响应 waitForResponse(pattern,s)；诊断面 detect() 七判、console({minLevel})、jsErrors()、requests()/requestDetail()\n  仿真 emulate/emulateMedia；授权 grantPermissions；登录态热迁 cloneCookies；iframe/shadow 用 snapshot({pierce:true})；录制 recordStart 加 recordChapter\n  引擎层直出（需扩展域版引擎）：语义快照 semanticSnapshot / 变更推送 subscribeChanges / 响应等待 engineWaitForResponse / 截图差分 screenshotDiff\n  复用命令小程序 browse snippets list/show 加 @ 实参 --vars 传参执行（根可 --root/BROWSE_SNIPPETS_ROOT 外置）；宿主侧全控制流编排 browse rune（cdp 模块八函数，隔离世界）；站点/机制知识 browse workspace list/site/page（goto/fetch/detect 回执自动点名）；门外语言 POST /eval；看板 GET /（只读）\n",
     );
     out.push_str(
         "定位：给 agent（也给人）的浏览器驾驶 CLI；JS 方言片段驱动 clean-chrome，\
@@ -1766,6 +1787,7 @@ pub const HELP_GROUPS: &[(&str, &[&str])] = &[
             "browse '<片段>'",
             "browse -e '<片段>'",
             "browse < 文件",
+            "browse rune <script.rn|@名>",
             "browse fetch <url>",
         ],
     ),

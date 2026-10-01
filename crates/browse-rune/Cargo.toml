@@ -1,0 +1,18 @@
+[package]
+name = "browse-rune"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Rune 编排面：browse rune 子命令的 VM、cdp 模块与执行器（账本 #67）"
+
+[dependencies]
+rune = { version = "0.14", default-features = false, features = ["std", "tokio", "emit"] }
+rune-modules = { version = "0.14", default-features = false, features = ["json", "time"] }
+cdp = { path = "../cdp" }
+tokio = { workspace = true }
+serde_json = { workspace = true }
+anyhow = { workspace = true }
+
+[lints]
+workspace = true

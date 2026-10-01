@@ -7,6 +7,7 @@
 | 方法 | 路径 | 用途 |
 |---|---|---|
 | POST | `/eval` | 求值一段方言片段（或 `js: true` 时全量 JS） |
+| POST | `/rune` | 执行一段 Rune 编排脚本（宿主侧全控制流，隔离世界碰页面） |
 | GET | `/health` | 探活与状态（就绪即 200，响应形见下） |
 | POST | `/engine/up` | 显式起引擎 |
 | POST | `/quit` | 退 daemon（只杀自起引擎） |
@@ -26,6 +27,21 @@
 ```
 
 `engine` 三态（单键包裹的枚举形）：`{"Spawned":{pid,ws_url,profile_dir,chrome,headless,channel,spawned_at}}`（自起）、`{"Attached":{ws_url}}`（附着）、`{"NotConnected":null}`。`daemon` 是 daemon 自描述（os/hostname/pid/name/startedAt）；`engineProvenance` 是来源语义面（origin 枚举 attached/managed-spawn/isolated-spawn、hostContext、spawnedBy、spawnedAt；attached 态 loopback 宿主显式降级标注）。门外 agent 用它判「引擎在不在、活动 tab 是哪个、引擎在谁的宿主上」。
+
+## POST /rune 请求体与响应（Rune 编排面）
+
+```json
+{ "code": "pub async fn main() { cdp::goto(\"data:text/html,<title>t</title>\").await?; Ok(cdp::eval(\"document.title\").await?) }" }
+```
+
+脚本在 daemon 侧独立 VM 执行（Rune 语言，入口恒 `pub async fn main()` 且返回 `Result`；`?` 传播 `cdp::CdpError`）。宿主只装 json/time/cdp 三模块；cdp 模块八函数 `goto`/`eval`/`eval_handle`/`call`/`release`/`click`/`type_text`/`wait_sel`，全走自有 CDP 会话，Chrome 只经隔离世界（worldName `browse-rune`）`Runtime.evaluate` 碰页面。双限额（指令一千万、分配 16MB）；对象组执行收尾整组释放。
+
+响应 envelope 与 `/eval` 同形（`ok`/`value`/`engineContext` 或 `ok:false`/`error`）；`value` 是 rune 回执：`{"ok": <main 成功载荷>}` 或 `{"error": <脚本可见失败载荷>}`（脚本自造 `Timeout` 型、`cdp::CdpError{op,message}` 都属后者）。编译错、VM 终态（含限额击穿）、超时走 `error` 面。细节与脚本写法见 `browse --llms` 的 rune 条目与 crates/browse-rune 文档。
+
+```bash
+curl -s localhost:9880/rune -H 'Content-Type: application/json' \
+  -d '{"code":"pub async fn main() { Ok(42) }"}'   # -> {"ok":true,"value":{"ok":42},…}
+```
 
 ## POST /engine/up 请求体
 

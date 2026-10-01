@@ -110,6 +110,8 @@ enum Mode {
     },
     /// `browse ledger keygen [--force]`：Ed25519 密钥对（REQ-063）。
     LedgerKeygen { force: bool },
+    /// `browse rune <script.rn|@名> [--vars k=v] [--root <dir>]`：Rune 编排面（#67）。
+    Rune { script: Option<String> },
 }
 
 /// 账本调用统一走阻塞线程（收口适配 2026-09-20）：ledger-client 是
@@ -395,6 +397,11 @@ async fn main() -> Result<()> {
                     }
                 }
             }
+            "rune" if snippets.is_empty() && mode_is_eval(&mode) => {
+                mode = Mode::Rune {
+                    script: args.next_opt(),
+                };
+            }
             "snippets" if snippets.is_empty() && mode_is_eval(&mode) => {
                 match args.next("snippets").as_str() {
                     "list" => {
@@ -600,14 +607,17 @@ async fn main() -> Result<()> {
     // 求值面漏给 --vars 时显式报用法错（防「根没生效」被误读成文件不存在）
     if snippets_root_flag.is_some()
         && vars.is_empty()
-        && !matches!(mode, Mode::SnippetsList { .. } | Mode::SnippetsShow { .. })
+        && !matches!(
+            mode,
+            Mode::SnippetsList { .. } | Mode::SnippetsShow { .. } | Mode::Rune { .. }
+        )
     {
         eprintln!(
             "browse: --root 在求值面只配 @ 实参加 --vars 模板道（漏 --vars 则根不生效；退出 2）"
         );
         std::process::exit(2);
     }
-    if !vars.is_empty() {
+    if !vars.is_empty() && mode_is_eval(&mode) {
         if !snippets.iter().any(|s| s.starts_with('@')) {
             eprintln!("browse: --vars 只配 @ 形态实参（模板道；退出 2）");
             std::process::exit(2);
@@ -1254,6 +1264,65 @@ async fn main() -> Result<()> {
             .map_err(|e| anyhow!("workspace page 任务崩了：{e}"))??;
             println!("{text}");
             Ok(())
+        }
+        // ---- Rune 编排面（#67）：@ 名走 snippets 根(.rn 两试)或字面路径，
+        // --vars 同 #66 模板道渲染，POST /rune 由 daemon 在隔离世界执行 ----
+        Mode::Rune { script } => {
+            let Some(target) = script else {
+                eprintln!(
+                    "browse: rune 缺脚本实参；用法：browse rune <script.rn|@名> [--vars k=v]（退出 2）"
+                );
+                std::process::exit(2);
+            };
+            let (root, _explicit) = snippets_root(snippets_root_flag.clone());
+            let body = if let Some(name) = target.strip_prefix('@') {
+                match browse_cli::client::load_template_ext(name, &root, "rn") {
+                    Ok((_p, b)) => b,
+                    Err(e) => {
+                        eprintln!("{e:#}");
+                        std::process::exit(2);
+                    }
+                }
+            } else {
+                match std::fs::read_to_string(&target) {
+                    Ok(b) => b,
+                    Err(e) => {
+                        eprintln!(
+                            "browse: rune 读脚本失败 {target}：{e}；下一步：核对路径，或 @名 走 snippets 根（browse snippets list 看在册）（退出 2）"
+                        );
+                        std::process::exit(2);
+                    }
+                }
+            };
+            // --vars 模板道（与 #66 同一道）：给了即渲染（未填键 exit 2 带键名）
+            let body = if vars.is_empty() {
+                body
+            } else {
+                let parsed: Vec<(String, String)> = vars
+                    .iter()
+                    .map(|v| {
+                        browse_cli::client::parse_vars_arg(v).unwrap_or_else(|| {
+                            eprintln!("browse: --vars 要 键=值 形（得到 {v}；退出 2）");
+                            std::process::exit(2);
+                        })
+                    })
+                    .collect();
+                match browse_cli::client::render_template(&body, &parsed) {
+                    Ok(b) => b,
+                    Err(e) => {
+                        eprintln!("{e:#}");
+                        std::process::exit(2);
+                    }
+                }
+            };
+            browse_cli::client::ensure_daemon().await?;
+            match browse_cli::client::rune(&body).await {
+                Ok(v) => {
+                    println!("{}", serde_json::to_string_pretty(&v)?);
+                    Ok(())
+                }
+                Err(e) => Err(e),
+            }
         }
         Mode::Eval => {
             // 裸调用 = 导航事件：无参不弹交互，TTY 裸跑出本仓帮助体 exit 0；

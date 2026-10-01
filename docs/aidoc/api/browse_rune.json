@@ -1,0 +1,46 @@
+{
+  "crate": "browse-rune",
+  "version": "0.24.0",
+  "items": [
+    {
+      "path": "browse_rune::exec",
+      "kind": "module",
+      "docs": "Rune 执行器（账本 #67）：一套 `Context` 编译一次，VM 经\n`try_clone` 派发，`send_execute` 跨线程执行体包\n[`rune::runtime::budget`]（指令数）与 [`rune::alloc::limit`]（分配）\n双限额后 `async_complete`。\n\n结果桥形（探针定案）：`send_execute` 对逃逸值包一层外部引用（serde\n与 `FromValue` 都穿不透），唯脚本到原生函数的参数方向畅通——执行器\n在源码尾自动追加 `__browse_rune_wrap__` 包装：VM 内拆 `main` 的\n`Result`、经 `json::to_string` 序列化成字符串、调 `cdp::__result`\n回传 Rust 侧槽位。回执形恒 `{\"ok\": <json>}` 或 `{\"error\": <json>}`。\n\n错误面（方案约定）：脚本可见失败（`cdp::CdpError`、脚本自造\n`Timeout` 等）走 `{\"error\": …}` 属正常回执；`VmError`（含双限额击穿）\n是终态——映射为 [`crate::run`] 的 `Err`，不让脚本重试。"
+    },
+    {
+      "path": "browse_rune::exec::Caps",
+      "kind": "struct",
+      "docs": "双限额（方案条款：执行时套两层；原生函数自己尊重预算——本模块的\n长动作都有界：goto 等 15s、wait_sel 按参）。"
+    },
+    {
+      "path": "browse_rune::exec::DEFAULT_CAPS",
+      "kind": "constant",
+      "docs": "缺省限额：指令一千万（编排脚本量级富余），分配 16MB。"
+    },
+    {
+      "path": "browse_rune::exec::run",
+      "kind": "function",
+      "docs": "编译并执行一段 Rune 编排脚本（入口恒 `pub async fn main()`）。\n\n返回回执 JSON：`{\"ok\": <main 成功载荷>}` 或 `{\"error\": <脚本可见\n失败载荷>}`；`Err` 是宿主侧终态（编译错、`VmError`、限额击穿）。\n\n# Errors\n\n编译失败、VM 终态错误、双限额击穿、结果回传道异常。"
+    },
+    {
+      "path": "browse_rune::module",
+      "kind": "module",
+      "docs": "自注册 `cdp` 模块（账本 #67）：八个效果函数全走自有 [`cdp::Session`]\n的 `call`，Chrome 只经隔离世界 `Runtime.evaluate` 碰页面。\n\n纪律：参数经 `serde_json::to_string` 做成 JS 字面量再传入（禁止把\n选择器拼进 JS 字符串）；小结果走 JSON 过桥（`() ↔ null`、`#{ } ↔\nobject`、数组对数组），DOM 节点只留 [`ObjHandle`] 不透明句柄；对象\n组随会话记账（本组恒名 `browse-rune`，执行收尾整组\n`Runtime.releaseObjectGroup`）；会话句柄留 Rust 侧，不进脚本全局。"
+    },
+    {
+      "path": "browse_rune::module::CdpError",
+      "kind": "struct",
+      "docs": "脚本可见的 CDP 失败型（方案错误约定）：`op` 是失败操作名，`message`\n是给人读的细节；脚本用 `?` 传播或自构返回。"
+    },
+    {
+      "path": "browse_rune::module::ObjHandle",
+      "kind": "struct",
+      "docs": "DOM 节点不透明句柄：`eval_handle` 产出，`call`/`release` 消费；脚本\n侧拿不到 objectId 字面量（防拼错与跨组泄漏）。"
+    },
+    {
+      "path": "browse_rune::module::cdp_module",
+      "kind": "function",
+      "docs": "注册 `cdp` 模块（方案八函数面）：`goto`/`eval`/`eval_handle`/`call`/\n`release`/`click`/`type_text`/`wait_sel`，全部返回 `Result`。\n\n# Errors\n\n模块注册失败（函数签名或类型登记冲突）。"
+    }
+  ]
+}

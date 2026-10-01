@@ -452,3 +452,32 @@ fn template_g1_guard_and_literal_passthrough() {
     assert!(err.contains("不是 base64 字母表"), "透传落 b64 校验：{err}");
     assert!(!err.contains("模板"), "不经模板道：{err}");
 }
+
+/// #67 rune 子命令 argv 契约：缺实参 exit 2；@ 名未命中列候选（零
+/// daemon，客户端解析期拦）；--vars 坏形与模板未填键同 #66 道（零
+/// daemon 前拦 exit 2 点名）。执行正路走 e2e（真 chrome）。
+#[test]
+fn rune_arg_contract() {
+    let (code, _, err) = run(&["rune"], &[]);
+    assert_eq!(code, 2, "{err}");
+    assert!(err.contains("rune 缺脚本实参"), "{err}");
+
+    let (code, _, err) = run(&["rune", "@/no/such/script"], &[]);
+    assert_eq!(code, 2, "{err}");
+    assert!(err.contains("no/such/script 未命中"), "{err}");
+
+    let st = TempState::new("rune");
+    let f = std::path::Path::new(st.path()).join("t.rn");
+    std::fs::write(&f, "pub async fn main() { Ok(1) }\n").expect("写脚本");
+    let (code, _, err) = run(&["rune", &f.to_string_lossy(), "--vars", "nokey"], &[]);
+    assert_eq!(code, 2, "{err}");
+    assert!(err.contains("--vars 要 键=值"), "{err}");
+
+    std::fs::write(&f, "pub async fn main() { Ok(\"{{ alpha }}\") }\n").expect("写模板脚本");
+    let (code, _, err) = run(&["rune", &f.to_string_lossy(), "--vars", "x=1"], &[]);
+    assert_eq!(code, 2, "{err}");
+    assert!(
+        err.contains("模板未填占位符") && err.contains("alpha"),
+        "{err}"
+    );
+}

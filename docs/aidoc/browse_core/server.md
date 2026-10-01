@@ -21,4 +21,5 @@ POST /quit 三端点保留），新增 `/engine/up` 与求值前的懒引擎策�
 - `DaemonDesc` — daemon 自描述（#59）：宿主与进程身份一次采值，status 与 /health 内嵌
 - `EngineUpRequest` — 描述 POST /engine/up 的请求体。
 - `EvalRequest` — 描述 POST /eval 的请求体。
+- `RuneRequest` — 描述 POST /rune 的请求体（账本 #67：Rune 编排面）。
 

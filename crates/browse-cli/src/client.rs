@@ -216,6 +216,38 @@ pub async fn eval(code: &str, new_tab: bool, js: bool) -> Result<Value> {
     }
 }
 
+/// 把 Rune 编排脚本 POST 到 daemon 的 /rune 执行（账本 #67）。
+///
+/// 返回 rune 回执 JSON（`{"ok": …}` 或 `{"error": …}`）；宿主终态进
+/// `Err`（错误串已是 CTA 形态）。
+///
+/// # Errors
+///
+/// HTTP 失败或 daemon 执行失败（编译错、VM 终态、限额击穿、超时）。
+pub async fn rune(code: &str) -> Result<Value> {
+    let c = client();
+    let resp = c
+        .post(format!("{}/rune", http()))
+        .json(&json!({ "code": code }))
+        .send()
+        .await
+        .context("POST /rune")?;
+    let body: Value = resp.json().await.context("解析 /rune 响应")?;
+    if body.get("ok").and_then(Value::as_bool) == Some(true) {
+        if let Some(ctx) = body.get("engineContext") {
+            render_engine_context(ctx);
+        }
+        Ok(body.get("value").cloned().unwrap_or(Value::Null))
+    } else {
+        Err(anyhow!(
+            "{}",
+            body.get("error")
+                .and_then(Value::as_str)
+                .unwrap_or("未知错误")
+        ))
+    }
+}
+
 /// #60 渲染操作信封的引擎上下文（crate 内缝，eval 与 fetch 引擎腿共用）：
 /// 指纹变化与跨宿主各出告警行（跨宿主每进程一次防刷屏），紧凑行按
 /// `BROWSE_ENGINE_CONTEXT` 开。正常态零输出（默认输出与现状兼容）。
@@ -534,6 +566,19 @@ pub fn render_template(body: &str, vars: &[(String, String)]) -> Result<String> 
 /// assert!(err.to_string().contains("no/such/tmpl"), "{}", err);
 /// ```
 pub fn load_template(name: &str, root: &std::path::Path) -> Result<(String, String)> {
+    load_template_ext(name, root, "js")
+}
+
+/// [`load_template`] 的扩展名变体（#67：Rune 脚本用 `.rn`）。
+///
+/// # Errors
+///
+/// 同 [`load_template`]：所有候选位都不存在或读失败。
+pub fn load_template_ext(
+    name: &str,
+    root: &std::path::Path,
+    ext: &str,
+) -> Result<(String, String)> {
     if name.is_empty() {
         anyhow::bail!("@ 后缺模板名；下一步：browse --js @<库内名|路径> --vars 键=值");
     }
@@ -542,7 +587,7 @@ pub fn load_template(name: &str, root: &std::path::Path) -> Result<(String, Stri
     if root.canonicalize().is_ok() {
         for cand in [root.join(name), {
             let mut p = root.join(name);
-            p.set_extension("js");
+            p.set_extension(ext);
             p
         }] {
             if let (Ok(canon), Ok(root_canon)) = (cand.canonicalize(), root.canonicalize())

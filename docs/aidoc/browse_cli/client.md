@@ -14,9 +14,11 @@ daemon 客户端：本地 HTTP 调用 + 首次使用自动拉起 detached daemon
 - `expand_at_args` — `@` 文件实参展开（#64）：片段实参以 `@` 开头即读文件内容为片段体，
 - `health` — GET /health 取 daemon 状态面；daemon 不在时报可照抄的拉起提示。
 - `load_template` — 模板源解析（#66）：`--vars` 模板道的 @ 实参解析序——snippets 根
+- `load_template_ext` — [`load_template`] 的扩展名变体（#67：Rune 脚本用 `.rn`）。
 - `parse_vars_arg` — 解析 `--vars` 单值（`键=值`）：键是标识符（字母或下划线开头，字母
 - `quit` — POST /quit 退 daemon，daemon 侧顺带只终结自起引擎（附着来源不动）。
 - `render_template` — `--vars` 模板渲染（#66 命令小程序）：Jinja 语法渲染模板源，`{{ 键 }}`
+- `rune` — 把 Rune 编排脚本 POST 到 daemon 的 /rune 执行（账本 #67）。
 - `skills_passthrough_env` — 技能层透传环境（#50/#51）：拉起新 daemon 时把 CLI 进程里的 workspace
 - `state_dir` — 返回 daemon 日志与运行面目录（`%USERPROFILE%\.browse-rs[\<name>]`，多实例各一份）。
 

@@ -11,6 +11,7 @@
 | [ADR-0007](ADR-0007-embedded-chromium-manager.md) | 内嵌 Chromium 版本管理器托管 clean-chrome | accepted |
 | [ADR-0008](ADR-0008-workspace-skill-layers.md) | goto 回执技能触发层与 workspace 单仓外置知识 | accepted |
 | [ADR-0009](ADR-0009-template-engine-minijinja.md) | JS 命令小程序模板引擎选 minijinja | accepted |
+| [ADR-0010](ADR-0010-rune-orchestration-face.md) | Rune 编排面：browse rune 与自注册 cdp 模块（自有栈） | accepted |
 
 规则：一条 ADR 一个决定；被替代时 frontmatter 改 `status: superseded` 并加
 `superseded_by: ADR-00xx`（指向在册编号），原文冻结；Context 写给 18 个月后

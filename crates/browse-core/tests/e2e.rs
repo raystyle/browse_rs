@@ -2743,3 +2743,60 @@ async fn no_display_headless_fallback_spawns() {
         }
     }
 }
+
+/// #67 Rune 编排面真 chrome 端到端：隔离世界 goto/eval/click/handle 全链。
+/// 独立 spawn（SEQ 互斥），receipt 形 `{"ok": …}` 锁定。
+#[tokio::test]
+async fn rune_orchestration_roundtrip() {
+    if !gated() {
+        eprintln!("skip: BROWSE_E2E 未设 1");
+        return;
+    }
+    let _seq = SEQ.lock().await;
+    clean_profile().await;
+    let session = cdp::Session::new();
+    let engine = Engine::new(session.clone());
+    engine
+        .ensure(&EngineSpec::Auto {
+            chrome: None,
+            headless: true,
+            pipe: false,
+            profile: None,
+            proxy: None,
+            proxy_bypass: None,
+            isolated: false,
+            engine_args: Vec::new(),
+        })
+        .await
+        .expect("rune e2e 引擎起不来");
+    let script = r##"
+        pub async fn main() {
+            cdp::goto("data:text/html,<title>rune-e2e</title><button id='b'>go</button><span id='out'></span><script>document.getElementById('b').onclick=()=>{document.getElementById('out').textContent='clicked'}</script>").await?;
+            if !cdp::wait_sel("#b", 3000).await? {
+                return Err(cdp::CdpError { op: "wait_sel", message: "#b 未现" });
+            }
+            cdp::click("#b").await?;
+            let out = cdp::eval("document.getElementById('out').textContent").await?;
+            let h = cdp::eval_handle("document.body").await?;
+            let tag = cdp::call(clone(h), "function() { return this.tagName }").await?;
+            cdp::release(h).await?;
+            Ok(#{"title": cdp::eval("document.title").await?, "out": out, "body": tag})
+        }
+    "##;
+    let receipt = browse_rune::run(session, script, browse_rune::DEFAULT_CAPS)
+        .await
+        .expect("rune 脚本执行失败");
+    assert_eq!(
+        receipt,
+        serde_json::json!({
+            "ok": {
+                "title": "rune-e2e",
+                "out": "clicked",
+                "body": "BODY",
+            }
+        }),
+        "rune 全链回执：{receipt}"
+    );
+    engine.shutdown().await.expect("shutdown");
+    clean_profile().await;
+}

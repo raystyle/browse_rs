@@ -34,6 +34,15 @@ pub struct EvalRequest {
     pub js: bool,
 }
 
+/// 描述 POST /rune 的请求体（账本 #67：Rune 编排面）。
+#[derive(Debug, Default, Deserialize)]
+pub struct RuneRequest {
+    /// Rune 编排脚本源码（入口恒 `pub async fn main()`；宿主只装
+    /// json/time/cdp 三模块，双限额与错误约定见 docs/adr/ADR-0009 与
+    /// crates/browse-rune）。
+    pub code: String,
+}
+
 /// 描述 POST /engine/up 的请求体。
 #[derive(Debug, Default, Deserialize)]
 pub struct EngineUpRequest {
@@ -199,6 +208,7 @@ pub async fn serve(daemon: Arc<Daemon>, bind: &str) -> anyhow::Result<()> {
     };
     let app = Router::new()
         .route("/eval", post(eval_handler))
+        .route("/rune", post(rune_handler))
         .route("/health", get(health_handler))
         .route("/engine/up", post(engine_up_handler))
         .route("/quit", post(quit_handler))
@@ -286,6 +296,65 @@ async fn run_eval_code(host: &JsHost, code: &str, js: bool) -> anyhow::Result<Va
     } else {
         host.eval_snippet(code).await
     }
+}
+
+/// POST /rune（账本 #67）：Rune 编排脚本执行。与 /eval 同槽串行、同
+/// 引擎懒起与超时口径；回执 envelope 同形（value 是 rune 回执 JSON：
+/// `{"ok": …}` 或 `{"error": …}`，宿主终态走 err 面）。
+async fn rune_handler(
+    State(st): State<AppState>,
+    Json(req): Json<RuneRequest>,
+) -> impl IntoResponse {
+    let _ = st
+        .daemon
+        .last_activity
+        .lock()
+        .map(|mut t| *t = Instant::now());
+    let _slot = st.daemon.eval_lock.lock().await;
+    let d = &st.daemon;
+    // Rune 编排恒碰页面：懒引擎预连（方言的「片段自己连」分支不适用）
+    if !d.host.session().is_connected() {
+        let spec = d.spec.lock().unwrap_or_else(|e| e.into_inner()).clone();
+        if let Err(e) = d.engine.ensure(&spec).await {
+            return err_response(e);
+        }
+    }
+    let outcome = tokio::time::timeout(
+        eval_timeout(),
+        browse_rune::run(d.host.session(), &req.code, browse_rune::DEFAULT_CAPS),
+    )
+    .await;
+    let value = match outcome {
+        Ok(Ok(v)) => v,
+        Ok(Err(e)) => return err_response(e),
+        Err(_) => {
+            return err_response(anyhow::anyhow!(
+                "rune 执行超时（{} 秒；BROWSE_EVAL_TIMEOUT 可调）",
+                eval_timeout().as_secs()
+            ));
+        }
+    };
+    let ctx = d.engine.context_snapshot(&d.desc).await;
+    let changes = {
+        let fp = ctx
+            .get("fingerprint")
+            .cloned()
+            .unwrap_or(serde_json::Value::Null);
+        let mut guard = d.last_fp.lock().unwrap_or_else(|e| e.into_inner());
+        let changes = match guard.as_ref() {
+            Some(old) => crate::engine::fingerprint_changes(old, &fp),
+            None => Vec::new(),
+        };
+        *guard = Some(fp);
+        changes
+    };
+    let mut envelope = json!({ "ok": true, "value": value });
+    envelope["engineContext"] = json!({
+        "provenance": ctx.get("provenance").cloned().unwrap_or(serde_json::Value::Null),
+        "daemon": d.desc.to_json(),
+        "changes": changes,
+    });
+    (axum::http::StatusCode::OK, Json(envelope))
 }
 
 async fn eval_handler(
