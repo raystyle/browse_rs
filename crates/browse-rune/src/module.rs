@@ -346,6 +346,15 @@ pub fn cdp_module(
             let st = st.clone();
             async move {
                 let sel_lit = serde_json::to_string(&sel).unwrap_or_default();
+                // 未命中守卫（评审 #67 一轮 G6）：与 click 同款报错，防文本
+                // 静默插进当前焦点元素
+                let found = st
+                    .eval_in_world(&format!("!!document.querySelector({sel_lit})"), false)
+                    .await
+                    .map_err(|e| cdp_err("type_text", format!("探测：{}", e.message)))?;
+                if found.pointer("/result/value").and_then(Value::as_bool) != Some(true) {
+                    return Err(cdp_err("type_text", format!("选择器未命中：{sel}")));
+                }
                 st.eval_in_world(
                     &format!("document.querySelector({sel_lit})?.focus()"),
                     false,

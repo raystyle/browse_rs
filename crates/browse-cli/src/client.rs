@@ -582,7 +582,9 @@ pub fn load_template_ext(
     kind: &str,
 ) -> Result<(String, String)> {
     if name.is_empty() {
-        anyhow::bail!("@ 后缺模板名；下一步：browse --js @<库内名|路径> --vars 键=值");
+        anyhow::bail!(
+            "@ 后缺{kind}名；下一步：browse --js @<库内名|路径> --vars 键=值，或 browse rune @<名>（Rune 面）"
+        );
     }
     let mut tried: Vec<String> = Vec::new();
     // 根道：原样 + 补 .js 两试（<site>/<task> 省后缀直达库内分层）

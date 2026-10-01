@@ -398,9 +398,23 @@ async fn main() -> Result<()> {
                 }
             }
             "rune" if snippets.is_empty() && mode_is_eval(&mode) => {
-                mode = Mode::Rune {
-                    script: args.next_opt(),
-                };
+                // 评审 #67 一轮 G4：对齐 snippets 族口径——未知旗标 bail、
+                // 多余位置位用法错；--vars/--root 在脚本位前后都收（内环
+                // 代收进同一变量，余下未知 - 前缀旗标 exit 2 不静默）
+                let mut script = None;
+                while let Some(a) = args.next_opt() {
+                    match a.as_str() {
+                        "--vars" => vars.push(args.next("--vars")),
+                        "--root" => snippets_root_flag = Some(args.next("--root")),
+                        other if other.starts_with('-') => bail_arg(other),
+                        other if script.is_none() => script = Some(other.to_string()),
+                        other => {
+                            eprintln!("browse: rune 只要一个脚本位（{other} 多余，退出 2）");
+                            std::process::exit(2);
+                        }
+                    }
+                }
+                mode = Mode::Rune { script };
             }
             "snippets" if snippets.is_empty() && mode_is_eval(&mode) => {
                 match args.next("snippets").as_str() {
@@ -1275,7 +1289,18 @@ async fn main() -> Result<()> {
                 std::process::exit(2);
             };
             // --vars 形状校验先于读文件（评审 #67 一轮 G7：坏形即刻报，
-            // 不让文件错掩盖参数错）
+            // 不让文件错掩盖参数错）；--cookies/--new-tab 是 eval 前置
+            // 流程，rune 面显式报不支持不静默（一轮 G3 + 二轮 G8/G9）
+            if cookies_csv.is_some() {
+                eprintln!(
+                    "browse: --cookies 尚不支持 rune 面（属引擎起后的登录态热迁流程；退出 2）"
+                );
+                std::process::exit(2);
+            }
+            if new_tab {
+                eprintln!("browse: --new-tab 尚不支持 rune 面（Rune 脚本自行 goto 开页；退出 2）");
+                std::process::exit(2);
+            }
             let parsed_vars: Vec<(String, String)> = vars
                 .iter()
                 .map(|v| {
@@ -1327,14 +1352,7 @@ async fn main() -> Result<()> {
             };
             // 引擎/连接旗标族照 eval 面生效（评审 #67 一轮 G3：--ws/--port/
             // --chrome/--headless/--pipe/--profile/--proxy/--isolated/
-            // --engine-arg/--secrets 不再静默失效；--cookies 是 eval 前置
-            // 的热迁流程，rune 面显式报不支持）
-            if cookies_csv.is_some() {
-                eprintln!(
-                    "browse: --cookies 尚不支持 rune 面（属引擎起后的登录态热迁流程；退出 2）"
-                );
-                std::process::exit(2);
-            }
+            // --engine-arg/--secrets 不再静默失效）
             if let Some(f) = &secrets {
                 browse_core::load_secrets(f)?;
             }

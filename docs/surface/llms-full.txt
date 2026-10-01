@@ -411,6 +411,7 @@ Rune 编排面（命令小程序的宿主侧全控制流形态）：脚本在独
 参数：
 - `script`（string，缺省 @ 前缀走 snippets 根(.rn 两试)或字面路径），必填
 - `vars`（string，缺省 模板道（Jinja 渲染源码后编译，同命令小程序））
+- `root`（string，缺省 同 snippets 族根三序（只对 @ 名生效））
 
 ```js
 browse rune @x.test/fill-form --vars q=hello

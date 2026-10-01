@@ -314,6 +314,12 @@ pub const COMMANDS: &[CmdSpec] = &[
                 false,
                 "模板道（Jinja 渲染源码后编译，同命令小程序）"
             ),
+            arg!(
+                "root",
+                "string",
+                false,
+                "同 snippets 族根三序（只对 @ 名生效）"
+            ),
         ],
         description: "Rune 编排面（命令小程序的宿主侧全控制流形态）：脚本在独立 VM 跑（Rune 语言，入口 pub async fn main() 返回 Result），经自注册 cdp 模块做效果——goto/eval/eval_handle/call/release/click/type_text/wait_sel 八函数全走自有 CDP 会话，Chrome 只经隔离世界 Runtime.evaluate 碰页面；宿主只装 json/time/cdp 三模块，双限额（指令与分配），未填模板键网络前拦 exit 2。错误二分：cdp::CdpError{op,message} 与脚本自造 Timeout 属脚本可见失败，VM 错误是终态。eval_handle 句柄经 clone 复用，call 的函数体用 function(){...} 形收 this（箭头函数是词法 this 不接绑定）。方言/--js 契约零动。",
         example: "browse rune @x.test/fill-form --vars q=hello",

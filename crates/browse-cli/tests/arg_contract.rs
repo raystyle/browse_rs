@@ -480,4 +480,19 @@ fn rune_arg_contract() {
         err.contains("模板未填占位符") && err.contains("alpha"),
         "{err}"
     );
+
+    // 评审 #67 一轮 G4：未知旗标 bail、多余脚本位用法错（含脚本位后
+    // --vars 正常形的对照——内环代收不误伤）
+    let (code, _, err) = run(&["rune", "--bogus", "a.rn"], &[]);
+    assert_eq!(code, 2, "{err}");
+    assert!(err.contains("参数不认识 --bogus"), "{err}");
+    let (code, _, err) = run(&["rune", "a.rn", "b.rn"], &[]);
+    assert_eq!(code, 2, "{err}");
+    assert!(err.contains("只要一个脚本位"), "{err}");
+    let (code, _, err) = run(&["rune", &f.to_string_lossy(), "--vars", "x=1"], &[]);
+    assert_eq!(code, 2, "{err}");
+    assert!(
+        err.contains("模板未填占位符"),
+        "脚本位后的 --vars 正常收（不走 bail）：{err}"
+    );
 }

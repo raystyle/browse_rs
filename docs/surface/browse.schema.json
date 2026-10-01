@@ -668,6 +668,10 @@
       "example": "browse rune @x.test/fill-form --vars q=hello",
       "input": {
         "properties": {
+          "root": {
+            "description": "缺省 同 snippets 族根三序（只对 @ 名生效）",
+            "type": "string"
+          },
           "script": {
             "description": "缺省 @ 前缀走 snippets 根(.rn 两试)或字面路径",
             "type": "string"
