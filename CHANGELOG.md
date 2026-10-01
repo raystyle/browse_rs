@@ -11,7 +11,7 @@
 ## 0.24.1 - 2026-10-01
 
 - **#67 评审遗留收口（三轮 G10 + 一轮 G2）**：G10 尾置全局旗标分面文案：子命令收集环（rune/snippets 族）遇到认识的全局旗标尾置报「是全局旗标，要置于子命令与脚本位之前」（消「认识却说参数不认识」的措辞矛盾；未知旗标保持原 bail 面），名册常量与解析臂同步纪律在册；G2 超时丢弃清账 drop-guard：`Cleanup` 增 Drop 兜底（主 future 被 daemon 超时 drop 时，借当前 tokio 运行时排程 releaseObjectGroup 与引导脚本注销；显式 run() 先置 settled 防双跑），script_id 移出 tokio 锁成独立 std 锁（Drop 面不可 await/blocking_lock），并修 std 锁守卫跨 await 的 !Send 面。测试：arg_contract 增 tail_global_flag_gets_position_cta（rune 与 snippets 双面 + 未知旗标对照）
-- semver 判据结论（0.24.1 裁定）：修复批取 patch（REQ-004 判据行）
+- semver 判据结论（0.24.1 裁定）：修复批取 patch（REQ-004 判据行）；未单独发版，随 0.25.0 合并发布（同日小批，minor 全含）
 
 ## 0.24.0 - 2026-10-01
 
