@@ -1,0 +1,20 @@
+//! #68 三支柱示例:cdp::requests(交互请求对账)、cdp::snapshot(ax 树)、
+//! cdp::cookies/set_cookie(会话收割)。需真引擎,走 CLI 道:
+//! `browse rune crates/browse-rune/examples/pillars.rn`。本件是可跑
+//! 脚本体(示例脚本非 Rust 程序),四种薄封装各一段。
+pub async fn main() {
+    cdp::goto("data:text/html,<title>pillars</title><a href='#x'>go</a>").await?;
+
+    // 支柱一:交互请求对账(requests 同源,filter/since 与方言同参)
+    let reqs = cdp::requests(#{"filter": ""}).await?;
+    // 支柱二:结构支柱(ax 树快照同源,depth 限深)
+    let snap = cdp::snapshot(#{"depth": 3}).await?;
+    // 支柱三:会话收割(cookie 读设;Set-Cookie 从 request_detail 的响应头取)
+    cdp::set_cookie("campaign", "1", "localhost").await?;
+    let jar = cdp::cookies().await?;
+    Ok(#{
+        "requests_count": reqs["count"],
+        "snapshot_title": snap["title"],
+        "cookies_has_campaign": format!("{:?}", jar).contains("campaign"),
+    })
+}

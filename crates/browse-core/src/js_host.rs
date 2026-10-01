@@ -847,6 +847,17 @@ impl JsHost {
         }
     }
 
+    /// 同源入口（#68 修复批）：rune 面薄封装经此复用方言全局函数的
+    /// 同一实现（snapshot/requests/requestDetail 等），零第二真相；参数
+    /// 与方言面完全一致（argv 形）。
+    ///
+    /// # Errors
+    ///
+    /// 同方言面：函数未知名、CDP 调用失败、参数缺。
+    pub async fn global_json(&self, name: &str, argv: &[Value]) -> Result<Value> {
+        self.call_global(name, argv).await
+    }
+
     async fn call_global(&self, name: &str, argv: &[Value]) -> Result<Value> {
         match name {
             "listPageTargets" => {

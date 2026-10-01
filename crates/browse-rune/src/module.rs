@@ -71,9 +71,37 @@ pub(crate) struct CdpState {
     snippets_root: std::path::PathBuf,
     /// 管道参数道捕获串。
     stdin: String,
+    /// 三支柱同源宿主函数束。
+    host_fns: HostFns,
 }
 
 const WORLD_NAME: &str = "browse-rune";
+
+/// 单次 CDP 调用上界（#68 主修：丢响应快错不永挂；引擎面操作毫秒级，
+/// 30 秒是宽裕界）。全部 `call_with_deadline` 走此值。
+const CALL_DEADLINE: std::time::Duration = std::time::Duration::from_secs(30);
+
+/// 同源宿主面（#68 随批三薄封装）：snapshot/requests/requestDetail 经
+/// js_host `global_json` 同一实现注入（闭包形避免 crate 循环依赖）。
+pub type HostFn = std::sync::Arc<
+    dyn Fn(
+            Value,
+        )
+            -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<Value, String>> + Send>>
+        + Send
+        + Sync,
+>;
+
+/// 三支柱宿主函数注入束（Debug 手写：闭包无派生）。
+#[derive(Default, Clone)]
+pub struct HostFns {
+    /// `snapshot(opts)` 同源腿。
+    pub snapshot: Option<HostFn>,
+    /// `requests(opts)` 同源腿。
+    pub requests: Option<HostFn>,
+    /// `requestDetail(index_or_id, opts)` 同源腿。
+    pub request_detail: Option<HostFn>,
+}
 
 fn cdp_err(op: &str, message: impl std::fmt::Display) -> CdpError {
     CdpError {
@@ -93,7 +121,7 @@ impl CdpState {
         }
         let tree = self
             .session
-            .call("Page.getFrameTree", json!({}))
+            .call_with_deadline("Page.getFrameTree", json!({}), CALL_DEADLINE)
             .await
             .map_err(|e| cdp_err("ensure_world", format!("Page.getFrameTree: {e:#}")))?;
         let frame_id = tree
@@ -104,9 +132,9 @@ impl CdpState {
         if self.script_id.lock().map(|g| g.is_none()).unwrap_or(false) {
             let r = self
                 .session
-                .call(
-                    "Page.addScriptToEvaluateOnNewDocument",
+                .call_with_deadline("Page.addScriptToEvaluateOnNewDocument",
                     json!({ "source": "/* browse-rune world bootstrap */", "worldName": WORLD_NAME }),
+                CALL_DEADLINE,
                 )
                 .await
                 .map_err(|e| {
@@ -118,9 +146,9 @@ impl CdpState {
         }
         let world = self
             .session
-            .call(
-                "Page.createIsolatedWorld",
+            .call_with_deadline("Page.createIsolatedWorld",
                 json!({ "frameId": frame_id, "worldName": WORLD_NAME, "grantUniveralAccess": false }),
+            CALL_DEADLINE,
             )
             .await
             .map_err(|e| cdp_err("ensure_world", format!("Page.createIsolatedWorld: {e:#}")))?;
@@ -149,7 +177,7 @@ impl CdpState {
         }
         let r = self
             .session
-            .call("Runtime.evaluate", params)
+            .call_with_deadline("Runtime.evaluate", params, CALL_DEADLINE)
             .await
             .map_err(|e| cdp_err("eval", format!("Runtime.evaluate: {e:#}")))?;
         if let Some(exc) = r.pointer("/exceptionDetails/text").and_then(Value::as_str) {
@@ -167,9 +195,10 @@ impl CdpState {
     async fn eval_main_world(&self, wrapped: &str) -> Result<Value, CdpError> {
         let r = self
             .session
-            .call(
+            .call_with_deadline(
                 "Runtime.evaluate",
                 json!({ "expression": wrapped, "returnByValue": true, "awaitPromise": true }),
+                CALL_DEADLINE,
             )
             .await
             .map_err(|e| cdp_err("js", format!("Runtime.evaluate: {e:#}")))?;
@@ -213,6 +242,42 @@ impl CdpState {
         ))
     }
 
+    /// 同源宿主腿（#68 三薄封装）：走注入闭包直取方言全局函数的同一
+    /// 实现结果；未注入（进程内测试态）报 CdpError 点名。
+    async fn call_host(
+        &self,
+        op: &'static str,
+        argv: Vec<RuneValue>,
+    ) -> Result<RuneValue, CdpError> {
+        let chosen = match op {
+            "snapshot" => self.host_fns.snapshot.clone(),
+            "requests" => self.host_fns.requests.clone(),
+            "requestDetail" => self.host_fns.request_detail.clone(),
+            _ => None,
+        };
+        let f = chosen.ok_or_else(|| {
+            cdp_err(
+                op,
+                "同源宿主面未注入（进程内测试态无 daemon；真用走 browse rune）",
+            )
+        })?;
+        let args: Vec<Value> = argv
+            .iter()
+            .map(|v| serde_json::to_value(v).unwrap_or(Value::Null))
+            .collect();
+        let out = f(serde_json::to_value(&args).unwrap_or(Value::Null))
+            .await
+            .map_err(|e| cdp_err(op, e))?;
+        serde_json::from_value::<RuneValue>(out)
+            .map_err(|e| cdp_err(op, format!("结果过桥失败：{e}")))
+    }
+
+    /// 直接结果面（无 RemoteObject 包裹的 CDP 响应）过桥。
+    fn bridge_no_result_check(r: &Value, op: &str) -> Result<RuneValue, CdpError> {
+        serde_json::from_value::<RuneValue>(r.clone())
+            .map_err(|e| cdp_err(op, format!("结果过桥失败：{e}")))
+    }
+
     /// CDP `RemoteObject` 的 value 腿过 serde 桥成 rune 值（`() ↔ null`、
     /// `#{ } ↔ object`、数组对数组；value 缺席即 undefined 形单位值）。
     fn bridge(r: &Value) -> Result<RuneValue, CdpError> {
@@ -235,6 +300,8 @@ pub struct ModuleCtx {
     pub snippets_root: std::path::PathBuf,
     /// 管道参数道捕获串（`cdp::stdin()` 的值；无管道即空串）。
     pub stdin: String,
+    /// 三支柱同源宿主函数束（daemon 注入；进程内测试可缺省）。
+    pub host_fns: HostFns,
 }
 
 /// 运行时 Jinja 引擎（ADR-0009 同配置：Strict undefined、零 autoescape；
@@ -271,6 +338,7 @@ pub fn cdp_module(ctx: ModuleCtx) -> Result<(Module, Cleanup), rune::ContextErro
         result_slot,
         snippets_root,
         stdin,
+        host_fns,
     } = ctx;
     let mut m = Module::with_crate("cdp")?;
     m.ty::<CdpError>()?;
@@ -296,6 +364,7 @@ pub fn cdp_module(ctx: ModuleCtx) -> Result<(Module, Cleanup), rune::ContextErro
         script_id: std::sync::Mutex::new(None),
         snippets_root,
         stdin,
+        host_fns,
     });
 
     {
@@ -305,7 +374,7 @@ pub fn cdp_module(ctx: ModuleCtx) -> Result<(Module, Cleanup), rune::ContextErro
             async move {
                 let nav = st
                     .session
-                    .call("Page.navigate", json!({ "url": url }))
+                    .call_with_deadline("Page.navigate", json!({ "url": url }), CALL_DEADLINE)
                     .await
                     .map_err(|e| cdp_err("goto", format!("Page.navigate: {e:#}")))?;
                 if let Some(err_text) = nav.get("errorText").and_then(Value::as_str) {
@@ -372,7 +441,7 @@ pub fn cdp_module(ctx: ModuleCtx) -> Result<(Module, Cleanup), rune::ContextErro
             async move {
                 let r = st
                     .session
-                    .call(
+                    .call_with_deadline(
                         "Runtime.callFunctionOn",
                         json!({
                             "objectId": handle.id,
@@ -381,6 +450,7 @@ pub fn cdp_module(ctx: ModuleCtx) -> Result<(Module, Cleanup), rune::ContextErro
                             "awaitPromise": true,
                             "returnByValue": true,
                         }),
+                        CALL_DEADLINE,
                     )
                     .await
                     .map_err(|e| cdp_err("call", format!("callFunctionOn: {e:#}")))?;
@@ -398,7 +468,11 @@ pub fn cdp_module(ctx: ModuleCtx) -> Result<(Module, Cleanup), rune::ContextErro
             let st = st.clone();
             async move {
                 st.session
-                    .call("Runtime.releaseObject", json!({ "objectId": handle.id }))
+                    .call_with_deadline(
+                        "Runtime.releaseObject",
+                        json!({ "objectId": handle.id }),
+                        CALL_DEADLINE,
+                    )
                     .await
                     .map_err(|e| cdp_err("release", format!("releaseObject: {e:#}")))?;
                 Ok::<(), CdpError>(())
@@ -426,9 +500,9 @@ pub fn cdp_module(ctx: ModuleCtx) -> Result<(Module, Cleanup), rune::ContextErro
                     .map_err(|_| cdp_err("click", format!("选择器未命中：{sel}")))?;
                 for ty in ["mousePressed", "mouseReleased"] {
                     st.session
-                        .call(
-                            "Input.dispatchMouseEvent",
+                        .call_with_deadline("Input.dispatchMouseEvent",
                             json!({ "type": ty, "x": x, "y": y, "button": "left", "clickCount": 1 }),
+                        CALL_DEADLINE,
                         )
                         .await
                         .map_err(|e| cdp_err("click", format!("Input.{ty}: {e:#}")))?;
@@ -460,7 +534,7 @@ pub fn cdp_module(ctx: ModuleCtx) -> Result<(Module, Cleanup), rune::ContextErro
                 .await
                 .map_err(|e| cdp_err("type_text", format!("focus：{}", e.message)))?;
                 st.session
-                    .call("Input.insertText", json!({ "text": text }))
+                    .call_with_deadline("Input.insertText", json!({ "text": text }), CALL_DEADLINE)
                     .await
                     .map_err(|e| cdp_err("type_text", format!("Input.insertText: {e:#}")))?;
                 Ok::<(), CdpError>(())
@@ -593,6 +667,76 @@ pub fn cdp_module(ctx: ModuleCtx) -> Result<(Module, Cleanup), rune::ContextErro
         m.function("stdin", move || st.stdin.clone()).build()?;
     }
 
+    // ---- #68 修复批随行三薄封装：三支柱同源 + cookie 面 ----
+    {
+        let st = state.clone();
+        m.function("requests", move |opts: RuneValue| {
+            let st = st.clone();
+            async move { st.call_host("requests", vec![opts]).await }
+        })
+        .build()?;
+    }
+    {
+        let st = state.clone();
+        m.function("snapshot", move |opts: RuneValue| {
+            let st = st.clone();
+            async move { st.call_host("snapshot", vec![opts]).await }
+        })
+        .build()?;
+    }
+    {
+        let st = state.clone();
+        m.function("request_detail", move |sel: RuneValue, opts: RuneValue| {
+            let st = st.clone();
+            async move { st.call_host("requestDetail", vec![sel, opts]).await }
+        })
+        .build()?;
+    }
+    {
+        let st = state.clone();
+        m.function("cookies", move || {
+            let st = st.clone();
+            async move {
+                let r = st
+                    .session
+                    .call_with_deadline("Network.getCookies", json!({}), CALL_DEADLINE)
+                    .await
+                    .map_err(|e| cdp_err("cookies", format!("Network.getCookies: {e:#}")))?;
+                CdpState::bridge_no_result_check(&r, "cookies")
+            }
+        })
+        .build()?;
+    }
+    {
+        let st = state.clone();
+        m.function(
+            "set_cookie",
+            move |name: String, value: String, domain: String| {
+                let st = st.clone();
+                async move {
+                    let r = st
+                        .session
+                        .call_with_deadline(
+                            "Network.setCookie",
+                            json!({ "name": name, "value": value, "domain": domain, "path": "/" }),
+                            CALL_DEADLINE,
+                        )
+                        .await
+                        .map_err(|e| cdp_err("set_cookie", format!("Network.setCookie: {e:#}")))?;
+                    // setCookie 返回 {success: bool}
+                    if r.get("success").and_then(Value::as_bool) == Some(false) {
+                        return Err(cdp_err(
+                            "set_cookie",
+                            "浏览器拒设（检查 domain 与 httpOnly/secure 约束）",
+                        ));
+                    }
+                    Ok(RuneValue::from(()))
+                }
+            },
+        )
+        .build()?;
+    }
+
     Ok((
         m,
         Cleanup {
@@ -633,9 +777,10 @@ impl Cleanup {
     async fn cleanup_inner(&self) {
         let _ = self
             .session
-            .call(
+            .call_with_deadline(
                 "Runtime.releaseObjectGroup",
                 json!({ "objectGroup": self.state.object_group }),
+                CALL_DEADLINE,
             )
             .await;
         // 先取出 id 即弃守卫：std 锁守卫不可跨 await（跨即 future !Send，
@@ -644,9 +789,10 @@ impl Cleanup {
         if let Some(id) = script_id {
             let _ = self
                 .session
-                .call(
+                .call_with_deadline(
                     "Page.removeScriptToEvaluateOnNewDocument",
                     json!({ "identifier": id }),
+                    CALL_DEADLINE,
                 )
                 .await;
         }
@@ -669,16 +815,18 @@ impl Drop for Cleanup {
         if let Ok(handle) = tokio::runtime::Handle::try_current() {
             handle.spawn(async move {
                 let _ = session
-                    .call(
+                    .call_with_deadline(
                         "Runtime.releaseObjectGroup",
                         json!({ "objectGroup": group }),
+                        CALL_DEADLINE,
                     )
                     .await;
                 if let Some(id) = script_id {
                     let _ = session
-                        .call(
+                        .call_with_deadline(
                             "Page.removeScriptToEvaluateOnNewDocument",
                             json!({ "identifier": id }),
+                            CALL_DEADLINE,
                         )
                         .await;
                 }

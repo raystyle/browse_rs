@@ -52,8 +52,13 @@
 | `js_lib(name, vars)` | `-> Result<Value>` | 直调 snippets 库内 `.js` 小程序（名原样与补 `.js` 两试），vars 做 Jinja 渲染（#66 全同管线）后主世界执行 |
 | `render(tpl, vars)` | `-> Result<String>` | 运行时 Jinja（Strict；未填键走 `CdpError{op:"render"}`） |
 | `stdin()` | `-> String` | 管道参数道捕获串（CLI 有实参时管道串经请求体 stdin 字段递入；无管道空串） |
+| `requests(opts)` | `-> Result<Value>` | 交互请求对账（与方言 `requests()` 同源同参：since/filter；Network 事件环形 1000 条） |
+| `snapshot(opts)` | `-> Result<Value>` | ax 树快照（与方言 `snapshot()` 同源同参：ref/depth/pierce；返回 url/title/nodes） |
+| `request_detail(sel, opts)` | `-> Result<Value>` | 单请求详情（index 或 requestId；响应头含 Set-Cookie 可取） |
+| `cookies()` | `-> Result<Value>` | `Network.getCookies`（当前会话 cookie 全量） |
+| `set_cookie(name, value, domain)` | `-> Result<()>` | `Network.setCookie`（path 恒 /；拒设报错） |
 
-边界：函数都在主 frame（iframe 内不可编排，frame 形后续批）；执行器会自动追加 `__browse_rune_wrap__` 包装函数（用户脚本请勿用同名）。输入三通道：`browse rune <script|@名>`（文件/实参道）、`cat plan.rn | browse rune`（管道即源码）、`browse rune @名 < data`（管道即参数，脚本内 `cdp::stdin()` 读）。请求体可选字段 `root`（js_lib 的片段库根，旗标 > env > 内置）与 `stdin`。
+边界：函数都在主 frame（iframe 内不可编排，frame 形后续批）；执行器会自动追加 `__browse_rune_wrap__` 包装函数（用户脚本请勿用同名）。输入三通道：`browse rune <script|@名>`（文件/实参道）、`cat plan.rn | browse rune`（管道即源码）、`browse rune @名 < data`（管道即参数，脚本内 `cdp::stdin()` 读）。请求体可选字段 `root`（js_lib 的片段库根，旗标 > env > 内置）与 `stdin`。快错面（修复批）：全部 CDP 调用 30 秒上界、同源宿主腿 60 秒上界、WS 握手 15 秒上界；引擎忙（另一请求持执行槽）排队 10 秒过界即报错不无界等。
 
 响应 envelope 与 `/eval` 同形（`ok`/`value`/`engineContext` 或 `ok:false`/`error`）；`value` 是 rune 回执：`{"ok": <main 成功载荷>}` 或 `{"error": <脚本可见失败载荷>}`（脚本自造 `Timeout` 型、`cdp::CdpError{op,message}` 都属后者）。编译错、VM 终态（含限额击穿）、超时走 `error` 面。细节与脚本写法见 `browse --llms` 的 rune 条目与 crates/browse-rune 文档。
 

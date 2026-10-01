@@ -2861,6 +2861,7 @@ async fn rune_three_channel_integration() {
         browse_rune::RunOpts {
             snippets_root: lib_root.clone(),
             stdin: "pipe-data".to_string(),
+            host_fns: Default::default(),
         },
     )
     .await
@@ -2881,4 +2882,89 @@ async fn rune_three_channel_integration() {
     engine.shutdown().await.expect("shutdown");
     clean_profile().await;
     let _ = std::fs::remove_dir_all(&lib_root);
+}
+
+/// #68 修复批验收真 chrome 端到端：规范四形（canon 三连冷跑、
+/// json::from_string、递归 async 携 cdp::eval）加三支柱薄封装。
+#[tokio::test]
+async fn rune_68_acceptance_and_pillars() {
+    if !gated() {
+        eprintln!("skip: BROWSE_E2E 未设 1");
+        return;
+    }
+    let _seq = SEQ.lock().await;
+    clean_profile().await;
+    let session = cdp::Session::new();
+    let engine = Engine::new(session.clone());
+    engine
+        .ensure(&EngineSpec::Auto {
+            chrome: None,
+            headless: true,
+            pipe: false,
+            profile: None,
+            proxy: None,
+            proxy_bypass: None,
+            isolated: false,
+            engine_args: Vec::new(),
+        })
+        .await
+        .expect("#68 验收引擎起不来");
+    let canon = r##"pub async fn main() {
+        let value = 0;
+        while value < 50 { value = value + 1; }
+        let v = Vec::new();
+        for x in ["a", "b", "c"] { v.push(x); }
+        Ok(format!("canon-ok value={} vec={}", value, v.len()))
+    }"##;
+    for i in 1..=3 {
+        let r = browse_rune::run(
+            session.clone(),
+            canon,
+            browse_rune::DEFAULT_CAPS,
+            browse_rune::RunOpts::default(),
+        )
+        .await
+        .unwrap_or_else(|e| panic!("canon 第 {i} 跑挂/红：{e:#}"));
+        assert_eq!(
+            r,
+            serde_json::json!({ "ok": "canon-ok value=50 vec=3" }),
+            "canon 第 {i} 跑回执：{r}"
+        );
+    }
+    let json_form =
+        r#"pub async fn main() { let v = json::from_string("{\"n\": 5}")?; Ok(v["n"]) }"#;
+    let r = browse_rune::run(
+        session.clone(),
+        json_form,
+        browse_rune::DEFAULT_CAPS,
+        browse_rune::RunOpts::default(),
+    )
+    .await
+    .expect("json 形红");
+    assert_eq!(r, serde_json::json!({ "ok": 5 }), "json 形回执：{r}");
+    let recursion = r#"pub async fn main() {
+        cdp::goto("data:text/html,<title>rec</title>").await?;
+        let t = cdp::eval("document.title").await?;
+        async fn dig(d) {
+            if d == 0 { return 0; }
+            1 + dig(d - 1).await
+        }
+        let n = dig(4).await;
+        Ok(#{"title": t, "depth": n})
+    }"#;
+    let r = browse_rune::run(
+        session.clone(),
+        recursion,
+        browse_rune::DEFAULT_CAPS,
+        browse_rune::RunOpts::default(),
+    )
+    .await
+    .expect("递归形红");
+    assert_eq!(
+        r,
+        serde_json::json!({ "ok": { "title": "rec", "depth": 4 } }),
+        "递归形回执：{r}"
+    );
+    engine.shutdown().await.expect("shutdown");
+    clean_profile().await;
 }

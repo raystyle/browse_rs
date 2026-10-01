@@ -329,8 +329,14 @@ impl Session {
     }
 
     async fn open_ws(self: &Arc<Self>, ws_url: &str) -> Result<()> {
-        let (ws, _) = connect_async(ws_url)
+        // #68 根修:WS 握手有界(裸 connect_async 无超时,冷引擎半开口上
+        // 可挂到 OS TCP 时限,是 rune/eval 冷路径挂死的真根因);15 秒
+        // 过界快错带 CTA,上层 ensure 可重试
+        let (ws, _) = tokio::time::timeout(Duration::from_secs(15), connect_async(ws_url))
             .await
+            .map_err(|_| {
+                anyhow!("ws connect {ws_url} 15 秒超时（引擎口半开或未就绪）；下一步：browse status 看引擎态后重试")
+            })?
             .with_context(|| format!("ws connect {ws_url}"))?;
         let (mut write, mut read) = ws.split();
         let (tx, mut rx) = mpsc::unbounded_channel::<Value>();

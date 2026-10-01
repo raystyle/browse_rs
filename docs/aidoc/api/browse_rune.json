@@ -1,6 +1,6 @@
 {
   "crate": "browse-rune",
-  "version": "0.25.0",
+  "version": "0.26.0",
   "items": [
     {
       "path": "browse_rune::exec",
@@ -41,6 +41,16 @@
       "path": "browse_rune::module::Cleanup",
       "kind": "struct",
       "docs": "执行收尾（方案边界条款 + 评审 #67 一轮 G1/G2）：整组释放本执行\n对象组，注销世界引导脚本注册。best-effort：会话已断时静默（清账\n失败不掩盖脚本结果）。"
+    },
+    {
+      "path": "browse_rune::module::HostFn",
+      "kind": "type_alias",
+      "docs": "同源宿主面（#68 随批三薄封装）：snapshot/requests/requestDetail 经\njs_host `global_json` 同一实现注入（闭包形避免 crate 循环依赖）。"
+    },
+    {
+      "path": "browse_rune::module::HostFns",
+      "kind": "struct",
+      "docs": "三支柱宿主函数注入束（Debug 手写：闭包无派生）。"
     },
     {
       "path": "browse_rune::module::ModuleCtx",

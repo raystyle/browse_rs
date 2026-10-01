@@ -17,6 +17,8 @@ object`、数组对数组），DOM 节点只留 [`ObjHandle`] 不透明句柄；
 
 - `CdpError` — 脚本可见的 CDP 失败型（方案错误约定）：`op` 是失败操作名，`message`
 - `Cleanup` — 执行收尾（方案边界条款 + 评审 #67 一轮 G1/G2）：整组释放本执行
+- `HostFn` — 同源宿主面（#68 随批三薄封装）：snapshot/requests/requestDetail 经
+- `HostFns` — 三支柱宿主函数注入束（Debug 手写：闭包无派生）。
 - `ModuleCtx` — 模块构建上下文（#67 三形态运行时批）：会话与两条输入通道（snippets
 - `ObjHandle` — DOM 节点不透明句柄：`eval_handle` 产出，`call`/`release` 消费；脚本
 

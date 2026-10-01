@@ -2,6 +2,12 @@
 
 版本级里程碑；逐批过程见 docs/diary。semver 判据在册 docs/requirements/REQ-004。
 
+## 0.26.0 - 2026-10-01
+
+- **#68 修复批：rune 面挂死根修（三段有界）与三支柱薄封装**：根因三段闭合：①cdp `Session` 的 `open_ws` 裸 `connect_async` 无超时（冷引擎半开口上 WS 握手可挂到 OS TCP 时限，冷挂暖过竞态的真根因），包 15 秒上界快错带 CTA；②cdp 模块全部 CDP 调用（八函数加 js/js_lib 主世界腿加 Cleanup 清账）换 `call_with_deadline`（30 秒上界，丢响应快错 `CdpError{op,message}` 不永挂）；③同源宿主腿（js_host `global_json` 闭包）整体 60 秒上界。连坐修复：`/rune` 与 `/eval` 的 `eval_lock` 获取排队 10 秒过界快错「引擎忙」（执行串行不变，不无界排队）。验收：规范四形（canon 三连冷跑、json::from_string、递归 async 携 cdp::eval）60 秒内回执 ok，真 chrome e2e 锁定；三冷循环 pillars 全过
+- **三支柱薄封装（战役台需求）**：`cdp::requests(opts)`（交互请求对账，方言同源）、`cdp::snapshot(opts)`（ax 树快照同源）、`cdp::request_detail(sel,opts)`（单请求详情，响应头含 Set-Cookie）、`cdp::cookies()`/`cdp::set_cookie(name,value,domain)`（会话收割面）；js_host 增 pub `global_json` 同源入口（方言与 rune 零第二真相）；示例落 crates/browse-rune/examples/（repro68.rs 加 pillars.rn）
+- semver 判据结论（0.26.0 裁定）：修复加能力新增取 minor（REQ-004 判据行）
+
 ## 0.25.0 - 2026-10-01
 
 - **Rune 三形态运行时定位与 js/cdp/jinja 集成（ADR-0010 增补）**：小程序三形态定谳：rn 脚本小程序（js+cdp 双能力，宿主编排）、方言命令（cdp）、js 小程序（js）；rn 形态新增四函数：`cdp::js(src, args)`（内联 JS 小程序体，`--js` 同语义主世界执行、页面函数可调；args 对象经 `serde_json::to_string` 做 JSON 字面量注入，单双引号反引号天然安全，js 体原样入包裹器零拼接）、`cdp::js_lib(name, vars)`（直调 snippets 库内 `.js` 小程序，#66 全同 Jinja 渲染管线后主世界执行，名原样与补 .js 两试、越根候选跳过）、`cdp::render(tpl, vars)`（运行时 Jinja，ADR-0009 同配置 Strict 加零 autoescape）、`cdp::stdin()`（管道参数道）。输入三通道：文件/实参道、管道源码道（无实参时 `cat plan.rn | browse rune`）、管道参数道（有实参时管道串进 `cdp::stdin()`）；`--root` 双生效面（@ 名解析 CLI 侧 + js_lib 经 daemon 三序）；POST /rune 增 root 与 stdin 可选字段。两世界分工定谳：eval 族隔离世界轻探针，js 族主世界全量页面逻辑（ADR-0010 原文修订）

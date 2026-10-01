@@ -305,6 +305,36 @@ async fn run_eval_code(host: &JsHost, code: &str, js: bool) -> anyhow::Result<Va
     }
 }
 
+/// 三支柱同源宿主函数束（#68 修复批）：闭包桥 js_host `global_json`，
+/// rune 面与方言面同一实现。
+fn host_fns(host: &std::sync::Arc<JsHost>) -> browse_rune::HostFns {
+    let wrap = |name: &'static str| -> browse_rune::module::HostFn {
+        let h = std::sync::Arc::clone(host);
+        std::sync::Arc::new(move |args: Value| {
+            let h = std::sync::Arc::clone(&h);
+            Box::pin(async move {
+                let argv: Vec<Value> = args.as_array().cloned().unwrap_or_default();
+                // #68:js_host 腿自身无逐调用 deadline,闭包层整体 60s 上界
+                // (同源三支柱的最坏复合调用面也远低于此)
+                tokio::time::timeout(Duration::from_secs(60), h.global_json(name, &argv))
+                    .await
+                    .map_err(|_| {
+                        format!("{name} 同源调用超时（60 秒上界）；下一步:browse status 看引擎态")
+                    })?
+                    .map_err(|e| format!("{e:#}"))
+            })
+                as std::pin::Pin<
+                    Box<dyn std::future::Future<Output = Result<Value, String>> + Send>,
+                >
+        })
+    };
+    browse_rune::HostFns {
+        snapshot: Some(wrap("snapshot")),
+        requests: Some(wrap("requests")),
+        request_detail: Some(wrap("requestDetail")),
+    }
+}
+
 /// POST /rune（账本 #67）：Rune 编排脚本执行。与 /eval 同槽串行、同
 /// 引擎懒起与超时口径；回执 envelope 同形（value 是 rune 回执 JSON：
 /// `{"ok": …}` 或 `{"error": …}`，宿主终态走 err 面）。
@@ -317,7 +347,18 @@ async fn rune_handler(
         .last_activity
         .lock()
         .map(|mut t| *t = Instant::now());
-    let _slot = st.daemon.eval_lock.lock().await;
+    // 锁获取有界（#68 连坐修复）：执行串行不变，排队上限 10 秒，
+    // 过界快错不无界等
+    let _slot = match tokio::time::timeout(Duration::from_secs(10), st.daemon.eval_lock.lock())
+        .await
+    {
+        Ok(g) => g,
+        Err(_) => {
+            return err_response(anyhow::anyhow!(
+                "引擎忙（另一请求在执行，等 10 秒未获执行槽）；下一步：稍后重试，或 browse status 看引擎态"
+            ));
+        }
+    };
     let d = &st.daemon;
     // Rune 编排恒碰页面：懒引擎预连（方言的「片段自己连」分支不适用）
     if !d.host.session().is_connected() {
@@ -334,6 +375,7 @@ async fn rune_handler(
     let opts = browse_rune::RunOpts {
         snippets_root: root,
         stdin: req.stdin.clone().unwrap_or_default(),
+        host_fns: host_fns(&d.host),
     };
     let outcome = tokio::time::timeout(
         eval_timeout(),
@@ -382,7 +424,17 @@ async fn eval_handler(
         .last_activity
         .lock()
         .map(|mut t| *t = Instant::now());
-    let _slot = st.daemon.eval_lock.lock().await;
+    // 锁获取有界（#68 连坐修复，与 /rune 同款）
+    let _slot = match tokio::time::timeout(Duration::from_secs(10), st.daemon.eval_lock.lock())
+        .await
+    {
+        Ok(g) => g,
+        Err(_) => {
+            return err_response(anyhow::anyhow!(
+                "引擎忙（另一请求在执行，等 10 秒未获执行槽）；下一步：稍后重试，或 browse status 看引擎态"
+            ));
+        }
+    };
     let d = &st.daemon;
     if req.new_tab
         && let Err(e) = d.engine.new_tab().await

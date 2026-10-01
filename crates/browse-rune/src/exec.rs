@@ -38,12 +38,14 @@ pub const DEFAULT_CAPS: Caps = Caps {
 
 /// 执行选项（三形态批）：snippets 根（`js_lib` 解析位）与管道参数串
 /// （`cdp::stdin()` 的值）。
-#[derive(Debug, Clone, Default)]
+#[derive(Clone, Default)]
 pub struct RunOpts {
     /// `js_lib` 的片段库根（daemon 侧三序收口后的终值）。
     pub snippets_root: std::path::PathBuf,
     /// 管道参数道捕获串（无管道即空串）。
     pub stdin: String,
+    /// 三支柱同源宿主函数束（daemon 注入；缺省时对应 cdp 函数报未注入）。
+    pub host_fns: crate::module::HostFns,
 }
 
 /// 自动追加的结果回传包装（入口恒 `pub async fn main()`）。
@@ -118,6 +120,7 @@ async fn run_raw(
         result_slot: result_slot.clone(),
         snippets_root: opts.snippets_root,
         stdin: opts.stdin,
+        host_fns: opts.host_fns,
     }) {
         Ok(v) => v,
         Err(e) => return (Err(anyhow!("cdp 模块注册失败：{e}")), None),

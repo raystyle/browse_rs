@@ -21,4 +21,4 @@ pub mod exec;
 pub mod module;
 
 pub use exec::{Caps, DEFAULT_CAPS, RunOpts, run};
-pub use module::{CdpError, cdp_module};
+pub use module::{CdpError, HostFn, HostFns, ModuleCtx, cdp_module};
