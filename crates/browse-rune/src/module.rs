@@ -261,10 +261,12 @@ impl CdpState {
                 "同源宿主面未注入（进程内测试态无 daemon；真用走 browse rune）",
             )
         })?;
-        let args: Vec<Value> = argv
-            .iter()
-            .map(|v| serde_json::to_value(v).unwrap_or(Value::Null))
-            .collect();
+        let mut args: Vec<Value> = Vec::with_capacity(argv.len());
+        for v in &argv {
+            let jv = serde_json::to_value(v)
+                .map_err(|e| cdp_err(op, format!("参数不可 JSON 化：{e}（外部类型先转基本值）")))?;
+            args.push(jv);
+        }
         let out = f(serde_json::to_value(&args).unwrap_or(Value::Null))
             .await
             .map_err(|e| cdp_err(op, e))?;

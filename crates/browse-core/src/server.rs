@@ -355,7 +355,7 @@ async fn rune_handler(
         Ok(g) => g,
         Err(_) => {
             return err_response(anyhow::anyhow!(
-                "引擎忙（另一请求在执行，等 10 秒未获执行槽）；下一步：稍后重试，或 browse status 看引擎态"
+                "引擎忙或正在退役（执行槽被占/闲置回收进行中，等 10 秒未获得；重试即通）；下一步：稍后重试，或 browse status 看引擎态"
             ));
         }
     };
@@ -431,7 +431,7 @@ async fn eval_handler(
         Ok(g) => g,
         Err(_) => {
             return err_response(anyhow::anyhow!(
-                "引擎忙（另一请求在执行，等 10 秒未获执行槽）；下一步：稍后重试，或 browse status 看引擎态"
+                "引擎忙或正在退役（执行槽被占/闲置回收进行中，等 10 秒未获得；重试即通）；下一步：稍后重试，或 browse status 看引擎态"
             ));
         }
     };

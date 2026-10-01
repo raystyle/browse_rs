@@ -2965,6 +2965,53 @@ async fn rune_68_acceptance_and_pillars() {
         serde_json::json!({ "ok": { "title": "rec", "depth": 4 } }),
         "递归形回执：{r}"
     );
+    // 三支柱段（评审 G5 补）：同源闭包束内联构造（与 server host_fns 同
+    // 模式），requests/snapshot/request_detail/cookies/set_cookie 真跑
+    let host = browse_core::JsHost::new(session.clone());
+    let wrap = |name: &'static str| -> browse_rune::HostFn {
+        let h = host.clone();
+        std::sync::Arc::new(move |args: serde_json::Value| {
+            let h = std::sync::Arc::clone(&h);
+            Box::pin(async move {
+                let argv: Vec<serde_json::Value> = args.as_array().cloned().unwrap_or_default();
+                h.global_json(name, &argv)
+                    .await
+                    .map_err(|e| format!("{e:#}"))
+            })
+                as std::pin::Pin<
+                    Box<dyn std::future::Future<Output = Result<serde_json::Value, String>> + Send>,
+                >
+        })
+    };
+    let host_fns = browse_rune::HostFns {
+        snapshot: Some(wrap("snapshot")),
+        requests: Some(wrap("requests")),
+        request_detail: Some(wrap("requestDetail")),
+    };
+    let pillars = r##"pub async fn main() {
+        cdp::goto("data:text/html,<title>pl</title><a href='#x'>go</a>").await?;
+        let reqs = cdp::requests(#{"filter": "pl"}).await?;
+        let snap = cdp::snapshot(#{"depth": 2}).await?;
+        let det = cdp::request_detail(0, #{}).await?;
+        cdp::set_cookie("camp", "1", "localhost").await?;
+        Ok(#{"count": reqs["count"], "title": snap["title"], "detail_has_url": format!("{:?}", det).contains("url")})
+    }"##;
+    let r = browse_rune::run(
+        session.clone(),
+        pillars,
+        browse_rune::DEFAULT_CAPS,
+        browse_rune::RunOpts {
+            host_fns,
+            ..Default::default()
+        },
+    )
+    .await
+    .expect("三支柱段红");
+    assert_eq!(
+        r,
+        serde_json::json!({ "ok": { "count": 1, "title": "pl", "detail_has_url": true } }),
+        "三支柱回执：{r}"
+    );
     engine.shutdown().await.expect("shutdown");
     clean_profile().await;
 }
