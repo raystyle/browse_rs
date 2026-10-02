@@ -507,10 +507,11 @@ fn missing_bare_placeholders(body: &str, vars: &[(String, String)]) -> Vec<Strin
     missing
 }
 
-/// rune 面模板渲染（批次二 r# 裸串）：先抽出 r# 区换占位（区内容对
-/// Jinja 惰性，`{{`/`{%` 原样直达），渲染余下源，再回填转义普通串——
-/// 「裸串免渲染」与 `{% raw %}` 各管一层（raw 管 Jinja 面任意区，r# 管
-/// Rune 串字面量面）；无 r# 记号时与 [`render_template`] 等价。
+/// rune 面模板渲染（批次二 r# 裸串、批次三注释惰性化）：先抽出 r# 区
+/// 与注释区换占位（两类区对 Jinja 惰性，`{{`/`{%`/字面 raw 标签原样），
+/// 渲染余下源，再回填（r# 区转义普通串、注释区逐字原文）；「裸串与注
+/// 释免渲染」与 `{% raw %}` 各管一层（raw 管 Jinja 面任意区，r# 管 Rune
+/// 串字面量面）；无 r# 记号且无注释时与 [`render_template`] 等价。
 ///
 /// # Errors
 ///

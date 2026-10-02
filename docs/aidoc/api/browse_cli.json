@@ -85,7 +85,7 @@
     {
       "path": "browse_cli::client::render_rune_template",
       "kind": "function",
-      "docs": "rune 面模板渲染（批次二 r# 裸串）：先抽出 r# 区换占位（区内容对\nJinja 惰性，`{{`/`{%` 原样直达），渲染余下源，再回填转义普通串——\n「裸串免渲染」与 `{% raw %}` 各管一层（raw 管 Jinja 面任意区，r# 管\nRune 串字面量面）；无 r# 记号时与 [`render_template`] 等价。\n\n# Errors\n\nr# 词法错（未闭合/占位冲撞/占位被模板误删）或渲染错误（同\n[`render_template`]）。"
+      "docs": "rune 面模板渲染（批次二 r# 裸串、批次三注释惰性化）：先抽出 r# 区\n与注释区换占位（两类区对 Jinja 惰性，`{{`/`{%`/字面 raw 标签原样），\n渲染余下源，再回填（r# 区转义普通串、注释区逐字原文）；「裸串与注\n释免渲染」与 `{% raw %}` 各管一层（raw 管 Jinja 面任意区，r# 管 Rune\n串字面量面）；无 r# 记号且无注释时与 [`render_template`] 等价。\n\n# Errors\n\nr# 词法错（未闭合/占位冲撞/占位被模板误删）或渲染错误（同\n[`render_template`]）。"
     },
     {
       "path": "browse_cli::client::render_template",

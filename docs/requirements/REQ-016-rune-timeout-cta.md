@@ -23,7 +23,7 @@ trace: 单测三件（server 超时回执结构面、browse-rune 探针快错清
 
 ## Notes
 
-- 终裁（2026-10-02，ADR-0010 增补在册）：`BROWSE_RUNE_TIMEOUT` 独立旋钮，rune 面默认 45 秒；`/eval` 的 `BROWSE_EVAL_TIMEOUT` 300 秒契约零动；上界是 daemon 级（实例内全部 rune 执行同界），长爬（逐页 goto 累计分钟级）会触顶，按需调大或拆专用命名实例。实现随批次二（v0.27.0），本批不改数值
+- 终裁（2026-10-02，ADR-0010 增补在册）：`BROWSE_RUNE_TIMEOUT` 独立旋钮，rune 面默认 45 秒；`/eval` 的 `BROWSE_EVAL_TIMEOUT` 300 秒契约零动；上界是 daemon 级（实例内全部 rune 执行同界），长爬（逐页 goto 累计分钟级）会触顶，按需调大或拆专用命名实例。实现随批次二（v0.28.0，已落地），本批不改数值
 - 探针粒度定谳：函数级（不是单 CDP 调用级）：goto 的导航与 readyState 轮询之间不闪 None，超时报的「卡在哪个调用面」语义稳定
 - 探针是 std 锁（与 script_id 同律：drop 兜底道不可 await/blocking_lock）；锁中毒即读 None，不掩盖脚本结果
 - 评审一轮 G1 披露：探针是单槽：脚本经 `future::join` 并发在飞多个 cdp 调用时，先完成者清空探针（op 可能 null 或非卡点面）；默认串行 await 面不受影响。计数/多重集面批次二评估
