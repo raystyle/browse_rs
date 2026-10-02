@@ -431,7 +431,7 @@ async fn rune_handler(
             // timeout 面（op 在飞调用面、elapsed_ms 已等待毫秒、bound_s 上
             // 界秒）加 daemon 日志行；错误文案保持 CTA 形
             let bound = rune_timeout();
-            let op = op_probe.lock().ok().and_then(|g| *g);
+            let op = probe_snapshot_json(&op_probe);
             eprintln!(
                 "{}",
                 json!({ "runeTimeout": {
@@ -453,7 +453,7 @@ async fn rune_handler(
                 "stop_request"
             };
             let elapsed = started.elapsed().as_millis() as u64;
-            let op = op_probe.lock().ok().and_then(|g| *g);
+            let op = probe_snapshot_json(&op_probe);
             eprintln!(
                 "{}",
                 json!({ "runeStopped": {
@@ -579,10 +579,7 @@ async fn eval_handler(
 /// `op` 在飞调用面（`js`/`goto`/…，执行间隙为 null）、`elapsed_ms` 已
 /// 等待毫秒、`bound_s` 上界秒；CLI 侧把 `timeout` 对象一行 JSON 打到
 /// stderr 供上层 agent 直接解析。
-fn rune_timeout_response(
-    op: Option<&str>,
-    bound: Duration,
-) -> (axum::http::StatusCode, Json<Value>) {
+fn rune_timeout_response(op: Value, bound: Duration) -> (axum::http::StatusCode, Json<Value>) {
     (
         axum::http::StatusCode::INTERNAL_SERVER_ERROR,
         Json(json!({
@@ -604,8 +601,19 @@ fn rune_timeout_response(
 /// 面给 `op`（在飞调用面）、`elapsed_ms`（实测毫秒）、`cause`
 /// （`stop_request` 主动停 / `engine_lost` 引擎失联联动停）；CTA 按
 /// cause 分流，对停止方是预期回执，对被停方指中断定位法。
+/// 探针多槽快照（0.31.0）：0 在飞 null、1 个字符串、多个数组（并发在
+/// 飞时全列，消单槽盲区）。
+fn probe_snapshot_json(probe: &browse_rune::OpProbe) -> Value {
+    let ops = probe.lock().ok().map(|g| g.clone()).unwrap_or_default();
+    match ops.len() {
+        0 => json!(null),
+        1 => json!(ops[0]),
+        _ => json!(ops),
+    }
+}
+
 fn rune_stopped_response(
-    op: Option<&str>,
+    op: Value,
     elapsed_ms: u64,
     cause: &str,
 ) -> (axum::http::StatusCode, Json<Value>) {
@@ -799,7 +807,7 @@ mod tests {
     /// （op/elapsed_ms/bound_s）齐、错误文案带前缀与下一步。
     #[test]
     fn rune_timeout_envelope_has_structured_face() {
-        let (code, Json(v)) = rune_timeout_response(Some("js"), Duration::from_secs(45));
+        let (code, Json(v)) = rune_timeout_response(json!("js"), Duration::from_secs(45));
         assert_eq!(code, axum::http::StatusCode::INTERNAL_SERVER_ERROR);
         assert_eq!(v["ok"], json!(false));
         let msg = v["error"].as_str().unwrap_or_default();
@@ -813,7 +821,7 @@ mod tests {
         assert_eq!(v["timeout"]["elapsed_ms"], json!(45000));
         assert_eq!(v["timeout"]["bound_s"], json!(45));
         // 执行间隙超时：op 为 null（serde_json 的 null 形）
-        let (_, Json(v)) = rune_timeout_response(None, Duration::from_secs(300));
+        let (_, Json(v)) = rune_timeout_response(json!(null), Duration::from_secs(300));
         assert_eq!(v["timeout"]["op"], json!(null));
         assert_eq!(v["timeout"]["bound_s"], json!(300));
     }
@@ -822,7 +830,7 @@ mod tests {
     /// cause）与 CTA 文案（stop_request 与 engine_lost 双形）。
     #[test]
     fn rune_stopped_envelope_has_structured_face() {
-        let (code, Json(v)) = rune_stopped_response(Some("goto"), 1234, "stop_request");
+        let (code, Json(v)) = rune_stopped_response(json!("goto"), 1234, "stop_request");
         assert_eq!(code, axum::http::StatusCode::INTERNAL_SERVER_ERROR);
         assert_eq!(v["ok"], json!(false));
         let msg = v["error"].as_str().unwrap_or_default();
@@ -835,11 +843,22 @@ mod tests {
         assert_eq!(v["stopped"]["elapsed_ms"], json!(1234));
         assert_eq!(v["stopped"]["cause"], json!("stop_request"));
         // 引擎失联联动形：cause 与 CTA 分流
-        let (_, Json(v)) = rune_stopped_response(Some("wait_event"), 5678, "engine_lost");
+        let (_, Json(v)) = rune_stopped_response(json!("wait_event"), 5678, "engine_lost");
         let msg = v["error"].as_str().unwrap_or_default();
         assert!(msg.contains("引擎失联"), "{msg}");
         assert!(msg.contains("browse status"), "{msg}");
         assert_eq!(v["stopped"]["cause"], json!("engine_lost"));
+    }
+
+    /// 多槽快照（0.31.0）：0 在飞 null、1 字符串、N 数组。
+    #[test]
+    fn probe_snapshot_multiset_face() {
+        let p = browse_rune::OpProbe::default();
+        assert_eq!(probe_snapshot_json(&p), json!(null));
+        p.lock().unwrap().push("js");
+        assert_eq!(probe_snapshot_json(&p), json!("js"));
+        p.lock().unwrap().push("goto");
+        assert_eq!(probe_snapshot_json(&p), json!(["js", "goto"]));
     }
 
     /// 引擎失联监视：未连接会话（Session::new）两次探测即返回——联动

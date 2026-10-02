@@ -2,6 +2,19 @@
 
 版本级里程碑；逐批过程见 docs/diary。semver 判据在册 docs/requirements/REQ-004。
 
+## 0.30.2 - 2026-10-02
+
+- **休眠项与 REQ-020 记档全清（总台令，版本定 0.30.2）**：
+- 探针多槽化（0.26.1 G1 收口）：`OpProbe` 改多重集（set 入列、clear 消自己一份），`future::join` 并发在飞时 timeout/stopped 的 `op` 全列（1 个仍字符串、多个数组、0 为 null），单槽盲区消
+- G-3 建表后台预热：daemon 启动 `preheat_missing_fn_table()`（独立线程），用户首个缺失函数错误不再付约 2 秒收割时延
+- G-2 双向名册守卫：源抽取比对 KNOWN_GLOBAL_FLAGS 与全局解析臂（顶层臂缩进判定），正反两向漂移即红
+- #67 G6：js_wrapper 单测两件（包裹形状、体 verbatim 含反引号与 ${）
+- #67 G7：管道空读提示（有实参且空白，消误 </dev/null 排障面）；Drop 兜底清账整体 10 秒上界；object-at 嗅探边界 ADR-0010 注记
+- G3 存量收口：snippets list 跳符号链接（与 show 越根守卫同口径）；keygen 备份修剪（同前缀旧备份先清，只保最新一代）
+- REQ-020 注入理论形收口：--vars 值含占位前缀即 exit 2（nonce 等价防护，确定性更优）
+- B 通道文档化：http-api r# 节补 --vars 值注入 JS 的受支持口径与边界
+- semver 判据结论（0.30.2 裁定）：探针 op 多槽属超时回执面加法（1 个时形不变），其余为修复/守卫/文档；总台定版 patch
+
 ## 0.30.1 - 2026-10-02
 
 - **#70 补名腿（缺失实例函数报错带名）**：哈希查名字表在首次遇错时以一次性 VM 探针收割（String/i64/Vec 上逐调常用方法名收缺失错哈希，OnceLock 缓存）；终态错误文本命中即在报错里补方法名并保留哈希可溯源（战役台两枚实测锚 to_string=0x871c12da43b176d2、splitn=0x7d6f3bd0775df4c8 已进单测锁）

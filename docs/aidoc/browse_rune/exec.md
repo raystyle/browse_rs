@@ -17,6 +17,7 @@ Rune 执行器（账本 #67）：一套 `Context` 编译一次，VM 经
 
 ## Functions
 
+- `preheat_missing_fn_table` — 缺失实例函数的哈希→名字表（#70 补名腿）：Rune 的
 - `run` — 编译并执行一段 Rune 编排脚本（入口恒 `pub async fn main()`）。
 
 ## Types

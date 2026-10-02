@@ -1311,6 +1311,16 @@ async fn main() -> Result<()> {
                     }
                 }
             };
+            // #67 G7 收口：有实参且管道读入空白（误 </dev/null 常见）提示
+            // 一次，消「参数道为何是空串」的排障面
+            if let Some(p) = piped.as_deref()
+                && script.is_some()
+                && p.trim().is_empty()
+            {
+                eprintln!(
+                    "browse: 提示：管道读入为空串（cdp::stdin() 将得空；如系误重定向 </dev/null 所致，参数道需写入数据）"
+                );
+            }
             let (target, stdin_param, piped_source) = match script {
                 Some(t) => (Some(t), piped, None),
                 None => match piped.as_deref().map(str::trim) {
@@ -1736,6 +1746,9 @@ async fn serve_foreground(
         browse_core::load_secrets(&f.to_string_lossy())?;
     }
     let daemon = browse_core::server::Daemon::new(host, engine, spec);
+    // 补名表后台预热（REQ-020 G-3 收口）：独立线程建表，用户首个缺失函
+    // 数错误不再付约 2 秒收割时延
+    browse_rune::preheat_missing_fn_table();
     browse_core::server::serve(daemon, &bind).await
 }
 
@@ -2020,6 +2033,11 @@ fn visit_snippets(
     };
     for e in entries.flatten() {
         let p = e.path();
+        // 符号链接跳过（#64/#65 评审 G3 存量收口）：file_type 不随链接走，
+        // 链接目录与链接文件都不进清单（show 面已有越根守卫，list 对齐）
+        if e.file_type().map(|t| t.is_symlink()).unwrap_or(false) {
+            continue;
+        }
         if p.is_dir() {
             // site 过滤：目录名前缀匹配
             let name = p.file_name().and_then(|n| n.to_str()).unwrap_or("");

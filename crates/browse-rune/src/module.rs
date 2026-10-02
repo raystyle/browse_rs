@@ -105,11 +105,13 @@ pub struct HostFns {
     pub request_detail: Option<HostFn>,
 }
 
-/// 在飞调用面探针（v0.26.1 超时 CTA）：cdp 函数入口置名、正常退出清空、
-/// future 被丢弃（整体超时或中止）时不清空即保留在飞面——daemon 层的
-/// 整体超时臂读它报告「卡在哪个调用面」。std 锁与 `script_id` 同律
-/// （drop 兜底道不可 await/blocking_lock）。
-pub type OpProbe = std::sync::Arc<std::sync::Mutex<Option<&'static str>>>;
+/// 在飞调用面探针（v0.26.1 超时 CTA；0.31.0 多槽化）：cdp 函数入口置
+/// 名、正常退出清空、future 被丢弃（整体超时或中止）时不清空即保留在
+/// 飞面——daemon 层的整体超时臂读它报告「卡在哪个调用面」。**多槽**：
+/// `future::join` 并发在飞多个 cdp 调用时逐个记账（此前单槽先完成者会
+/// 清掉别人的在飞名）。std 锁与 `script_id` 同律（drop 兜底道不可
+/// await/blocking_lock）。
+pub type OpProbe = std::sync::Arc<std::sync::Mutex<Vec<&'static str>>>;
 
 fn cdp_err(op: &str, message: impl std::fmt::Display) -> CdpError {
     CdpError {
@@ -282,17 +284,20 @@ impl CdpState {
             .map_err(|e| cdp_err(op, format!("结果过桥失败：{e}")))
     }
 
-    /// 探针置名（cdp 函数入口；被丢弃路径不置空即保留）。
+    /// 探针置名（cdp 函数入口；被丢弃路径不移除即保留）。
     fn set_op(&self, op: &'static str) {
         if let Ok(mut g) = self.op_probe.lock() {
-            *g = Some(op);
+            g.push(op);
         }
     }
 
-    /// 探针清空（cdp 函数正常退出，含快错路径）。
-    fn clear_op(&self) {
-        if let Ok(mut g) = self.op_probe.lock() {
-            *g = None;
+    /// 探针移除一次本名（cdp 函数正常退出，含快错路径；并发下只消自
+    /// 己那一份）。
+    fn clear_op(&self, op: &'static str) {
+        if let Ok(mut g) = self.op_probe.lock()
+            && let Some(i) = g.iter().position(|x| *x == op)
+        {
+            g.remove(i);
         }
     }
 
@@ -436,7 +441,7 @@ pub fn cdp_module(ctx: ModuleCtx) -> Result<(Module, Cleanup), rune::ContextErro
                         .to_string())
                 }
                 .await;
-                st.clear_op();
+                st.clear_op("goto");
                 out
             }
         })
@@ -453,7 +458,7 @@ pub fn cdp_module(ctx: ModuleCtx) -> Result<(Module, Cleanup), rune::ContextErro
                     CdpState::bridge(&r)
                 }
                 .await;
-                st.clear_op();
+                st.clear_op("eval");
                 out
             }
         })
@@ -474,7 +479,7 @@ pub fn cdp_module(ctx: ModuleCtx) -> Result<(Module, Cleanup), rune::ContextErro
                     Ok::<ObjHandle, CdpError>(ObjHandle { id: id.to_string() })
                 }
                 .await;
-                st.clear_op();
+                st.clear_op("eval_handle");
                 out
             }
         })
@@ -508,7 +513,7 @@ pub fn cdp_module(ctx: ModuleCtx) -> Result<(Module, Cleanup), rune::ContextErro
                     CdpState::bridge(&r)
                 }
                 .await;
-                st.clear_op();
+                st.clear_op("call");
                 out
             }
         })
@@ -532,7 +537,7 @@ pub fn cdp_module(ctx: ModuleCtx) -> Result<(Module, Cleanup), rune::ContextErro
                     Ok::<(), CdpError>(())
                 }
                 .await;
-                st.clear_op();
+                st.clear_op("release");
                 out
             }
         })
@@ -570,7 +575,7 @@ pub fn cdp_module(ctx: ModuleCtx) -> Result<(Module, Cleanup), rune::ContextErro
                     Ok::<(), CdpError>(())
                 }
                 .await;
-                st.clear_op();
+                st.clear_op("click");
                 out
             }
         })
@@ -610,7 +615,7 @@ pub fn cdp_module(ctx: ModuleCtx) -> Result<(Module, Cleanup), rune::ContextErro
                     Ok::<(), CdpError>(())
                 }
                 .await;
-                st.clear_op();
+                st.clear_op("type_text");
                 out
             }
         })
@@ -636,7 +641,7 @@ pub fn cdp_module(ctx: ModuleCtx) -> Result<(Module, Cleanup), rune::ContextErro
                     Ok::<bool, CdpError>(false)
                 }
                 .await;
-                st.clear_op();
+                st.clear_op("wait_sel");
                 out
             }
         })
@@ -672,7 +677,7 @@ pub fn cdp_module(ctx: ModuleCtx) -> Result<(Module, Cleanup), rune::ContextErro
                     Ok::<RuneValue, CdpError>(rv)
                 }
                 .await;
-                st.clear_op();
+                st.clear_op("wait_event");
                 out
             }
         })
@@ -724,7 +729,7 @@ pub fn cdp_module(ctx: ModuleCtx) -> Result<(Module, Cleanup), rune::ContextErro
                     CdpState::bridge(&r)
                 }
                 .await;
-                st.clear_op();
+                st.clear_op("js");
                 out
             }
         })
@@ -774,7 +779,7 @@ pub fn cdp_module(ctx: ModuleCtx) -> Result<(Module, Cleanup), rune::ContextErro
                     CdpState::bridge(&r)
                 }
                 .await;
-                st.clear_op();
+                st.clear_op("js_lib");
                 out
             }
         })
@@ -812,7 +817,7 @@ pub fn cdp_module(ctx: ModuleCtx) -> Result<(Module, Cleanup), rune::ContextErro
             async move {
                 st.set_op("requests");
                 let out = st.call_host("requests", vec![opts]).await;
-                st.clear_op();
+                st.clear_op("requests");
                 out
             }
         })
@@ -825,7 +830,7 @@ pub fn cdp_module(ctx: ModuleCtx) -> Result<(Module, Cleanup), rune::ContextErro
             async move {
                 st.set_op("snapshot");
                 let out = st.call_host("snapshot", vec![opts]).await;
-                st.clear_op();
+                st.clear_op("snapshot");
                 out
             }
         })
@@ -838,7 +843,7 @@ pub fn cdp_module(ctx: ModuleCtx) -> Result<(Module, Cleanup), rune::ContextErro
             async move {
                 st.set_op("request_detail");
                 let out = st.call_host("requestDetail", vec![sel, opts]).await;
-                st.clear_op();
+                st.clear_op("request_detail");
                 out
             }
         })
@@ -859,7 +864,7 @@ pub fn cdp_module(ctx: ModuleCtx) -> Result<(Module, Cleanup), rune::ContextErro
                     CdpState::bridge_no_result_check(&r, "cookies")
                 }
                 .await;
-                st.clear_op();
+                st.clear_op("cookies");
                 out
             }
         })
@@ -895,7 +900,7 @@ pub fn cdp_module(ctx: ModuleCtx) -> Result<(Module, Cleanup), rune::ContextErro
                         Ok(RuneValue::from(()))
                     }
                     .await;
-                    st.clear_op();
+                    st.clear_op("set_cookie");
                     out
                 }
             },
@@ -979,24 +984,50 @@ impl Drop for Cleanup {
         let group = self.state.object_group.clone();
         let script_id = self.state.script_id.lock().ok().and_then(|mut g| g.take());
         if let Ok(handle) = tokio::runtime::Handle::try_current() {
+            // #67 G7 收口：drop 兜底清账整体 10 秒上界（两调用各自 30 秒
+            // deadline 的最坏 60 秒收进一条，防极端下清账任务滞留）
             handle.spawn(async move {
-                let _ = session
-                    .call_with_deadline(
-                        "Runtime.releaseObjectGroup",
-                        json!({ "objectGroup": group }),
-                        CALL_DEADLINE,
-                    )
-                    .await;
-                if let Some(id) = script_id {
+                let _ = tokio::time::timeout(std::time::Duration::from_secs(10), async {
                     let _ = session
                         .call_with_deadline(
-                            "Page.removeScriptToEvaluateOnNewDocument",
-                            json!({ "identifier": id }),
+                            "Runtime.releaseObjectGroup",
+                            json!({ "objectGroup": group }),
                             CALL_DEADLINE,
                         )
                         .await;
-                }
+                    if let Some(id) = script_id {
+                        let _ = session
+                            .call_with_deadline(
+                                "Page.removeScriptToEvaluateOnNewDocument",
+                                json!({ "identifier": id }),
+                                CALL_DEADLINE,
+                            )
+                            .await;
+                    }
+                })
+                .await;
             });
         }
+    }
+}
+
+#[cfg(test)]
+mod wrapper_tests {
+    use super::js_wrapper;
+
+    /// #67 G6 收口：包裹器形状——体原样入、args JSON 字面量注入参数位。
+    #[test]
+    fn js_wrapper_shape() {
+        let w = js_wrapper("return args.k;", "{\"k\": 1}");
+        assert_eq!(w, "(async (args) => {\nreturn args.k;\n})({\"k\": 1})");
+    }
+
+    /// #67 G6 收口：体含反引号与 ${ 原样（零转义零拼接）。
+    #[test]
+    fn js_wrapper_verbatim_body() {
+        let w = js_wrapper("const t = `${{x:1}}`;", "{}");
+        assert!(w.contains("`${{x:1}}`;"), "{w}");
+        assert!(w.starts_with("(async (args) => {"), "{w}");
+        assert!(w.ends_with("})({})"), "{w}");
     }
 }

@@ -21,5 +21,5 @@ pub mod exec;
 pub mod module;
 pub mod rawstr;
 
-pub use exec::{Caps, DEFAULT_CAPS, RunOpts, run};
+pub use exec::{Caps, DEFAULT_CAPS, RunOpts, preheat_missing_fn_table, run};
 pub use module::{CdpError, HostFn, HostFns, ModuleCtx, OpProbe, cdp_module};

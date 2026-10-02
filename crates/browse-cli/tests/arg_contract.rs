@@ -570,3 +570,79 @@ fn roster_flags_all_recognized_in_rune_tail_position() {
         );
     }
 }
+
+/// 目录审计 G-2 收口：名册与全局解析臂双向比对（源抽取）——正向：名册
+/// 每项都是全局循环臂键；反向：全局循环的旗标形臂键都在名册（子命令
+/// 内环旗标不在全局段，不参与）。此前守卫只验名单到识别面单向。
+#[test]
+fn roster_matches_global_parse_arms_bidirectionally() {
+    let src = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/src/main.rs"))
+        .expect("读 main.rs 源");
+    // 名册：const KNOWN_GLOBAL_FLAGS 块内的字符串字面量
+    let roster_start = src
+        .find("const KNOWN_GLOBAL_FLAGS: &[&str] = &[")
+        .expect("名册在位")
+        + "const KNOWN_GLOBAL_FLAGS: &[&str] = &[".len();
+    let roster_end = src[roster_start..].find("];").expect("名册闭合") + roster_start;
+    let roster: Vec<String> = src[roster_start..roster_end]
+        .split('"')
+        .enumerate()
+        .filter(|(i, _)| i % 2 == 1)
+        .map(|(_, s)| s.to_string())
+        .collect();
+    assert!(roster.len() >= 30, "名册至少 30 项，实得 {}", roster.len());
+    // 全局解析臂：第一个 `while let Some(a) = args.next_opt()` 循环段内的
+    // `"--xxx" | "-x" =>` 臂键（到 `match a.as_str()` 的下一个子命令分派
+    // 或 Mode 赋值为止——取该循环段的闭合花括号前文本）
+    let loop_start = src
+        .find("while let Some(a) = args.next_opt()")
+        .expect("全局循环在位");
+    let seg = &src[loop_start..loop_start + 6000];
+    // 顶层臂按缩进判（12 空格 + 引号开头；子命令内环臂更深缩进不入）：
+    // 常量提取用 fmt 的稳定缩进
+    let mut arms: Vec<String> = Vec::new();
+    for line in seg.lines() {
+        let trimmed = line.trim_start();
+        if line.len() - trimmed.len() == 12 && trimmed.starts_with('"') && line.contains("=>") {
+            for part in trimmed.split("=>").next().unwrap_or("").split('"') {
+                if part.starts_with('-') {
+                    arms.push(part.to_string());
+                }
+            }
+        }
+    }
+    // 正向：名册每项都是臂键
+    for f in &roster {
+        assert!(arms.contains(f), "名册项 {f} 不在全局解析臂（正向漂移）");
+    }
+    // 反向：臂键每项都在名册
+    for a in &arms {
+        assert!(
+            roster.contains(a),
+            "解析臂 {a} 不在名册（反向漂移；子命令内环旗标误入全局段？）"
+        );
+    }
+}
+
+/// #64/#65 评审 G3 存量收口：list 面符号链接跳过（越根链接不进清单，
+/// show 面已有越根守卫）。
+#[test]
+fn snippets_list_skips_symlinks() {
+    let st = TempState::new("symlnk");
+    let root = format!("{}/snippets", st.path());
+    let outside = format!("{}/outside", st.path());
+    std::fs::create_dir_all(format!("{}/site", root)).unwrap();
+    std::fs::create_dir_all(&outside).unwrap();
+    std::fs::write(format!("{}/site/real.js", root), "// 真件").unwrap();
+    std::fs::write(format!("{}/evil.js", outside), "// 链接目标").unwrap();
+    #[cfg(unix)]
+    std::os::unix::fs::symlink(
+        format!("{}/evil.js", outside),
+        format!("{}/site/link.js", root),
+    )
+    .unwrap();
+    let (code, out, err) = run(&["snippets", "list"], &[("BROWSE_NAME", st.path())]);
+    assert_eq!(code, 0, "{err}");
+    assert!(out.contains("site/real.js"), "真件在列：{out}");
+    assert!(!out.contains("link.js"), "符号链接应被跳过：{out}");
+}

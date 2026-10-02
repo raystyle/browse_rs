@@ -3063,7 +3063,7 @@ async fn rune_timeout_probe_retains_inflight_op() {
     .await;
     assert!(out.is_err(), "悬挂 js 应触发外层整体超时");
     assert_eq!(
-        probe.lock().ok().and_then(|g| *g),
+        probe.lock().ok().and_then(|g| g.first().copied()),
         Some("js"),
         "超时丢弃后在飞调用面应保留为 js"
     );

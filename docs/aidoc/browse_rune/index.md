@@ -1,4 +1,4 @@
-# browse-rune 0.30.1
+# browse-rune 0.30.2
 
 Rune 编排面（账本 #67，ADR-0010）：`browse rune` 的 VM 构建、自注册
 `cdp` 模块与执行器。

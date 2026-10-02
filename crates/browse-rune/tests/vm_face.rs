@@ -119,7 +119,7 @@ async fn op_probe_clears_after_fast_error() {
     // 影响断言——关键是 run 正常收尾）
     let _ = out;
     assert_eq!(
-        probe.lock().ok().and_then(|g| *g),
+        probe.lock().ok().and_then(|g| g.first().copied()),
         None,
         "cdp 面正常退出（含快错）后探针应清空"
     );

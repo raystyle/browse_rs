@@ -237,6 +237,14 @@ async fn run_raw(
 /// 机逐位一致）；本表在首次遇到该类错误时用一次性 VM 探针收割（在
 /// String/i64/Vec 上逐个调常用方法名，收缺失错的哈希），OneLock 缓存。
 /// 命中即在报错里补名（哈希保留可溯源）；未命中维持原文。
+/// 建表后台预热（REQ-020 G-3 收口）：daemon 启动时调一次，独立线程建
+/// 哈希表，用户首个缺失函数错误不再付约 2 秒收割时延。
+pub fn preheat_missing_fn_table() {
+    std::thread::spawn(|| {
+        missing_fn_table();
+    });
+}
+
 fn missing_fn_table() -> &'static std::collections::HashMap<u64, &'static str> {
     static TABLE: std::sync::OnceLock<std::collections::HashMap<u64, &'static str>> =
         std::sync::OnceLock::new();

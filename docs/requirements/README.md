@@ -24,6 +24,7 @@
 | REQ-018 | implemented | should | 注释区 Jinja 惰性化与三层正交文档（v0.29.0） | rawstr 14 件加 CLI 渲染道一件加全族回归；评审快核 CONFIRM |
 | REQ-019 | implemented | should | 注释惰性化对齐全模板道（方言/--js/js_lib，v0.30.0） | JS 族单测三件加 CLI 一件加 e2e 真引擎一件；评审快核 CONFIRM |
 | REQ-020 | implemented | should | #70 补名腿与目录审计收尾（v0.30.1） | 锚点双锁加 vm_face 端到端加名册旁证 30 项；评审快核 CONFIRM |
+| REQ-021 | implemented | should | 休眠项与 REQ-020 记档全清（v0.30.2） | 多槽单测加双向守卫加集成件；评审快核 CONFIRM |
 
 ## Roadmap（issue 台账批次规划）
 

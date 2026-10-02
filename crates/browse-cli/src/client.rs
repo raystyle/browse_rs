@@ -515,11 +515,24 @@ fn missing_bare_placeholders(body: &str, vars: &[(String, String)]) -> Vec<Strin
 ///
 /// 占位冲撞/被模板误删，或渲染错误（同 [`render_template`]）。
 pub fn render_js_template(body: &str, vars: &[(String, String)]) -> Result<String> {
+    vars_value_guard(vars)?;
     let (placed, literals) = browse_rune::rawstr::extract_comment_regions(body)
         .map_err(|e| anyhow::anyhow!("注释惰性化预处理失败：{}", e.message))?;
     let rendered = render_template(&placed, vars)?;
     browse_rune::rawstr::subst_raw_strings(&rendered, &literals)
         .map_err(|e| anyhow::anyhow!("注释惰性化预处理失败：{}", e.message))
+}
+
+/// --vars 值前缀守卫（REQ-020 注入理论形收口）：值恰含在用占位前缀
+/// 会被全量替换（nonce 的等价防护，确定性更优）；拦在渲染前，exit 2。
+fn vars_value_guard(vars: &[(String, String)]) -> Result<()> {
+    const PREFIX: &str = "__BROWSE_RN_RAW_";
+    for (k, v) in vars {
+        if v.contains(PREFIX) {
+            anyhow::bail!("--vars {k} 的值含内部占位前缀 {PREFIX}；下一步：值里去掉该前缀串再试");
+        }
+    }
+    Ok(())
 }
 
 /// rune 面模板渲染（批次二 r# 裸串、批次三注释惰性化）：先抽出 r# 区
@@ -533,6 +546,7 @@ pub fn render_js_template(body: &str, vars: &[(String, String)]) -> Result<Strin
 /// r# 词法错（未闭合/占位冲撞/占位被模板误删）或渲染错误（同
 /// [`render_template`]）。
 pub fn render_rune_template(body: &str, vars: &[(String, String)]) -> Result<String> {
+    vars_value_guard(vars)?;
     let (placed, literals) = browse_rune::rawstr::extract_raw_strings(body)
         .map_err(|e| anyhow::anyhow!("r# 裸串预处理失败：{}", e.message))?;
     let rendered = render_template(&placed, vars)?;
@@ -804,6 +818,18 @@ mod tests {
             "{out}"
         );
         assert!(out.contains("\"填了\""), "{out}");
+    }
+
+    /// REQ-020 注入理论形收口：值含占位前缀即拦。
+    #[test]
+    fn vars_value_with_placeholder_prefix_rejected() {
+        let vars = vec![("q".to_string(), "__BROWSE_RN_RAW_0__".to_string())];
+        let err = render_rune_template("let s = r#\"x\"#; let v = \"{{ q }}\";", &vars);
+        assert!(err.is_err());
+        let msg = err.unwrap_err().to_string();
+        assert!(msg.contains("占位前缀"), "{msg}");
+        let err2 = render_js_template("// c\nreturn \"{{ q }}\";", &vars);
+        assert!(err2.is_err());
     }
 
     /// 批次三①：rune 模板道里注释区 Jinja 惰性化（含槽占位渲染、注释
