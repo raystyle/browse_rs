@@ -14,7 +14,7 @@
 | REQ-008 | implemented | should | 批 3 原语补全池（issue #35/#38/#40/#41+#24/#42，滚动切片） | 五片全落（e2e 各块与评审轮随卷 diary 批 19） |
 | REQ-009 | implemented | should | 抓取与录制批（issue #50/#43） | #50 分类器单测加实弹；#43 v1 实弹（转代码二期记档） |
 | REQ-010 | implemented | should | 实例编排批（issue #48/#28） | #48 实弹收口；#28 browse 侧实弹（引擎开关降可选） |
-| REQ-011 | implemented | should | 看板与应用生态批（issue #54/#55） | #54 实弹加 XSS/CSP 修复；#55 样例应用实弹三验 |
+| REQ-011 | implemented | should | 看板与应用生态批（issue #54/#55；看板面 v0.28.0 退役见 REQ-017） | #54 实弹加 XSS/CSP 修复；#55 样例应用实弹三验 |
 | REQ-012 | implemented | should | 引擎层扩展域批（issue #27/#61，clean-chrome 联动） | 批 1 至 4 引擎加 browse 侧全落（diary 批 27 至 30） |
 | REQ-013 | implemented | must | 账本面（ohmycloud REQ-063 客户端集成与总台修正令收口） | v0.8.0 实弹三绿（6b055cd）加收口批 v0.1.1 GET 实弹与移除面三拒（104f37d） |
 | REQ-014 | implemented | should | 引擎附加旗标直通道（issue #48，clean-chrome 扩展域启用面） | 实弹四绿加 spawn_extra_args_shape 锁形；评审两轮 CONFIRM（61d0297） |

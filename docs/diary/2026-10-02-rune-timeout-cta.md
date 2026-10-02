@@ -21,5 +21,5 @@
 
 ## 记档
 
-- 批次二队列（v0.27.0）：#69 stdin 读上界、`BROWSE_RUNE_TIMEOUT` 旋钮实现、raw 转义与触发边界文档、#70（哈希查表补名或披露）、r# 裸串预处理（词法边界五点案已在战役台回执定形）、std 差异文档（to_string/splitn 缺席、split_once 正形）；发版后去上游 rune-rs #537 贴需求
+- 批次二队列（时判 v0.27.0；后因看板移除契约破裂改判 0.28.0）：#69 stdin 读上界、`BROWSE_RUNE_TIMEOUT` 旋钮实现、raw 转义与触发边界文档、#70（哈希查表补名或披露）、r# 裸串预处理（词法边界五点案已在战役台回执定形）、std 差异文档（to_string/splitn 缺席、split_once 正形）；发版后去上游 rune-rs #537 贴需求
 - 环境注记：默认实例引擎换显式 `--headless`（WSLg 有头 spawn 起得极慢，另三命名实例同因三具 chrome 僵尸）；战役台 psw-campaign 实例健康
