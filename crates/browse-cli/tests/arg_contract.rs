@@ -519,3 +519,54 @@ fn tail_global_flag_gets_position_cta() {
     assert_eq!(code, 2, "{err}");
     assert!(err.contains("参数不认识 --bogus"), "{err}");
 }
+
+/// 目录审计 G-A7：KNOWN_GLOBAL_FLAGS 名册与 rune 子命令收集环的旁证
+/// ——每个名册旗标尾置都应得「是全局旗标」位置 CTA（识别面），未知旗标
+/// 走原 bail 面（对照）。名册加旗标漏同步解析臂时，本测试红。
+#[test]
+fn roster_flags_all_recognized_in_rune_tail_position() {
+    // 取值型旗标（--bind/--ws 等）在收集环内以裸名触发 CTA 后即退出，
+    // 无需跟值
+    for f in [
+        "--eval",
+        "-e",
+        "--gen-surface",
+        "--serve",
+        "--bind",
+        "--connect",
+        "--new-tab",
+        "--ws",
+        "--port",
+        "--chrome",
+        "--profile",
+        "--headless",
+        "--pipe",
+        "--proxy",
+        "--proxy-bypass",
+        "--engine-arg",
+        "--isolated",
+        "--idle-timeout",
+        "--cookies",
+        "--secrets",
+        "--js",
+        "--b64",
+        "--json",
+        "--llms",
+        "--repl",
+        "--full",
+        "-h",
+        "--help",
+        "-V",
+        "--version",
+    ] {
+        // 注：--vars/--root 在 rune 环内是合法子旗标（消费值），不属尾
+        // 置 CTA 面，不入本守卫名单
+
+        let (code, _, err) = run(&["rune", "x.rn", f], &[]);
+        assert_eq!(code, 2, "旗标 {f}：{err}");
+        assert!(
+            err.contains(&format!("{f} 是全局旗标，要置于子命令与脚本位之前")),
+            "旗标 {f} 未被名册识别（名册与解析臂漂移）：{err}"
+        );
+    }
+}

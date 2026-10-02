@@ -191,7 +191,8 @@ async fn run_raw(
     if let Err(e) = result.into_result() {
         return (
             Err(anyhow!(
-                "Rune VM 终态错误（不重试）：{e}；下一步：看脚本逻辑与限额（指令 {}、分配 {}）",
+                "Rune VM 终态错误（不重试）：{}；下一步：看脚本逻辑与限额（指令 {}、分配 {}）",
+                enrich_missing_fn(&e.to_string()),
                 caps.instructions,
                 caps.memory
             )),
@@ -228,4 +229,131 @@ async fn run_raw(
         )),
     };
     (out, Some(cleanup))
+}
+
+/// 缺失实例函数的哈希→名字表（#70 补名腿）：Rune 的
+/// 「Missing instance function `0x…`」报错只带确定散列哈希（战役台两枚
+/// 实测锚：to_string=0x871c12da43b176d2、splitn=0x7d6f3bd0775df4c8，跨
+/// 机逐位一致）；本表在首次遇到该类错误时用一次性 VM 探针收割（在
+/// String/i64/Vec 上逐个调常用方法名，收缺失错的哈希），OneLock 缓存。
+/// 命中即在报错里补名（哈希保留可溯源）；未命中维持原文。
+fn missing_fn_table() -> &'static std::collections::HashMap<u64, &'static str> {
+    static TABLE: std::sync::OnceLock<std::collections::HashMap<u64, &'static str>> =
+        std::sync::OnceLock::new();
+    TABLE.get_or_init(|| {
+        let mut m = std::collections::HashMap::new();
+        for ty in ["String::from(\"x\")", "1", "Vec::new()"] {
+            for name in [
+                "to_string",
+                "to_owned",
+                "as_str",
+                "chars",
+                "lines",
+                "bytes",
+                "splitn",
+                "rsplit",
+                "rsplit_once",
+                "to_uppercase",
+                "to_lowercase",
+                "is_empty",
+                "len",
+                "trim",
+                "trim_start",
+                "trim_end",
+                "replace",
+                "contains",
+                "starts_with",
+                "ends_with",
+                "find",
+                "parse",
+                "push",
+                "pop",
+                "join",
+                "split",
+                "get",
+                "iter",
+            ] {
+                if let Some(h) = probe_missing_fn_hash(ty, name) {
+                    // 同名不同型不同哈希：都收，后写覆盖仅发生在同名同哈希
+                    m.entry(h).or_insert(name);
+                }
+            }
+        }
+        m
+    })
+}
+
+/// 单名探针：在一次性 VM（仅默认模块，零 cdp）里调 `ty.name()`，错误是
+/// 缺失实例函数时解析其哈希返回；方法存在或其他错误返回 None。
+fn probe_missing_fn_hash(ty: &str, name: &str) -> Option<u64> {
+    let src = format!("pub fn main() {{ let v = {ty}; v.{name}() }}");
+    let context = rune::Context::with_default_modules().ok()?;
+    let mut sources = rune::Sources::new();
+    sources.insert(rune::Source::new("probe", src).ok()?).ok()?;
+    let unit = rune::prepare(&mut sources)
+        .with_context(&context)
+        .build()
+        .ok()?;
+    let rt = context.runtime().ok()?;
+    let mut vm = rune::Vm::new(std::sync::Arc::new(rt), std::sync::Arc::new(unit));
+    let out = vm.execute(["main"], ()).ok()?.complete().into_result();
+    if let Err(e) = out {
+        let (h, _, _) = parse_missing_fn_hash(&e.to_string())?;
+        return Some(h);
+    }
+    None
+}
+
+/// 解析 VmError 文本里的缺失实例函数哈希（探针与终态错误包装共用）。
+fn parse_missing_fn_hash(msg: &str) -> Option<(u64, usize, usize)> {
+    let marker = "Missing instance function `0x";
+    let start = msg.find(marker)? + marker.len();
+    let end = msg[start..].find('`')? + start;
+    u64::from_str_radix(&msg[start..end], 16)
+        .ok()
+        .map(|h| (h, start - 3, end + 1))
+}
+
+/// 终态错误文本补名（#70）：哈希命中查表即在报错里带方法名（保留哈希
+/// 可溯源）；不命中原文返回。
+fn enrich_missing_fn(msg: &str) -> String {
+    let Some((hash, from, to)) = parse_missing_fn_hash(msg) else {
+        return msg.to_string();
+    };
+    match missing_fn_table().get(&hash) {
+        Some(name) => {
+            let mut out = String::with_capacity(msg.len() + 32);
+            out.push_str(&msg[..from]);
+            out.push_str(&format!("{name}（哈希 0x{hash:x}）"));
+            out.push_str(&msg[to..]);
+            out
+        }
+        None => msg.to_string(),
+    }
+}
+
+#[cfg(test)]
+mod missing_fn_tests {
+    use super::*;
+
+    /// 战役台实测锚（跨机逐位一致）：表必须含 to_string 与 splitn。
+    #[test]
+    fn table_has_field_anchors() {
+        let t = missing_fn_table();
+        assert_eq!(t.get(&0x871c12da43b176d2), Some(&"to_string"), "锚一");
+        assert_eq!(t.get(&0x7d6f3bd0775df4c8), Some(&"splitn"), "锚二");
+    }
+
+    /// 补名文本：命中带名保留哈希；普通错误原文。
+    #[test]
+    fn enrich_names_known_hash() {
+        let out = enrich_missing_fn(
+            "Missing instance function `0x871c12da43b176d2` for `::std::string::String`",
+        );
+        assert!(
+            out.contains("to_string（哈希 0x871c12da43b176d2）"),
+            "{out}"
+        );
+        assert_eq!(enrich_missing_fn("别的错"), "别的错");
+    }
 }

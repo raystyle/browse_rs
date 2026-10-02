@@ -145,6 +145,25 @@ async fn raw_string_script_face() -> anyhow::Result<()> {
     Ok(())
 }
 
+/// #70 补名腿端到端：缺失实例函数的终态错误带方法名（哈希保留）。
+#[tokio::test]
+async fn missing_fn_error_carries_name() {
+    let session = cdp::Session::new();
+    let err = run(
+        session,
+        r#"pub async fn main() { let s = String::from("x"); Ok(s.to_string()) }"#,
+        DEFAULT_CAPS,
+        browse_rune::RunOpts::default(),
+    )
+    .await
+    .expect_err("to_string 缺席应终态红");
+    let msg = err.to_string();
+    assert!(
+        msg.contains("to_string（哈希 0x871c12da43b176d2）"),
+        "{msg}"
+    );
+}
+
 /// 评审 F1 回归锁（run() 全道）：非 ASCII 串载荷经 r# 预处理入口后
 /// 原样（v0.26 语义零回归）。
 #[tokio::test]
