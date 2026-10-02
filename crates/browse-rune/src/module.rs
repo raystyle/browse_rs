@@ -492,7 +492,7 @@ pub fn cdp_module(ctx: ModuleCtx) -> Result<(Module, Cleanup), rune::ContextErro
                         .call_with_deadline(
                             "Runtime.callFunctionOn",
                             json!({
-                                    "objectId": handle.id,
+                                "objectId": handle.id,
                                 "functionDeclaration": fn_src,
                                 "arguments": [],
                                 "awaitPromise": true,
