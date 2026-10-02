@@ -70,7 +70,7 @@
     {
       "path": "browse_rune::module::OpProbe",
       "kind": "type_alias",
-      "docs": "在飞调用面探针（v0.26.1 超时 CTA；0.31.0 多槽化）：cdp 函数入口置\n名、正常退出清空、future 被丢弃（整体超时或中止）时不清空即保留在\n飞面——daemon 层的整体超时臂读它报告「卡在哪个调用面」。**多槽**：\n`future::join` 并发在飞多个 cdp 调用时逐个记账（此前单槽先完成者会\n清掉别人的在飞名）。std 锁与 `script_id` 同律（drop 兜底道不可\nawait/blocking_lock）。"
+      "docs": "在飞调用面探针（v0.26.1 超时 CTA；0.30.2 多槽化）：cdp 函数入口置\n名、正常退出清空、future 被丢弃（整体超时或中止）时不清空即保留在\n飞面——daemon 层的整体超时臂读它报告「卡在哪个调用面」。**多槽**：\n`future::join` 并发在飞多个 cdp 调用时逐个记账（此前单槽先完成者会\n清掉别人的在飞名）。std 锁与 `script_id` 同律（drop 兜底道不可\nawait/blocking_lock）。"
     },
     {
       "path": "browse_rune::module::cdp_module",

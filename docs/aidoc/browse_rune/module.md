@@ -21,5 +21,5 @@ object`、数组对数组），DOM 节点只留 [`ObjHandle`] 不透明句柄；
 - `HostFns` — 三支柱宿主函数注入束（Debug 手写：闭包无派生）。
 - `ModuleCtx` — 模块构建上下文（#67 三形态运行时批）：会话与两条输入通道（snippets
 - `ObjHandle` — DOM 节点不透明句柄：`eval_handle` 产出，`call`/`release` 消费；脚本
-- `OpProbe` — 在飞调用面探针（v0.26.1 超时 CTA；0.31.0 多槽化）：cdp 函数入口置
+- `OpProbe` — 在飞调用面探针（v0.26.1 超时 CTA；0.30.2 多槽化）：cdp 函数入口置
 
