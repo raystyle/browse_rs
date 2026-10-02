@@ -46,6 +46,9 @@ pub struct RunOpts {
     pub stdin: String,
     /// 三支柱同源宿主函数束（daemon 注入；缺省时对应 cdp 函数报未注入）。
     pub host_fns: crate::module::HostFns,
+    /// 在飞调用面探针（v0.26.1 超时 CTA）：调用方持克隆，整体超时丢弃
+    /// 执行 future 后读在飞面。
+    pub op_probe: crate::module::OpProbe,
 }
 
 /// 自动追加的结果回传包装（入口恒 `pub async fn main()`）。
@@ -121,6 +124,7 @@ async fn run_raw(
         snippets_root: opts.snippets_root,
         stdin: opts.stdin,
         host_fns: opts.host_fns,
+        op_probe: opts.op_probe,
     }) {
         Ok(v) => v,
         Err(e) => return (Err(anyhow!("cdp 模块注册失败：{e}")), None),

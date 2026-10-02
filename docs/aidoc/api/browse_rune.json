@@ -1,6 +1,6 @@
 {
   "crate": "browse-rune",
-  "version": "0.26.0",
+  "version": "0.26.1",
   "items": [
     {
       "path": "browse_rune::exec",
@@ -61,6 +61,11 @@
       "path": "browse_rune::module::ObjHandle",
       "kind": "struct",
       "docs": "DOM 节点不透明句柄：`eval_handle` 产出，`call`/`release` 消费；脚本\n侧拿不到 objectId 字面量（防拼错与跨组泄漏）。"
+    },
+    {
+      "path": "browse_rune::module::OpProbe",
+      "kind": "type_alias",
+      "docs": "在飞调用面探针（v0.26.1 超时 CTA）：cdp 函数入口置名、正常退出清空、\nfuture 被丢弃（整体超时或中止）时不清空即保留在飞面——daemon 层的\n整体超时臂读它报告「卡在哪个调用面」。std 锁与 `script_id` 同律\n（drop 兜底道不可 await/blocking_lock）。"
     },
     {
       "path": "browse_rune::module::cdp_module",

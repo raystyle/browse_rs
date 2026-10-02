@@ -376,7 +376,10 @@ async fn rune_handler(
         snippets_root: root,
         stdin: req.stdin.clone().unwrap_or_default(),
         host_fns: host_fns(&d.host),
+        // v0.26.1 超时 CTA：探针克隆自持，超时丢弃执行 future 后读在飞面
+        op_probe: browse_rune::OpProbe::default(),
     };
+    let op_probe = opts.op_probe.clone();
     let outcome = tokio::time::timeout(
         eval_timeout(),
         browse_rune::run(d.host.session(), &req.code, browse_rune::DEFAULT_CAPS, opts),
@@ -386,10 +389,20 @@ async fn rune_handler(
         Ok(Ok(v)) => v,
         Ok(Err(e)) => return err_response(e),
         Err(_) => {
-            return err_response(anyhow::anyhow!(
-                "rune 执行超时（{} 秒；BROWSE_EVAL_TIMEOUT 可调）",
-                eval_timeout().as_secs()
-            ));
+            // 整体超时（v0.26.1 最小 CTA）：结构化 timeout 面（op 在飞调用
+            // 面、elapsed_ms 已等待毫秒、bound_s 上界秒）加 daemon 日志行；
+            // 错误文案保持 CTA 形
+            let bound = eval_timeout();
+            let op = op_probe.lock().ok().and_then(|g| *g);
+            eprintln!(
+                "{}",
+                json!({ "runeTimeout": {
+                    "op": op,
+                    "elapsedMs": bound.as_millis() as u64,
+                    "boundS": bound.as_secs(),
+                }})
+            );
+            return rune_timeout_response(op, bound);
         }
     };
     let ctx = d.engine.context_snapshot(&d.desc).await;
@@ -499,6 +512,32 @@ async fn eval_handler(
         "changes": changes,
     });
     (axum::http::StatusCode::OK, Json(envelope))
+}
+
+/// rune 整体超时的结构化回执（v0.26.1 最小 CTA）：`error` 面保持 CTA
+/// 文案（前缀律同 [`err_response`]），`timeout` 面给机器可读三字段——
+/// `op` 在飞调用面（`js`/`goto`/…，执行间隙为 null）、`elapsed_ms` 已
+/// 等待毫秒、`bound_s` 上界秒；CLI 侧把 `timeout` 对象一行 JSON 打到
+/// stderr 供上层 agent 直接解析。
+fn rune_timeout_response(
+    op: Option<&str>,
+    bound: Duration,
+) -> (axum::http::StatusCode, Json<Value>) {
+    (
+        axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+        Json(json!({
+            "ok": false,
+            "error": format!(
+                "browse: rune 执行超时（{} 秒；BROWSE_EVAL_TIMEOUT 可调）；下一步：看 timeout.op 定位在飞调用面，核对长等待段（goto 等加载、js awaitPromise、wait_sel 轮询）或调大 BROWSE_EVAL_TIMEOUT 重试",
+                bound.as_secs()
+            ),
+            "timeout": {
+                "op": op,
+                "elapsed_ms": bound.as_millis() as u64,
+                "bound_s": bound.as_secs(),
+            }
+        })),
+    )
 }
 
 fn err_response(e: anyhow::Error) -> (axum::http::StatusCode, Json<Value>) {
@@ -704,6 +743,7 @@ mod tests {
         let (_, Json(v)) = err_response(anyhow::anyhow!("browse: 守卫拦截 Browser.close"));
         let msg = v["error"].as_str().unwrap_or_default();
         assert_eq!(msg, "browse: 守卫拦截 Browser.close");
+
         assert!(!msg.starts_with("browse: browse:"), "{msg}");
 
         let (_, Json(v)) = err_response(anyhow::anyhow!("CDP Page.navigate: boom"));
@@ -711,6 +751,25 @@ mod tests {
             v["error"].as_str().unwrap_or_default(),
             "browse: CDP Page.navigate: boom"
         );
+    }
+
+    /// rune 整体超时回执的结构化面（v0.26.1 最小 CTA）：`timeout` 三字段
+    /// （op/elapsed_ms/bound_s）齐、错误文案带前缀与下一步。
+    #[test]
+    fn rune_timeout_envelope_has_structured_face() {
+        let (code, Json(v)) = rune_timeout_response(Some("js"), Duration::from_secs(45));
+        assert_eq!(code, axum::http::StatusCode::INTERNAL_SERVER_ERROR);
+        assert_eq!(v["ok"], json!(false));
+        let msg = v["error"].as_str().unwrap_or_default();
+        assert!(msg.starts_with("browse: rune 执行超时（45 秒"), "{msg}");
+        assert!(msg.contains("下一步"), "{msg}");
+        assert_eq!(v["timeout"]["op"], json!("js"));
+        assert_eq!(v["timeout"]["elapsed_ms"], json!(45000));
+        assert_eq!(v["timeout"]["bound_s"], json!(45));
+        // 执行间隙超时：op 为 null（serde_json 的 null 形）
+        let (_, Json(v)) = rune_timeout_response(None, Duration::from_secs(300));
+        assert_eq!(v["timeout"]["op"], json!(null));
+        assert_eq!(v["timeout"]["bound_s"], json!(300));
     }
 
     /// 错误链脱敏调用点锁（#25.4 评审 G4 二轮）：err_response 必须过

@@ -73,6 +73,8 @@ pub(crate) struct CdpState {
     stdin: String,
     /// 三支柱同源宿主函数束。
     host_fns: HostFns,
+    /// 在飞调用面探针（v0.26.1 超时 CTA）。
+    op_probe: OpProbe,
 }
 
 const WORLD_NAME: &str = "browse-rune";
@@ -102,6 +104,12 @@ pub struct HostFns {
     /// `requestDetail(index_or_id, opts)` 同源腿。
     pub request_detail: Option<HostFn>,
 }
+
+/// 在飞调用面探针（v0.26.1 超时 CTA）：cdp 函数入口置名、正常退出清空、
+/// future 被丢弃（整体超时或中止）时不清空即保留在飞面——daemon 层的
+/// 整体超时臂读它报告「卡在哪个调用面」。std 锁与 `script_id` 同律
+/// （drop 兜底道不可 await/blocking_lock）。
+pub type OpProbe = std::sync::Arc<std::sync::Mutex<Option<&'static str>>>;
 
 fn cdp_err(op: &str, message: impl std::fmt::Display) -> CdpError {
     CdpError {
@@ -274,6 +282,20 @@ impl CdpState {
             .map_err(|e| cdp_err(op, format!("结果过桥失败：{e}")))
     }
 
+    /// 探针置名（cdp 函数入口；被丢弃路径不置空即保留）。
+    fn set_op(&self, op: &'static str) {
+        if let Ok(mut g) = self.op_probe.lock() {
+            *g = Some(op);
+        }
+    }
+
+    /// 探针清空（cdp 函数正常退出，含快错路径）。
+    fn clear_op(&self) {
+        if let Ok(mut g) = self.op_probe.lock() {
+            *g = None;
+        }
+    }
+
     /// 直接结果面（无 RemoteObject 包裹的 CDP 响应）过桥。
     fn bridge_no_result_check(r: &Value, op: &str) -> Result<RuneValue, CdpError> {
         serde_json::from_value::<RuneValue>(r.clone())
@@ -304,6 +326,8 @@ pub struct ModuleCtx {
     pub stdin: String,
     /// 三支柱同源宿主函数束（daemon 注入；进程内测试可缺省）。
     pub host_fns: HostFns,
+    /// 在飞调用面探针（v0.26.1 超时 CTA；daemon 持克隆读在飞面）。
+    pub op_probe: OpProbe,
 }
 
 /// 运行时 Jinja 引擎（ADR-0009 同配置：Strict undefined、零 autoescape；
@@ -341,6 +365,7 @@ pub fn cdp_module(ctx: ModuleCtx) -> Result<(Module, Cleanup), rune::ContextErro
         snippets_root,
         stdin,
         host_fns,
+        op_probe,
     } = ctx;
     let mut m = Module::with_crate("cdp")?;
     m.ty::<CdpError>()?;
@@ -367,6 +392,7 @@ pub fn cdp_module(ctx: ModuleCtx) -> Result<(Module, Cleanup), rune::ContextErro
         snippets_root,
         stdin,
         host_fns,
+        op_probe,
     });
 
     {
@@ -374,38 +400,44 @@ pub fn cdp_module(ctx: ModuleCtx) -> Result<(Module, Cleanup), rune::ContextErro
         m.function("goto", move |url: String| {
             let st = st.clone();
             async move {
-                let nav = st
-                    .session
-                    .call_with_deadline("Page.navigate", json!({ "url": url }), CALL_DEADLINE)
-                    .await
-                    .map_err(|e| cdp_err("goto", format!("Page.navigate: {e:#}")))?;
-                if let Some(err_text) = nav.get("errorText").and_then(Value::as_str) {
-                    return Err(cdp_err("goto", err_text));
-                }
-                // 导航即废世界：置空待下次 ensure_world 重建
-                st.world.lock().await.context_id = 0;
-                // 有界等加载：readyState 脱 loading（上限 15s，百毫秒步进；
-                // 更细的超时由脚本 select 自包）
-                for _ in 0..150 {
-                    let r = st
-                        .eval_in_world("document.readyState", false)
+                st.set_op("goto");
+                let out = async {
+                    let nav = st
+                        .session
+                        .call_with_deadline("Page.navigate", json!({ "url": url }), CALL_DEADLINE)
                         .await
-                        .map_err(|e| cdp_err("goto", format!("等加载：{}", e.message)))?;
-                    let ready = serde_json::to_value(
-                        r.pointer("/result/value").cloned().unwrap_or(Value::Null),
-                    )
-                    .ok()
-                    .and_then(|v| v.as_str().map(str::to_string));
-                    if ready.as_deref().is_some_and(|rs| rs != "loading") {
-                        break;
+                        .map_err(|e| cdp_err("goto", format!("Page.navigate: {e:#}")))?;
+                    if let Some(err_text) = nav.get("errorText").and_then(Value::as_str) {
+                        return Err(cdp_err("goto", err_text));
                     }
-                    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+                    // 导航即废世界：置空待下次 ensure_world 重建
+                    st.world.lock().await.context_id = 0;
+                    // 有界等加载：readyState 脱 loading（上限 15s，百毫秒步进；
+                    // 更细的超时由脚本 select 自包）
+                    for _ in 0..150 {
+                        let r = st
+                            .eval_in_world("document.readyState", false)
+                            .await
+                            .map_err(|e| cdp_err("goto", format!("等加载：{}", e.message)))?;
+                        let ready = serde_json::to_value(
+                            r.pointer("/result/value").cloned().unwrap_or(Value::Null),
+                        )
+                        .ok()
+                        .and_then(|v| v.as_str().map(str::to_string));
+                        if ready.as_deref().is_some_and(|rs| rs != "loading") {
+                            break;
+                        }
+                        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+                    }
+                    Ok(nav
+                        .get("frameId")
+                        .and_then(Value::as_str)
+                        .unwrap_or("")
+                        .to_string())
                 }
-                Ok(nav
-                    .get("frameId")
-                    .and_then(Value::as_str)
-                    .unwrap_or("")
-                    .to_string())
+                .await;
+                st.clear_op();
+                out
             }
         })
         .build()?;
@@ -415,8 +447,14 @@ pub fn cdp_module(ctx: ModuleCtx) -> Result<(Module, Cleanup), rune::ContextErro
         m.function("eval", move |expr: String| {
             let st = st.clone();
             async move {
-                let r = st.eval_in_world(&expr, false).await?;
-                CdpState::bridge(&r)
+                st.set_op("eval");
+                let out = async {
+                    let r = st.eval_in_world(&expr, false).await?;
+                    CdpState::bridge(&r)
+                }
+                .await;
+                st.clear_op();
+                out
             }
         })
         .build()?;
@@ -426,12 +464,18 @@ pub fn cdp_module(ctx: ModuleCtx) -> Result<(Module, Cleanup), rune::ContextErro
         m.function("eval_handle", move |expr: String| {
             let st = st.clone();
             async move {
-                let r = st.eval_in_world(&expr, true).await?;
-                let id = r
-                    .pointer("/result/objectId")
-                    .and_then(Value::as_str)
-                    .ok_or_else(|| cdp_err("eval_handle", "结果不是对象（无 objectId）"))?;
-                Ok::<ObjHandle, CdpError>(ObjHandle { id: id.to_string() })
+                st.set_op("eval_handle");
+                let out = async {
+                    let r = st.eval_in_world(&expr, true).await?;
+                    let id = r
+                        .pointer("/result/objectId")
+                        .and_then(Value::as_str)
+                        .ok_or_else(|| cdp_err("eval_handle", "结果不是对象（无 objectId）"))?;
+                    Ok::<ObjHandle, CdpError>(ObjHandle { id: id.to_string() })
+                }
+                .await;
+                st.clear_op();
+                out
             }
         })
         .build()?;
@@ -441,25 +485,31 @@ pub fn cdp_module(ctx: ModuleCtx) -> Result<(Module, Cleanup), rune::ContextErro
         m.function("call", move |handle: ObjHandle, fn_src: String| {
             let st = st.clone();
             async move {
-                let r = st
-                    .session
-                    .call_with_deadline(
-                        "Runtime.callFunctionOn",
-                        json!({
-                            "objectId": handle.id,
-                            "functionDeclaration": fn_src,
-                            "arguments": [],
-                            "awaitPromise": true,
-                            "returnByValue": true,
-                        }),
-                        CALL_DEADLINE,
-                    )
-                    .await
-                    .map_err(|e| cdp_err("call", format!("callFunctionOn: {e:#}")))?;
-                if let Some(exc) = r.pointer("/exceptionDetails/text").and_then(Value::as_str) {
-                    return Err(cdp_err("call", exc));
+                st.set_op("call");
+                let out = async {
+                    let r = st
+                        .session
+                        .call_with_deadline(
+                            "Runtime.callFunctionOn",
+                            json!({
+                                    "objectId": handle.id,
+                                "functionDeclaration": fn_src,
+                                "arguments": [],
+                                "awaitPromise": true,
+                                "returnByValue": true,
+                            }),
+                            CALL_DEADLINE,
+                        )
+                        .await
+                        .map_err(|e| cdp_err("call", format!("callFunctionOn: {e:#}")))?;
+                    if let Some(exc) = r.pointer("/exceptionDetails/text").and_then(Value::as_str) {
+                        return Err(cdp_err("call", exc));
+                    }
+                    CdpState::bridge(&r)
                 }
-                CdpState::bridge(&r)
+                .await;
+                st.clear_op();
+                out
             }
         })
         .build()?;
@@ -469,15 +519,21 @@ pub fn cdp_module(ctx: ModuleCtx) -> Result<(Module, Cleanup), rune::ContextErro
         m.function("release", move |handle: ObjHandle| {
             let st = st.clone();
             async move {
-                st.session
-                    .call_with_deadline(
-                        "Runtime.releaseObject",
-                        json!({ "objectId": handle.id }),
-                        CALL_DEADLINE,
-                    )
-                    .await
-                    .map_err(|e| cdp_err("release", format!("releaseObject: {e:#}")))?;
-                Ok::<(), CdpError>(())
+                st.set_op("release");
+                let out = async {
+                    st.session
+                        .call_with_deadline(
+                            "Runtime.releaseObject",
+                            json!({ "objectId": handle.id }),
+                            CALL_DEADLINE,
+                        )
+                        .await
+                        .map_err(|e| cdp_err("release", format!("releaseObject: {e:#}")))?;
+                    Ok::<(), CdpError>(())
+                }
+                .await;
+                st.clear_op();
+                out
             }
         })
         .build()?;
@@ -487,29 +543,35 @@ pub fn cdp_module(ctx: ModuleCtx) -> Result<(Module, Cleanup), rune::ContextErro
         m.function("click", move |sel: String| {
             let st = st.clone();
             async move {
-                // 选择器经 serde_json 字面量注入（禁止拼进 JS 字符串）；
-                // 隔离世界取中心点，Input 域发真实点击
-                let sel_lit = serde_json::to_string(&sel).unwrap_or_default();
-                let expr = format!(
-                    "((el) => el ? (() => {{ const r = el.getBoundingClientRect(); return [r.x + r.width / 2, r.y + r.height / 2]; }})() : null)(document.querySelector({sel_lit}))"
-                );
-                let r = st.eval_in_world(&expr, false).await?;
-                let point = r
-                    .pointer("/result/value")
-                    .cloned()
-                    .unwrap_or(Value::Null);
-                let [x, y] = serde_json::from_value::<[f64; 2]>(point)
-                    .map_err(|_| cdp_err("click", format!("选择器未命中：{sel}")))?;
-                for ty in ["mousePressed", "mouseReleased"] {
-                    st.session
-                        .call_with_deadline("Input.dispatchMouseEvent",
-                            json!({ "type": ty, "x": x, "y": y, "button": "left", "clickCount": 1 }),
-                        CALL_DEADLINE,
-                        )
-                        .await
-                        .map_err(|e| cdp_err("click", format!("Input.{ty}: {e:#}")))?;
+                st.set_op("click");
+                let out = async {
+                    // 选择器经 serde_json 字面量注入（禁止拼进 JS 字符串）；
+                    // 隔离世界取中心点，Input 域发真实点击
+                    let sel_lit = serde_json::to_string(&sel).unwrap_or_default();
+                    let expr = format!(
+                        "((el) => el ? (() => {{ const r = el.getBoundingClientRect(); return [r.x + r.width / 2, r.y + r.height / 2]; }})() : null)(document.querySelector({sel_lit}))"
+                    );
+                    let r = st.eval_in_world(&expr, false).await?;
+                    let point = r
+                        .pointer("/result/value")
+                        .cloned()
+                        .unwrap_or(Value::Null);
+                    let [x, y] = serde_json::from_value::<[f64; 2]>(point)
+                        .map_err(|_| cdp_err("click", format!("选择器未命中：{sel}")))?;
+                    for ty in ["mousePressed", "mouseReleased"] {
+                        st.session
+                            .call_with_deadline("Input.dispatchMouseEvent",
+                                json!({ "type": ty, "x": x, "y": y, "button": "left", "clickCount": 1 }),
+                            CALL_DEADLINE,
+                            )
+                            .await
+                            .map_err(|e| cdp_err("click", format!("Input.{ty}: {e:#}")))?;
+                    }
+                    Ok::<(), CdpError>(())
                 }
-                Ok::<(), CdpError>(())
+                .await;
+                st.clear_op();
+                out
             }
         })
         .build()?;
@@ -519,27 +581,37 @@ pub fn cdp_module(ctx: ModuleCtx) -> Result<(Module, Cleanup), rune::ContextErro
         m.function("type_text", move |sel: String, text: String| {
             let st = st.clone();
             async move {
-                let sel_lit = serde_json::to_string(&sel).unwrap_or_default();
-                // 未命中守卫（评审 #67 一轮 G6）：与 click 同款报错，防文本
-                // 静默插进当前焦点元素
-                let found = st
-                    .eval_in_world(&format!("!!document.querySelector({sel_lit})"), false)
+                st.set_op("type_text");
+                let out = async {
+                    let sel_lit = serde_json::to_string(&sel).unwrap_or_default();
+                    // 未命中守卫（评审 #67 一轮 G6）：与 click 同款报错，防文本
+                    // 静默插进当前焦点元素
+                    let found = st
+                        .eval_in_world(&format!("!!document.querySelector({sel_lit})"), false)
+                        .await
+                        .map_err(|e| cdp_err("type_text", format!("探测：{}", e.message)))?;
+                    if found.pointer("/result/value").and_then(Value::as_bool) != Some(true) {
+                        return Err(cdp_err("type_text", format!("选择器未命中：{sel}")));
+                    }
+                    st.eval_in_world(
+                        &format!("document.querySelector({sel_lit})?.focus()"),
+                        false,
+                    )
                     .await
-                    .map_err(|e| cdp_err("type_text", format!("探测：{}", e.message)))?;
-                if found.pointer("/result/value").and_then(Value::as_bool) != Some(true) {
-                    return Err(cdp_err("type_text", format!("选择器未命中：{sel}")));
+                    .map_err(|e| cdp_err("type_text", format!("focus：{}", e.message)))?;
+                    st.session
+                        .call_with_deadline(
+                            "Input.insertText",
+                            json!({ "text": text }),
+                            CALL_DEADLINE,
+                        )
+                        .await
+                        .map_err(|e| cdp_err("type_text", format!("Input.insertText: {e:#}")))?;
+                    Ok::<(), CdpError>(())
                 }
-                st.eval_in_world(
-                    &format!("document.querySelector({sel_lit})?.focus()"),
-                    false,
-                )
-                .await
-                .map_err(|e| cdp_err("type_text", format!("focus：{}", e.message)))?;
-                st.session
-                    .call_with_deadline("Input.insertText", json!({ "text": text }), CALL_DEADLINE)
-                    .await
-                    .map_err(|e| cdp_err("type_text", format!("Input.insertText: {e:#}")))?;
-                Ok::<(), CdpError>(())
+                .await;
+                st.clear_op();
+                out
             }
         })
         .build()?;
@@ -549,17 +621,23 @@ pub fn cdp_module(ctx: ModuleCtx) -> Result<(Module, Cleanup), rune::ContextErro
         m.function("wait_sel", move |sel: String, ms: i64| {
             let st = st.clone();
             async move {
-                let sel_lit = serde_json::to_string(&sel).unwrap_or_default();
-                let expr = format!("!!document.querySelector({sel_lit})");
-                let steps = (ms.max(0) / 100) as u32;
-                for _ in 0..=steps {
-                    let r = st.eval_in_world(&expr, false).await?;
-                    if r.pointer("/result/value").and_then(Value::as_bool) == Some(true) {
-                        return Ok::<bool, CdpError>(true);
+                st.set_op("wait_sel");
+                let out = async {
+                    let sel_lit = serde_json::to_string(&sel).unwrap_or_default();
+                    let expr = format!("!!document.querySelector({sel_lit})");
+                    let steps = (ms.max(0) / 100) as u32;
+                    for _ in 0..=steps {
+                        let r = st.eval_in_world(&expr, false).await?;
+                        if r.pointer("/result/value").and_then(Value::as_bool) == Some(true) {
+                            return Ok::<bool, CdpError>(true);
+                        }
+                        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
                     }
-                    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+                    Ok::<bool, CdpError>(false)
                 }
-                Ok::<bool, CdpError>(false)
+                .await;
+                st.clear_op();
+                out
             }
         })
         .build()?;
@@ -589,23 +667,29 @@ pub fn cdp_module(ctx: ModuleCtx) -> Result<(Module, Cleanup), rune::ContextErro
         m.function("js", move |src: String, args: RuneValue| {
             let st = st.clone();
             async move {
-                // args 对象经 serde 成 JSON 字面量注入（单双引号反引号
-                // 天然安全；体原样入包裹器零拼接）
-                // 评审双批 G2：args 不可 JSON 化显式报错（外部类型静默降
-                // null 会让 JS 侧报类型错，误导根因）
-                let args_val = match serde_json::to_value(&args) {
-                    Ok(v) => v,
-                    Err(e) => {
-                        return Err(cdp_err(
-                            "js",
-                            format!("args 不可 JSON 化：{e}（外部类型先在脚本内转基本值）"),
-                        ));
-                    }
-                };
-                let args_json =
-                    serde_json::to_string(&args_val).unwrap_or_else(|_| "null".to_string());
-                let r = st.eval_main_world(&js_wrapper(&src, &args_json)).await?;
-                CdpState::bridge(&r)
+                st.set_op("js");
+                let out = async {
+                    // args 对象经 serde 成 JSON 字面量注入（单双引号反引号
+                    // 天然安全；体原样入包裹器零拼接）
+                    // 评审双批 G2：args 不可 JSON 化显式报错（外部类型静默降
+                    // null 会让 JS 侧报类型错，误导根因）
+                    let args_val = match serde_json::to_value(&args) {
+                        Ok(v) => v,
+                        Err(e) => {
+                            return Err(cdp_err(
+                                "js",
+                                format!("args 不可 JSON 化：{e}（外部类型先在脚本内转基本值）"),
+                            ));
+                        }
+                    };
+                    let args_json =
+                        serde_json::to_string(&args_val).unwrap_or_else(|_| "null".to_string());
+                    let r = st.eval_main_world(&js_wrapper(&src, &args_json)).await?;
+                    CdpState::bridge(&r)
+                }
+                .await;
+                st.clear_op();
+                out
             }
         })
         .build()?;
@@ -615,32 +699,38 @@ pub fn cdp_module(ctx: ModuleCtx) -> Result<(Module, Cleanup), rune::ContextErro
         m.function("js_lib", move |name: String, vars: RuneValue| {
             let st = st.clone();
             async move {
-                let (_path, body) = match st.resolve_js_lib(&name) {
-                    Ok(v) => v,
-                    Err(e) => return Err(e),
-                };
-                // #66 全同管线：vars 对象做 Jinja 渲染（Strict；未填键报错
-                // 带 op=js_lib），渲染产物进主世界执行（args 空对象占位）
-                let vars_json = match serde_json::to_value(&vars) {
-                    Ok(v) => v,
-                    Err(e) => {
-                        return Err(cdp_err(
-                            "js_lib",
-                            format!("vars 不可 JSON 化：{e}（外部类型先在脚本内转基本值）"),
-                        ));
-                    }
-                };
-                let rendered = match jinja_env().render_str(&body, vars_json) {
-                    Ok(t) => t,
-                    Err(e) => {
-                        return Err(cdp_err(
-                            "js_lib",
-                            format!("模板渲染失败：{e}（未填键补 vars 或模板给 default）"),
-                        ));
-                    }
-                };
-                let r = st.eval_main_world(&js_wrapper(&rendered, "{}")).await?;
-                CdpState::bridge(&r)
+                st.set_op("js_lib");
+                let out = async {
+                    let (_path, body) = match st.resolve_js_lib(&name) {
+                        Ok(v) => v,
+                        Err(e) => return Err(e),
+                    };
+                    // #66 全同管线：vars 对象做 Jinja 渲染（Strict；未填键报错
+                    // 带 op=js_lib），渲染产物进主世界执行（args 空对象占位）
+                    let vars_json = match serde_json::to_value(&vars) {
+                        Ok(v) => v,
+                        Err(e) => {
+                            return Err(cdp_err(
+                                "js_lib",
+                                format!("vars 不可 JSON 化：{e}（外部类型先在脚本内转基本值）"),
+                            ));
+                        }
+                    };
+                    let rendered = match jinja_env().render_str(&body, vars_json) {
+                        Ok(t) => t,
+                        Err(e) => {
+                            return Err(cdp_err(
+                                "js_lib",
+                                format!("模板渲染失败：{e}（未填键补 vars 或模板给 default）"),
+                            ));
+                        }
+                    };
+                    let r = st.eval_main_world(&js_wrapper(&rendered, "{}")).await?;
+                    CdpState::bridge(&r)
+                }
+                .await;
+                st.clear_op();
+                out
             }
         })
         .build()?;
@@ -674,7 +764,12 @@ pub fn cdp_module(ctx: ModuleCtx) -> Result<(Module, Cleanup), rune::ContextErro
         let st = state.clone();
         m.function("requests", move |opts: RuneValue| {
             let st = st.clone();
-            async move { st.call_host("requests", vec![opts]).await }
+            async move {
+                st.set_op("requests");
+                let out = st.call_host("requests", vec![opts]).await;
+                st.clear_op();
+                out
+            }
         })
         .build()?;
     }
@@ -682,7 +777,12 @@ pub fn cdp_module(ctx: ModuleCtx) -> Result<(Module, Cleanup), rune::ContextErro
         let st = state.clone();
         m.function("snapshot", move |opts: RuneValue| {
             let st = st.clone();
-            async move { st.call_host("snapshot", vec![opts]).await }
+            async move {
+                st.set_op("snapshot");
+                let out = st.call_host("snapshot", vec![opts]).await;
+                st.clear_op();
+                out
+            }
         })
         .build()?;
     }
@@ -690,7 +790,12 @@ pub fn cdp_module(ctx: ModuleCtx) -> Result<(Module, Cleanup), rune::ContextErro
         let st = state.clone();
         m.function("request_detail", move |sel: RuneValue, opts: RuneValue| {
             let st = st.clone();
-            async move { st.call_host("requestDetail", vec![sel, opts]).await }
+            async move {
+                st.set_op("request_detail");
+                let out = st.call_host("requestDetail", vec![sel, opts]).await;
+                st.clear_op();
+                out
+            }
         })
         .build()?;
     }
@@ -699,12 +804,18 @@ pub fn cdp_module(ctx: ModuleCtx) -> Result<(Module, Cleanup), rune::ContextErro
         m.function("cookies", move || {
             let st = st.clone();
             async move {
-                let r = st
-                    .session
-                    .call_with_deadline("Network.getCookies", json!({}), CALL_DEADLINE)
-                    .await
-                    .map_err(|e| cdp_err("cookies", format!("Network.getCookies: {e:#}")))?;
-                CdpState::bridge_no_result_check(&r, "cookies")
+                st.set_op("cookies");
+                let out = async {
+                    let r = st
+                        .session
+                        .call_with_deadline("Network.getCookies", json!({}), CALL_DEADLINE)
+                        .await
+                        .map_err(|e| cdp_err("cookies", format!("Network.getCookies: {e:#}")))?;
+                    CdpState::bridge_no_result_check(&r, "cookies")
+                }
+                .await;
+                st.clear_op();
+                out
             }
         })
         .build()?;
@@ -716,23 +827,31 @@ pub fn cdp_module(ctx: ModuleCtx) -> Result<(Module, Cleanup), rune::ContextErro
             move |name: String, value: String, domain: String| {
                 let st = st.clone();
                 async move {
-                    let r = st
-                        .session
-                        .call_with_deadline(
-                            "Network.setCookie",
-                            json!({ "name": name, "value": value, "domain": domain, "path": "/" }),
-                            CALL_DEADLINE,
-                        )
-                        .await
-                        .map_err(|e| cdp_err("set_cookie", format!("Network.setCookie: {e:#}")))?;
-                    // setCookie 返回 {success: bool}
-                    if r.get("success").and_then(Value::as_bool) == Some(false) {
-                        return Err(cdp_err(
-                            "set_cookie",
-                            "浏览器拒设（检查 domain 与 httpOnly/secure 约束）",
-                        ));
+                    st.set_op("set_cookie");
+                    let out = async {
+                        let r = st
+                            .session
+                            .call_with_deadline(
+                                "Network.setCookie",
+                                json!({ "name": name, "value": value, "domain": domain, "path": "/" }),
+                                CALL_DEADLINE,
+                            )
+                            .await
+                            .map_err(|e| {
+                                cdp_err("set_cookie", format!("Network.setCookie: {e:#}"))
+                            })?;
+                        // setCookie 返回 {success: bool}
+                        if r.get("success").and_then(Value::as_bool) == Some(false) {
+                            return Err(cdp_err(
+                                "set_cookie",
+                                "浏览器拒设（检查 domain 与 httpOnly/secure 约束）",
+                            ));
+                        }
+                        Ok(RuneValue::from(()))
                     }
-                    Ok(RuneValue::from(()))
+                    .await;
+                    st.clear_op();
+                    out
                 }
             },
         )

@@ -99,6 +99,32 @@ async fn budget_cap_is_terminal() {
     assert!(msg.contains("终态错误"), "{msg}");
 }
 
+/// v0.26.1 探针语义：cdp 面快错（无连接）后探针清空，不残留上一次的
+/// 在飞名（超时臂读到残留会误报卡点）。
+#[tokio::test]
+async fn op_probe_clears_after_fast_error() {
+    let session = cdp::Session::new();
+    let probe = browse_rune::OpProbe::default();
+    let out = run(
+        session,
+        r#"pub async fn main() { cdp::eval("1").await?; Ok(()) }"#,
+        DEFAULT_CAPS,
+        browse_rune::RunOpts {
+            op_probe: probe.clone(),
+            ..Default::default()
+        },
+    )
+    .await;
+    // 无连接：eval 快错走 Err(CdpError)，回执是 error 面（或 ok 面皆不
+    // 影响断言——关键是 run 正常收尾）
+    let _ = out;
+    assert_eq!(
+        probe.lock().ok().and_then(|g| *g),
+        None,
+        "cdp 面正常退出（含快错）后探针应清空"
+    );
+}
+
 /// 三形态批：render 的 Jinja 面（Strict 未填报 op、default 过滤器通行）
 /// 与 js_wrapper 的转义纪律（args JSON 字面量注入，单双引号反引号原样）。
 #[tokio::test]

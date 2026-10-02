@@ -239,6 +239,13 @@ pub async fn rune(code: &str, root: Option<String>, stdin: Option<String>) -> Re
         }
         Ok(body.get("value").cloned().unwrap_or(Value::Null))
     } else {
+        // v0.26.1 超时 CTA 最小形：daemon 的结构化 timeout 面以一行 JSON
+        // 打到 stderr（上层 agent 可直接解析换通道重试），人读错误行照旧
+        if let Some(t) = body.get("timeout")
+            && let Ok(line) = serde_json::to_string(t)
+        {
+            eprintln!("{line}");
+        }
         Err(anyhow!(
             "{}",
             body.get("error")

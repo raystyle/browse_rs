@@ -2861,7 +2861,7 @@ async fn rune_three_channel_integration() {
         browse_rune::RunOpts {
             snippets_root: lib_root.clone(),
             stdin: "pipe-data".to_string(),
-            host_fns: Default::default(),
+            ..Default::default()
         },
     )
     .await
@@ -3011,6 +3011,61 @@ async fn rune_68_acceptance_and_pillars() {
         r,
         serde_json::json!({ "ok": { "count": 1, "title": "pl", "detail_has_url": true } }),
         "三支柱回执：{r}"
+    );
+    engine.shutdown().await.expect("shutdown");
+    clean_profile().await;
+}
+
+/// v0.26.1 超时 CTA：外层 tokio::timeout 丢弃执行 future 后，在飞调用面
+/// 保留在探针上（daemon 超时臂的同款读法）——挂死在 js 的 awaitPromise
+/// 腿上时 op 应为 `js`。
+#[tokio::test]
+async fn rune_timeout_probe_retains_inflight_op() {
+    if !gated() {
+        eprintln!("skip: BROWSE_E2E 未设 1");
+        return;
+    }
+    let _seq = SEQ.lock().await;
+    clean_profile().await;
+    let session = cdp::Session::new();
+    let engine = Engine::new(session.clone());
+    engine
+        .ensure(&EngineSpec::Auto {
+            chrome: None,
+            headless: true,
+            pipe: false,
+            profile: None,
+            proxy: None,
+            proxy_bypass: None,
+            isolated: false,
+            engine_args: Vec::new(),
+        })
+        .await
+        .expect("超时 CTA 验收引擎起不来");
+    let probe = browse_rune::OpProbe::default();
+    let hang = r#"pub async fn main() {
+        let v = cdp::js("return await new Promise(() => {})", #{"a": 1}).await?;
+        Ok(v)
+    }"#;
+    // 3 秒外层界 < 30 秒单调用界：整体超时先到，future 被丢弃
+    let out = tokio::time::timeout(
+        std::time::Duration::from_secs(3),
+        browse_rune::run(
+            session,
+            hang,
+            browse_rune::DEFAULT_CAPS,
+            browse_rune::RunOpts {
+                op_probe: probe.clone(),
+                ..Default::default()
+            },
+        ),
+    )
+    .await;
+    assert!(out.is_err(), "悬挂 js 应触发外层整体超时");
+    assert_eq!(
+        probe.lock().ok().and_then(|g| *g),
+        Some("js"),
+        "超时丢弃后在飞调用面应保留为 js"
     );
     engine.shutdown().await.expect("shutdown");
     clean_profile().await;
