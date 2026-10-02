@@ -601,7 +601,7 @@ fn rune_timeout_response(op: Value, bound: Duration) -> (axum::http::StatusCode,
 /// 面给 `op`（在飞调用面）、`elapsed_ms`（实测毫秒）、`cause`
 /// （`stop_request` 主动停 / `engine_lost` 引擎失联联动停）；CTA 按
 /// cause 分流，对停止方是预期回执，对被停方指中断定位法。
-/// 探针多槽快照（0.31.0）：0 在飞 null、1 个字符串、多个数组（并发在
+/// 探针多槽快照（0.30.2）：0 在飞 null、1 个字符串、多个数组（并发在
 /// 飞时全列，消单槽盲区）。
 fn probe_snapshot_json(probe: &browse_rune::OpProbe) -> Value {
     let ops = probe.lock().ok().map(|g| g.clone()).unwrap_or_default();
@@ -850,7 +850,7 @@ mod tests {
         assert_eq!(v["stopped"]["cause"], json!("engine_lost"));
     }
 
-    /// 多槽快照（0.31.0）：0 在飞 null、1 字符串、N 数组。
+    /// 多槽快照（0.30.2）：0 在飞 null、1 字符串、N 数组。
     #[test]
     fn probe_snapshot_multiset_face() {
         let p = browse_rune::OpProbe::default();

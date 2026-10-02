@@ -64,7 +64,7 @@
 
 响应 envelope 与 `/eval` 同形（`ok`/`value`/`engineContext` 或 `ok:false`/`error`）；`value` 是 rune 回执：`{"ok": <main 成功载荷>}` 或 `{"error": <脚本可见失败载荷>}`（脚本自造 `Timeout` 型、`cdp::CdpError{op,message}` 都属后者）。编译错、VM 终态（含限额击穿）、超时走 `error` 面。细节与脚本写法见 `browse --llms` 的 rune 条目与 crates/browse-rune 文档。
 
-超时回执（v0.26.1 起，批次二换 rune 专属旋钮）：整体超时的 `ok:false` 帧除 `error` 文案（带下一步 CTA）外，附机器可读 `timeout` 对象：`op`（在飞调用面，如 `"js"`/`"goto"`；执行间隙为 null）、`elapsed_ms`（界值回显毫秒，恒等于 bound_s×1000，非独立秒表）、`bound_s`（上界秒，即 `BROWSE_RUNE_TIMEOUT`，默认 45，`/eval` 的 `BROWSE_EVAL_TIMEOUT` 300 秒契约零动）；daemon 同字段写一行 JSON 进日志。CLI 侧 `browse rune` 把该对象以一行 JSON 打到 stderr 后非零退出，上层 agent 可直接解析换通道重试，无需外部 timeout 兜底。探针是单槽：脚本经 `future::join` 并发在飞多个 cdp 调用时 `op` 可能为 null 或非卡点面（默认串行 await 面不受影响）。
+超时回执（v0.26.1 起，批次二换 rune 专属旋钮）：整体超时的 `ok:false` 帧除 `error` 文案（带下一步 CTA）外，附机器可读 `timeout` 对象：`op`（在飞调用面，如 `"js"`/`"goto"`；执行间隙为 null）、`elapsed_ms`（界值回显毫秒，恒等于 bound_s×1000，非独立秒表）、`bound_s`（上界秒，即 `BROWSE_RUNE_TIMEOUT`，默认 45，`/eval` 的 `BROWSE_EVAL_TIMEOUT` 300 秒契约零动）；daemon 同字段写一行 JSON 进日志。CLI 侧 `browse rune` 把该对象以一行 JSON 打到 stderr 后非零退出，上层 agent 可直接解析换通道重试，无需外部 timeout 兜底。探针多槽（0.30.2）：并发在飞多个 cdp 调用时 `op` 列全部卡点面（数组形；单个仍字符串、零在飞 null）。
 
 ### 停止与检测联动（批次二：事件等待、主动停止、超时同一 CTA 面）
 

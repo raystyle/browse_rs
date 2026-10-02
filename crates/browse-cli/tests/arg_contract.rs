@@ -597,6 +597,8 @@ fn roster_matches_global_parse_arms_bidirectionally() {
     let loop_start = src
         .find("while let Some(a) = args.next_opt()")
         .expect("全局循环在位");
+    // 定长窗口（6000 字符 ≈ 现段 2.4 倍）：全局臂段增长推过窗口时反向检
+    // 查静默漏扫——依赖「fmt 稳定缩进＋新增全局旗标时名册守卫先红」双保
     let seg = &src[loop_start..loop_start + 6000];
     // 顶层臂按缩进判（12 空格 + 引号开头；子命令内环臂更深缩进不入）：
     // 常量提取用 fmt 的稳定缩进

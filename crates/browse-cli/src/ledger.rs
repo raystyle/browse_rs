@@ -91,19 +91,8 @@ pub fn keygen_write(
                 .duration_since(std::time::UNIX_EPOCH)
                 .map(|d| d.as_secs())
                 .unwrap_or(0);
-            // 备份修剪（休眠批收口）：同秒重跑会撞名短写，先清同前缀旧备
-            // 份（只保最新一代，防蔓延）
-            if let Some(dir) = path.parent()
-                && let Ok(rd) = std::fs::read_dir(dir)
-            {
-                for old_bak in rd.flatten() {
-                    let name = old_bak.file_name();
-                    let name = name.to_string_lossy();
-                    if name.starts_with("ed25519.key.bak-") {
-                        let _ = std::fs::remove_file(old_bak.path());
-                    }
-                }
-            }
+            // 备份修剪（休眠批收口；评审 G-3 换序）：新备写成功后再清同前缀旧备
+            // （只保最新一代；写失败时旧代仍在，不丢历史）
             let bak = path.with_file_name(format!("ed25519.key.bak-{stamp}"));
             // 备份不成即拒 + 落盘后回读比对（评审 #66 二轮 G8）：覆盖是
             // 不可逆动作，备份失败或短写时中止轮换而非静默继续
@@ -138,6 +127,19 @@ pub fn keygen_write(
                     "旧钥备份回读不一致（{}）；已中止覆盖防不可逆损失",
                     bak.display()
                 ));
+            }
+            // 评审 G-3 换序：新备写好并回读一致后才清同前缀旧备（只保
+            // 最新一代；写失败时旧代不丢）
+            if let Some(dir) = path.parent()
+                && let Ok(rd) = std::fs::read_dir(dir)
+            {
+                for old_bak in rd.flatten() {
+                    let name = old_bak.file_name();
+                    let name = name.to_string_lossy();
+                    if name.starts_with("ed25519.key.bak-") && old_bak.path() != bak {
+                        let _ = std::fs::remove_file(old_bak.path());
+                    }
+                }
             }
             backup = Some(bak.display().to_string());
         }
