@@ -1,6 +1,6 @@
 {
   "crate": "browse-rune",
-  "version": "0.29.0",
+  "version": "0.30.0",
   "items": [
     {
       "path": "browse_rune::exec",
@@ -81,6 +81,11 @@
       "path": "browse_rune::rawstr::RawStrError",
       "kind": "struct",
       "docs": "r# 词法错：一行 CTA 形（带行号与下一步）。"
+    },
+    {
+      "path": "browse_rune::rawstr::extract_comment_regions",
+      "kind": "function",
+      "docs": "抽出 JS 族源（方言片段与 `--js` 小程序、js_lib 库体）的注释区（G-1\n对齐批）：与 Rune 族同道占位抽取回填，但**只认注释**——r# 是 Rune\n语法不在 JS 族重写（字符串里的 `{{ }}` 照旧参与渲染，注释整段惰性）\n；正则字面量内的 `//` 不误判（启发式：前一显著字符是运算/开括号类\n或行首时 `/` 起正则，正则内 `\\` 转义与 `[...]` 字符类吞 `/`）。\n\n# Errors\n\n源已含占位前缀（标识符冲撞）时报 CTA。"
     },
     {
       "path": "browse_rune::rawstr::extract_raw_strings",

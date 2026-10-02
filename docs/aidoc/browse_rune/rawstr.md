@@ -21,6 +21,7 @@ r# 裸串预处理（战役台裸串研究单定谳 2026-10-02，批次二落地
 
 ## Functions
 
+- `extract_comment_regions` — 抽出 JS 族源（方言片段与 `--js` 小程序、js_lib 库体）的注释区（G-1
 - `extract_raw_strings` — 抽出源内全部 r# 裸串区与注释区：每处记号替换为占位标识符
 - `rewrite_raw_strings` — 全量重写（免渲染道兜底）：源内全部 r# 裸串直接换转义普通串。
 - `subst_raw_strings` — 渲染后回填：占位源里第 n 个占位换 literals 第 n 项的转义普通串字面量。

@@ -507,6 +507,21 @@ fn missing_bare_placeholders(body: &str, vars: &[(String, String)]) -> Vec<Strin
     missing
 }
 
+/// JS 族模板渲染（方言片段与 `--js` 小程序，G-1 对齐批）：先抽出注释
+/// 区换占位（注释对 Jinja 惰性，逐字回填），渲染余下源——字符串里的
+/// `{{ 键 }}` 照旧参与渲染；r# 是 Rune 语法不在此面重写。
+///
+/// # Errors
+///
+/// 占位冲撞/被模板误删，或渲染错误（同 [`render_template`]）。
+pub fn render_js_template(body: &str, vars: &[(String, String)]) -> Result<String> {
+    let (placed, literals) = browse_rune::rawstr::extract_comment_regions(body)
+        .map_err(|e| anyhow::anyhow!("注释惰性化预处理失败：{}", e.message))?;
+    let rendered = render_template(&placed, vars)?;
+    browse_rune::rawstr::subst_raw_strings(&rendered, &literals)
+        .map_err(|e| anyhow::anyhow!("注释惰性化预处理失败：{}", e.message))
+}
+
 /// rune 面模板渲染（批次二 r# 裸串、批次三注释惰性化）：先抽出 r# 区
 /// 与注释区换占位（两类区对 Jinja 惰性，`{{`/`{%`/字面 raw 标签原样），
 /// 渲染余下源，再回填（r# 区转义普通串、注释区逐字原文）；「裸串与注
@@ -752,6 +767,19 @@ pub async fn quit() -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// G-1 对齐批：JS 族（方言/--js 面）注释惰性化，字符串照旧渲染。
+    #[test]
+    fn js_template_comments_are_inert() {
+        let body = "// 用法 {{ nope }} 与 {% raw %} 字面\nreturn \"{{ q }}\";";
+        let vars = vec![("q".to_string(), "填了".to_string())];
+        let out = render_js_template(body, &vars).unwrap();
+        assert!(
+            out.contains("// 用法 {{ nope }} 与 {% raw %} 字面\n"),
+            "{out}"
+        );
+        assert!(out.contains("\"填了\""), "{out}");
+    }
 
     /// 批次三①：rune 模板道里注释区 Jinja 惰性化（含槽占位渲染、注释
     /// 字面 `{{ }}` 与 raw 标签逐字回填）。

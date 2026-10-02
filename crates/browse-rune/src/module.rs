@@ -752,7 +752,12 @@ pub fn cdp_module(ctx: ModuleCtx) -> Result<(Module, Cleanup), rune::ContextErro
                             ));
                         }
                     };
-                    let rendered = match jinja_env().render_str(&body, vars_json) {
+                    // G-1 对齐批：库体是 JS 族，注释区先抽占位惰性化再渲染
+                    let (placed, regions) =
+                        crate::rawstr::extract_comment_regions(&body).map_err(|e| {
+                            cdp_err("js_lib", format!("注释惰性化预处理失败：{}", e.message))
+                        })?;
+                    let pre = match jinja_env().render_str(&placed, vars_json) {
                         Ok(t) => t,
                         Err(e) => {
                             return Err(cdp_err(
@@ -761,6 +766,10 @@ pub fn cdp_module(ctx: ModuleCtx) -> Result<(Module, Cleanup), rune::ContextErro
                             ));
                         }
                     };
+                    let rendered =
+                        crate::rawstr::subst_raw_strings(&pre, &regions).map_err(|e| {
+                            cdp_err("js_lib", format!("注释惰性化预处理失败：{}", e.message))
+                        })?;
                     let r = st.eval_main_world(&js_wrapper(&rendered, "{}")).await?;
                     CdpState::bridge(&r)
                 }

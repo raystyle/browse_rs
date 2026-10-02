@@ -64,6 +64,30 @@ fn escape_body(content: &str) -> String {
 ///
 /// r# 裸串未闭合、或源已含占位前缀（标识符冲撞）时报带行号 CTA。
 pub fn extract_raw_strings(src: &str) -> Result<(String, Vec<String>), RawStrError> {
+    extract_with(src, Family::Rune)
+}
+
+/// 抽出 JS 族源（方言片段与 `--js` 小程序、js_lib 库体）的注释区（G-1
+/// 对齐批）：与 Rune 族同道占位抽取回填，但**只认注释**——r# 是 Rune
+/// 语法不在 JS 族重写（字符串里的 `{{ }}` 照旧参与渲染，注释整段惰性）
+/// ；正则字面量内的 `//` 不误判（启发式：前一显著字符是运算/开括号类
+/// 或行首时 `/` 起正则，正则内 `\` 转义与 `[...]` 字符类吞 `/`）。
+///
+/// # Errors
+///
+/// 源已含占位前缀（标识符冲撞）时报 CTA。
+pub fn extract_comment_regions(src: &str) -> Result<(String, Vec<String>), RawStrError> {
+    extract_with(src, Family::Js)
+}
+
+/// 词法族：Rune（r# 加注释）或 Js（仅注释，带正则感知）。
+#[derive(Clone, Copy, PartialEq)]
+enum Family {
+    Rune,
+    Js,
+}
+
+fn extract_with(src: &str, family: Family) -> Result<(String, Vec<String>), RawStrError> {
     if src.contains(PLACEHOLDER_PREFIX) {
         return Err(RawStrError {
             message: format!(
@@ -83,10 +107,17 @@ pub fn extract_raw_strings(src: &str) -> Result<(String, Vec<String>), RawStrErr
         Char,
         Tpl,
         TplExpr,
+        /// JS 族正则字面量（G-1 对齐批）：`\` 转义与 `[...]` 字符类内 `/`
+        /// 不闭合；闭合 `/` 后回表达式面。
+        Regex,
     }
     let mut stack: Vec<Ctx> = vec![Ctx::Normal];
     let mut i = 0usize;
     let mut line = 1u32;
+    // JS 族正则启发式的前一显著面：上一非空白字节 + 上一标识符（关键字
+    // 后可起正则：return /x/ 等）
+    let mut prev_sig: Option<u8> = None;
+    let mut last_word = String::new();
     while i < bytes.len() {
         // 栈底恒有 Normal（只压不弹到底），防御形取值免 panic 文档面
         let ctx = stack.last().copied().unwrap_or(Ctx::Normal);
@@ -103,6 +134,8 @@ pub fn extract_raw_strings(src: &str) -> Result<(String, Vec<String>), RawStrErr
                 }
                 if b == b'"' {
                     stack.pop();
+                    prev_sig = Some(b);
+                    last_word.clear();
                 }
                 let ch_len = utf8_len(b);
                 push_bytes(&mut out, bytes, i, ch_len);
@@ -117,6 +150,8 @@ pub fn extract_raw_strings(src: &str) -> Result<(String, Vec<String>), RawStrErr
                 }
                 if b == b'\'' {
                     stack.pop();
+                    prev_sig = Some(b);
+                    last_word.clear();
                 }
                 let ch_len = utf8_len(b);
                 push_bytes(&mut out, bytes, i, ch_len);
@@ -131,6 +166,8 @@ pub fn extract_raw_strings(src: &str) -> Result<(String, Vec<String>), RawStrErr
                 }
                 if b == b'`' {
                     stack.pop();
+                    prev_sig = Some(b);
+                    last_word.clear();
                     out.push(b as char);
                     i += 1;
                     continue;
@@ -140,6 +177,33 @@ pub fn extract_raw_strings(src: &str) -> Result<(String, Vec<String>), RawStrErr
                     out.push_str("${");
                     i += 2;
                     continue;
+                }
+                let ch_len = utf8_len(b);
+                push_bytes(&mut out, bytes, i, ch_len);
+                i += ch_len;
+            }
+            Ctx::Regex => {
+                if b == b'\\' && i + 1 < bytes.len() {
+                    let pair = 1 + utf8_len(bytes[i + 1]);
+                    push_bytes(&mut out, bytes, i, pair);
+                    i += pair;
+                    continue;
+                }
+                if b == b'[' {
+                    // 字符类：到 ] 为止（内的 / 不闭合）
+                    let start = i;
+                    let mut j = i + 1;
+                    while j < bytes.len() && bytes[j] != b']' {
+                        j += utf8_len(bytes[j]);
+                    }
+                    let end = (j + 1).min(bytes.len());
+                    push_bytes(&mut out, bytes, start, end - start);
+                    i = end;
+                    continue;
+                }
+                if b == b'/' {
+                    stack.pop();
+                    prev_sig = Some(b'/');
                 }
                 let ch_len = utf8_len(b);
                 push_bytes(&mut out, bytes, i, ch_len);
@@ -169,6 +233,14 @@ pub fn extract_raw_strings(src: &str) -> Result<(String, Vec<String>), RawStrErr
                     out.push_str(&format!("{PLACEHOLDER_PREFIX}{}__", literals.len()));
                     literals.push(src[start..end].to_string());
                     i = end;
+                    continue;
+                }
+                // JS 族正则字面量起点（启发式：前一显著面属运算/开括号类
+                // 或关键字后或行首；两注释形已在上优先截获）
+                if family == Family::Js && b == b'/' && regex_allowed(prev_sig, &last_word) {
+                    stack.push(Ctx::Regex);
+                    out.push(b as char);
+                    i += 1;
                     continue;
                 }
                 if b == b'"' {
@@ -203,14 +275,18 @@ pub fn extract_raw_strings(src: &str) -> Result<(String, Vec<String>), RawStrErr
                     i += 1;
                     continue;
                 }
-                // 标识符 run：整段消费，run 恰为 "r" 且后随 #+" 时是裸串
+                // 标识符 run：整段消费；Rune 族 run 恰为 "r" 且后随 #+"
+                // 时是裸串（Js 族不认 r#）
                 if is_word(b) {
                     let start = i;
                     while i < bytes.len() && is_word(bytes[i]) {
                         i += 1;
                     }
                     let word = &src[start..i];
-                    if word == "r" && i < bytes.len() && bytes[i] == b'#' {
+                    last_word = word.to_string();
+                    prev_sig = Some(bytes[i - 1]);
+                    if family == Family::Rune && word == "r" && i < bytes.len() && bytes[i] == b'#'
+                    {
                         let mut hashes = 0usize;
                         let mut j = i;
                         while j < bytes.len() && bytes[j] == b'#' {
@@ -260,11 +336,62 @@ pub fn extract_raw_strings(src: &str) -> Result<(String, Vec<String>), RawStrErr
                 if b == b'\n' {
                     line += 1;
                 }
+                if !b.is_ascii_whitespace() {
+                    prev_sig = Some(b);
+                    last_word.clear();
+                }
                 i += ch_len;
             }
         }
     }
     Ok((out, literals))
+}
+
+/// JS 正则起点启发式：前一显著字节属运算/开括号类、或前一 token 是
+/// 关键字（return/case 等）、或尚无显著前文（行首/起始）。
+fn regex_allowed(prev_sig: Option<u8>, last_word: &str) -> bool {
+    match prev_sig {
+        None => true,
+        Some(b) => {
+            matches!(
+                b,
+                b'(' | b','
+                    | b'='
+                    | b':'
+                    | b'['
+                    | b'!'
+                    | b'&'
+                    | b'|'
+                    | b'?'
+                    | b'{'
+                    | b'}'
+                    | b';'
+                    | b'+'
+                    | b'-'
+                    | b'*'
+                    | b'%'
+                    | b'~'
+                    | b'^'
+                    | b'<'
+                    | b'>'
+                    | b'/'
+                    | b'\n'
+            ) || matches!(
+                last_word,
+                "return"
+                    | "typeof"
+                    | "case"
+                    | "in"
+                    | "of"
+                    | "new"
+                    | "delete"
+                    | "void"
+                    | "instanceof"
+                    | "do"
+                    | "else"
+            )
+        }
+    }
 }
 
 /// 渲染后回填：占位源里第 n 个占位换 literals 第 n 项的转义普通串字面量。
@@ -484,5 +611,56 @@ let s = r#"real"#; s"##;
         assert!(!placed2.contains("未闭合"), "{placed2}");
         let out2 = subst_raw_strings(&placed2, &literals2).unwrap();
         assert_eq!(out2, src2, "未闭合块注释整段回填");
+    }
+
+    /// G-1 对齐批：JS 族（方言/--js/js_lib）注释惰性、字符串照旧渲染、
+    /// r# 不重写。
+    #[test]
+    fn js_family_comments_inert_strings_active() {
+        let src = r##"// 注释 {{ nope }} 与 {% raw %} 与 r#"x"#
+const a = "串内 {{ q }} 渲染";
+const b = '单引串 {{ q }} 同渲染';
+/* 块注释 {{ nope2 }} */"##;
+        let (placed, literals) = extract_comment_regions(src).unwrap();
+        assert!(!placed.contains("nope"), "注释占位后不可见：{placed}");
+        assert!(placed.contains("{{ q }}"), "字符串槽可见：{placed}");
+        let rendered = placed.replace("{{ q }}", "SUBST");
+        let out = subst_raw_strings(&rendered, &literals).unwrap();
+        assert!(
+            out.contains("// 注释 {{ nope }} 与 {% raw %} 与 r#\"x\"#\n"),
+            "{out}"
+        );
+        assert!(out.contains("\"串内 SUBST 渲染\""), "{out}");
+        assert!(out.contains("'单引串 SUBST 同渲染'"), "{out}");
+        assert!(out.contains("/* 块注释 {{ nope2 }} */"), "{out}");
+    }
+
+    /// G-1 对齐批：正则字面量内的 `//` 不误判注释；除法上下文不起正则。
+    #[test]
+    fn js_family_regex_and_division() {
+        let src = r#"const re = /https:\/\/x\/{{q}}/; const d = a / b; // 真注释 {{ nope }}"#;
+        let (placed, literals) = extract_comment_regions(src).unwrap();
+        // 正则整体未被当注释（其后的分号与除法在 placed 里），行尾真注释占位
+        assert!(!placed.contains("真注释"), "{placed}");
+        assert!(placed.contains("a / b"), "除法保留：{placed}");
+        let rendered = placed.replace("{{q}}", "Q");
+        let out = subst_raw_strings(&rendered, &literals).unwrap();
+        assert!(
+            out.contains("/https:\\/\\/x\\/Q/"),
+            "正则内 {{q}} 仍渲染（字符串/正则不惰性）：{out}"
+        );
+        assert!(out.contains("// 真注释 {{ nope }}"), "{out}");
+    }
+
+    /// G-1 对齐批：模板串插值内的注释与正则（表达式面同规），模板文本
+    /// 里的槽照旧渲染（字符串面活）。
+    #[test]
+    fn js_family_template_expr_scans() {
+        let src = "const t = `v=${f(/a\\//b/) /* c {{ nope }} */} {{ q }}`;";
+        let (placed, literals) = extract_comment_regions(src).unwrap();
+        assert!(!placed.contains("nope"), "{placed}");
+        let out = subst_raw_strings(&placed.replace("{{ q }}", "S"), &literals).unwrap();
+        assert!(out.contains("/* c {{ nope }} */"), "{out}");
+        assert!(out.contains("} S`;"), "模板文本槽渲染：{out}");
     }
 }

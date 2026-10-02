@@ -3171,3 +3171,53 @@ async fn rune_wait_event_face() {
     engine.shutdown().await.expect("shutdown");
     clean_profile().await;
 }
+
+/// G-1 对齐批：js_lib 库体（JS 族）注释惰性——库内注释含 `{{ }}` 不渲
+/// 染不替换（Strict 引擎下若非惰性会报未定义键），字符串槽照渲染。
+#[tokio::test]
+async fn rune_js_lib_comments_inert() {
+    if !gated() {
+        eprintln!("skip: BROWSE_E2E 未设 1");
+        return;
+    }
+    let _seq = SEQ.lock().await;
+    clean_profile().await;
+    let dir = std::env::temp_dir().join("browse-e2e-jslib-cmt");
+    std::fs::create_dir_all(&dir).expect("建临时库根");
+    std::fs::write(
+        dir.join("cmt.js"),
+        "// 注释 {{ nope }} 与 {% raw %} 字面\nreturn [\"{{ q }}\".length, 1];",
+    )
+    .expect("写库件");
+    let session = cdp::Session::new();
+    let engine = Engine::new(session.clone());
+    engine
+        .ensure(&EngineSpec::Auto {
+            chrome: None,
+            headless: true,
+            pipe: false,
+            profile: None,
+            proxy: None,
+            proxy_bypass: None,
+            isolated: false,
+            engine_args: Vec::new(),
+        })
+        .await
+        .expect("js_lib 注释验收引擎起不来");
+    let script = r#"pub async fn main() { Ok(cdp::js_lib("cmt", #{"q": "ab"}).await?) }"#;
+    let r = browse_rune::run(
+        session,
+        script,
+        browse_rune::DEFAULT_CAPS,
+        browse_rune::RunOpts {
+            snippets_root: dir.clone(),
+            ..Default::default()
+        },
+    )
+    .await
+    .expect("js_lib 注释脚本执行失败");
+    assert_eq!(r, serde_json::json!({ "ok": [2, 1] }), "js_lib 回执：{r}");
+    engine.shutdown().await.expect("shutdown");
+    clean_profile().await;
+    let _ = std::fs::remove_dir_all(&dir);
+}

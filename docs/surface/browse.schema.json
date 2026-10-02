@@ -423,7 +423,7 @@
       "type": "object"
     },
     "cli.eval": {
-      "description": "browse '<片段>' 求值方言片段（缺省形态；自动拉起 daemon 与引擎）。实参以 @ 开头即文件实参形态：读文件内容为片段体（绝对/相对路径皆可，读失败报错带下一步），与 --js 同形；@ 实参配 --vars 键=值 即模板道（snippets 根先解析，Jinja 渲染，未填键 exit 2 报键名），方言与 --js 两形态同用。",
+      "description": "browse '<片段>' 求值方言片段（缺省形态；自动拉起 daemon 与引擎）。实参以 @ 开头即文件实参形态：读文件内容为片段体（绝对/相对路径皆可，读失败报错带下一步），与 --js 同形；@ 实参配 --vars 键=值 即模板道（snippets 根先解析，Jinja 渲染，未填键 exit 2 报键名；注释区免渲染 0.30.0），方言与 --js 两形态同用。",
       "example": "browse 'return await currentTab()'",
       "input": {
         "properties": {
@@ -573,7 +573,7 @@
       "type": "object"
     },
     "cli.js-flag": {
-      "description": "browse --js '<JS 源码|@<路径>>' 全量 JS 受限旁路：不经方言解析器直发 Runtime.evaluate（returnByValue 加 awaitPromise），return 值序列化回传；模板字符串/正则/函数声明直接写，消多层引号转义。分工：方言管 CDP 编排，--js 管页面逻辑。空实参加管道 = 整段 stdin 一次求值（配 --b64 先解码）。文件实参形态：实参以字面 @ 开头即读文件内容为片段体（前导空白即不触发、保持字面；`browse --js @snip.js`；方言与 --js 两形态通用，绝对/相对路径皆可，读失败报错带下一步；先于 --b64 展开，`--b64 @x.b64` = 文件存 base64 的组合形；stdin 管道不经此道）。模板参数化（命令小程序）：@ 实参与 --vars 键=值（可重复累积，不收逗号分隔）同给即模板道——模板源先按 snippets 根解析（--root / BROWSE_SNIPPETS_ROOT / 内置三序，名原样与补 .js 两试，越根候选跳过），未命中回落字面路径；按 Jinja 语法渲染（{{ 键 }} 直插、| default() 可选参、{% for %} 生成面；--vars 值恒字符串，循环遍历传参按字符、要数组在模板里 split），未填键网络前拦 exit 2 报键名；不给 --vars 即纯透传（字面大括号对不误伤）。不可序列化值（DOM 节点、Date、Map、RegExp 等，含容器内元素）在 returnByValue 下序列化成 {}，CLI 按空容器口径零输出；要值就在 JS 里自己 JSON.stringify 或取原语（.textContent/.outerHTML）。与 --repl 不同行。",
+      "description": "browse --js '<JS 源码|@<路径>>' 全量 JS 受限旁路：不经方言解析器直发 Runtime.evaluate（returnByValue 加 awaitPromise），return 值序列化回传；模板字符串/正则/函数声明直接写，消多层引号转义。分工：方言管 CDP 编排，--js 管页面逻辑。空实参加管道 = 整段 stdin 一次求值（配 --b64 先解码）。文件实参形态：实参以字面 @ 开头即读文件内容为片段体（前导空白即不触发、保持字面；`browse --js @snip.js`；方言与 --js 两形态通用，绝对/相对路径皆可，读失败报错带下一步；先于 --b64 展开，`--b64 @x.b64` = 文件存 base64 的组合形；stdin 管道不经此道）。模板参数化（命令小程序）：@ 实参与 --vars 键=值（可重复累积，不收逗号分隔）同给即模板道——模板源先按 snippets 根解析（--root / BROWSE_SNIPPETS_ROOT / 内置三序，名原样与补 .js 两试，越根候选跳过），未命中回落字面路径；按 Jinja 语法渲染（{{ 键 }} 直插、| default() 可选参、{% for %} 生成面；--vars 值恒字符串，循环遍历传参按字符、要数组在模板里 split），未填键网络前拦 exit 2 报键名（注释区免渲染 0.30.0）；不给 --vars 即纯透传（字面大括号对不误伤）。不可序列化值（DOM 节点、Date、Map、RegExp 等，含容器内元素）在 returnByValue 下序列化成 {}，CLI 按空容器口径零输出；要值就在 JS 里自己 JSON.stringify 或取原语（.textContent/.outerHTML）。与 --repl 不同行。",
       "example": "browse --js 'return (() => { const f = s => s.length; return f(\"ab\"); })()'",
       "input": {
         "properties": {

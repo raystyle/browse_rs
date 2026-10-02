@@ -17,6 +17,7 @@ daemon 客户端：本地 HTTP 调用 + 首次使用自动拉起 detached daemon
 - `load_template_ext` — [`load_template`] 的扩展名与语境标签变体（#67：Rune 脚本用 `.rn` 与
 - `parse_vars_arg` — 解析 `--vars` 单值（`键=值`）：键是标识符（字母或下划线开头，字母
 - `quit` — POST /quit 退 daemon，daemon 侧顺带只终结自起引擎（附着来源不动）。
+- `render_js_template` — JS 族模板渲染（方言片段与 `--js` 小程序，G-1 对齐批）：先抽出注释
 - `render_rune_template` — rune 面模板渲染（批次二 r# 裸串、批次三注释惰性化）：先抽出 r# 区
 - `render_template` — `--vars` 模板渲染（#66 命令小程序）：Jinja 语法渲染模板源，`{{ 键 }}`
 - `rune` — 把 Rune 编排脚本 POST 到 daemon 的 /rune 执行（账本 #67）。

@@ -662,7 +662,8 @@ async fn main() -> Result<()> {
                         std::process::exit(2);
                     });
                 *snip =
-                    browse_cli::client::render_template(&body, &parsed_vars).unwrap_or_else(|e| {
+                    // G-1 对齐批：方言/--js 面注释惰性化（JS 族只抽注释）
+                    browse_cli::client::render_js_template(&body, &parsed_vars).unwrap_or_else(|e| {
                         eprintln!("{e:#}");
                         std::process::exit(2);
                     });

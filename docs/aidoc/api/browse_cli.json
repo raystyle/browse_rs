@@ -1,6 +1,6 @@
 {
   "crate": "browse-cli",
-  "version": "0.29.0",
+  "version": "0.30.0",
   "items": [
     {
       "path": "browse_cli::client",
@@ -81,6 +81,11 @@
       "path": "browse_cli::client::quit",
       "kind": "function",
       "docs": "POST /quit 退 daemon，daemon 侧顺带只终结自起引擎（附着来源不动）。\n\n# Errors\n\ndaemon 不在（幂等场景调用方先判活）或 HTTP 失败。"
+    },
+    {
+      "path": "browse_cli::client::render_js_template",
+      "kind": "function",
+      "docs": "JS 族模板渲染（方言片段与 `--js` 小程序，G-1 对齐批）：先抽出注释\n区换占位（注释对 Jinja 惰性，逐字回填），渲染余下源——字符串里的\n`{{ 键 }}` 照旧参与渲染；r# 是 Rune 语法不在此面重写。\n\n# Errors\n\n占位冲撞/被模板误删，或渲染错误（同 [`render_template`]）。"
     },
     {
       "path": "browse_cli::client::render_rune_template",
