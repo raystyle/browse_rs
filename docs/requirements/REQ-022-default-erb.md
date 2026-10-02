@@ -26,3 +26,4 @@ trace: vars_syntax 单测（指令解析/双引擎/块渲染）＋client 全族 
 - semver 张力：定界缺省翻转按 REQ-004 判据属行为变化应取 minor；总台明令 patch 封版，从令并在此留痕
 - 存量迁移：`{{ 键 }}` 件加首行 `// browse-vars: classic` 或迁 `<%= %>`；战役台 pillar 系待迁清单由其自查
 - `<%` 免撞证明：JS 无 `%` 一元运算符，`a<%b` 非法；五十年 ERB/EJS 实证
+- e2e flake 记档（评审 G-2）：spawn_port_channel_roundtrip 本批评测首跑败，隔离复跑与二次全量均过（12/12）；与模板道零交集，后续批再遇则立 issue
