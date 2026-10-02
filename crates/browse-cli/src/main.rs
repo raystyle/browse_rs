@@ -1433,11 +1433,15 @@ async fn main() -> Result<()> {
             .await?;
             // 评审双批 G1：递根三序终值（旗标 > env > 内置在此收口），防 CLI 与
             // 长命 daemon 两侧 env 各解一次的分叉
+            // 评审 F-1（0.30.3）：件首行指令优先旗标且须随请求递 daemon
+            // （否则其内 cdp::render 与 js_lib 按缺省 ERB 跑与声明不符）
+            let effective_syntax = browse_rune::vars_syntax::directive_of(&body)
+                .unwrap_or_else(|| cli_vars_syntax(&vars_syntax_flag));
             match browse_cli::client::rune(
                 &body,
                 Some(root.display().to_string()),
                 stdin_param,
-                cli_vars_syntax(&vars_syntax_flag),
+                effective_syntax,
             )
             .await
             {

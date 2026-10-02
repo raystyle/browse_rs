@@ -592,6 +592,9 @@ pub fn render_rune_template(
 /// assert_eq!(render_template("f({{ q }})", &v2).unwrap(), "f('a=b')");
 /// ```
 pub fn render_template(body: &str, vars: &[(String, String)]) -> Result<String> {
+    // 兼容入口（0.30.3）：恒经典定界 {{ 键 }}，绕过缺省 ERB——四面缺省
+    // 走 render_rune_template/render_js_template，外部直调本函数保持旧
+    // 契约
     render_template_with(browse_rune::vars_syntax::VarsSyntax::Classic, body, vars)
 }
 
