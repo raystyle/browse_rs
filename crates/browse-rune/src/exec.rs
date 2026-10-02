@@ -274,7 +274,7 @@ fn missing_fn_table() -> &'static std::collections::HashMap<u64, &'static str> {
                 "iter",
             ] {
                 if let Some(h) = probe_missing_fn_hash(ty, name) {
-                    // 同名不同型不同哈希：都收，后写覆盖仅发生在同名同哈希
+                    // 同名不同型不同哈希：都收（entry.or_insert 同哈希首写胜）
                     m.entry(h).or_insert(name);
                 }
             }
@@ -320,6 +320,10 @@ fn enrich_missing_fn(msg: &str) -> String {
     let Some((hash, from, to)) = parse_missing_fn_hash(msg) else {
         return msg.to_string();
     };
+    // 评审 G-3：一次性建表约 2 秒（84 探针），仅在首个缺失函数错误时
+    // 发生（OnceLock 后零成本）；block_in_place 在 current-thread 运行时
+    // 会 panic（vm_face 测试即该形态），故直取并记档（后台预热是后续
+    // 可选优化）
     match missing_fn_table().get(&hash) {
         Some(name) => {
             let mut out = String::with_capacity(msg.len() + 32);

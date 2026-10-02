@@ -49,6 +49,18 @@ fn generated_files_match_renderer() {
 
 /// REQ-060 一面手册帽（族标准名 --llms）：手册至多 120 行，膨胀逼收敛。
 #[test]
+fn manual_words_not_split_by_fold() {
+    // 评审 F-1（0.30.1）：折行残会把词劈开（缩进空格入串）——钉关键词
+    // 整词在册，同类残再溜过即红
+    let m = browse_core::surface::render_manual();
+    assert!(
+        m.contains("全局旗标尾置合法"),
+        "关键词被折行残劈开：{}",
+        m.lines().find(|l| l.contains("旗标位置")).unwrap_or("")
+    );
+}
+
+#[test]
 fn manual_under_120_lines() {
     let lines = surface::render_manual().lines().count();
     assert!(

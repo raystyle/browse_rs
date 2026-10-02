@@ -5,7 +5,7 @@
 ## 0.30.1 - 2026-10-02
 
 - **#70 补名腿（缺失实例函数报错带名）**：哈希查名字表在首次遇错时以一次性 VM 探针收割（String/i64/Vec 上逐调常用方法名收缺失错哈希，OnceLock 缓存）；终态错误文本命中即在报错里补方法名并保留哈希可溯源（战役台两枚实测锚 to_string=0x871c12da43b176d2、splitn=0x7d6f3bd0775df4c8 已进单测锁）
-- **目录审计收尾（G-A6/A7/A8/A9）**：artifact publish 签名补 --version/--note/--git-range；-V 入 version 条目签名；手册补「旗标位置口径」句（全局旗标尾置合法、无关子命令静默忽略、未知旗标用法错三分面）；G-A7 名册旁证测试（KNOWN_GLOBAL_FLAGS 31 旗标尾置逐个过 rune 收集环，漏同步解析臂即红；--vars/--root 是 rune 环合法子旗标不入名单）
+- **目录审计收尾（G-A6/A7/A8/A9）**：artifact publish 签名补 --version/--note/--git-range；-V 入 version 条目签名；手册补「旗标位置口径」句（全局旗标尾置合法、无关子命令静默忽略、未知旗标用法错三分面）；G-A7 名册旁证测试（KNOWN_GLOBAL_FLAGS 名册 32 项、尾置旁证 30 项逐个过 rune 收集环，漏同步解析臂即红；--vars/--root 是 rune 环合法子旗标不入名单）
 - semver 判据结论（0.30.1 裁定）：错误信息增强与文档/守卫测试取 patch（REQ-004 判据行；REQ-020 在册）
 
 ## 0.30.0 - 2026-10-02
