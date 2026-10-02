@@ -28,7 +28,7 @@ superseded_by: null
 
 ## 增补（2026-10-02，超时回执与专属旋钮终裁）
 
-战役台 agent 壳退役外部 timeout 兜底后引擎内 CTA 成唯一安全网，v0.26.1 先行结构化超时回执（`timeout` 对象：op 在飞调用面/elapsed_ms/bound_s，daemon 日志行，CLI stderr 一行 JSON；探针函数级置名清空律见 REQ-016）。**旋钮终裁**：`BROWSE_RUNE_TIMEOUT` 独立旋钮，rune 面整体上界默认 45 秒（战役台诉求口径）；`/eval` 的 `BROWSE_EVAL_TIMEOUT` 300 秒契约零动（长跑方言片段正当面）。上界是 daemon 级（实例内全部 rune 执行同界，env 在 daemon 进程定格）：长爬编排（逐页 goto 累计分钟级）在 45 秒界触顶，按需调大或拆专用命名实例；超时报错 CTA 点名旋钮。实现随批次二（v0.27.0）。
+战役台 agent 壳退役外部 timeout 兜底后引擎内 CTA 成唯一安全网，v0.26.1 先行结构化超时回执（`timeout` 对象：op 在飞调用面/elapsed_ms/bound_s，daemon 日志行，CLI stderr 一行 JSON；探针函数级置名清空律见 REQ-016）。**旋钮终裁**：`BROWSE_RUNE_TIMEOUT` 独立旋钮，rune 面整体上界默认 45 秒（战役台诉求口径）；`/eval` 的 `BROWSE_EVAL_TIMEOUT` 300 秒契约零动（长跑方言片段正当面）。上界是 daemon 级（实例内全部 rune 执行同界，env 在 daemon 进程定格）：长爬编排（逐页 goto 累计分钟级）在 45 秒界触顶，按需调大或拆专用命名实例；超时报错 CTA 点名旋钮。实现随批次二（v0.28.0）。
 
 ## 增补（2026-10-02，批次二：停止三道、事件等待直出、r# 裸串语言扩展）
 

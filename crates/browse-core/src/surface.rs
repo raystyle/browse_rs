@@ -321,7 +321,7 @@ pub const COMMANDS: &[CmdSpec] = &[
                 "同 snippets 族根三序（只对 @ 名生效）"
             ),
         ],
-        description: "Rune 编排面（三形态运行时之一：rn 脚本小程序握 js+cdp 双能力，方言命令管 cdp、js 小程序管 js）：脚本在独立 VM 跑（Rune 语言，入口 pub async fn main() 返回 Result），经自注册 cdp 模块做效果：goto/eval/eval_handle/call/release/click/type_text/wait_sel 八函数走隔离世界轻探针，wait_event(method,ms) 事件驱动等待（原生 Session::wait_for 直出，活动 tab 与 browser 级事件，超时 Err 可 match 做条件分支），js(src,args) 内联 JS 小程序体与 js_lib(name,vars) 库内 .js 小程序走主世界全量页面逻辑（页面函数可调；args/vars 对象 JSON 字面量注入引号天然安全；js 体须用 return 出值，裸表达式得 null），render(tpl,vars) 运行时 Jinja，stdin() 读管道参数道。输入三通道：文件/实参、管道源码（无实参时 cat plan.rn | browse rune）、管道参数（有实参时）。r# 裸串：r#\"…\"#（Rust 同形，含 \"# 升 r##）编译前重写为转义普通串，任意引号反斜杠多行原样直达 js/eval，模板道免渲染（{% raw %} 仍管 Jinja 面）。双限额（指令与分配），未填模板键网络前拦 exit 2。错误二分：cdp::CdpError{op,message} 与脚本自造 Timeout 属脚本可见失败，VM 错误是终态。eval_handle 句柄经 clone 复用，call 的函数体用 function(){…} 形收 this。方言/--js 契约零动。，requests(opts)/snapshot(opts)/request_detail(sel,opts)/cookies()/set_cookie(name,value,domain) 三支柱同源与 cookie 面（与方言面同一实现）。全部 CDP 调用 30 秒上界、同源腿 60 秒上界、引擎忙 10 秒快错（不无界排队），丢响应快错不挂死；整体执行 BROWSE_RUNE_TIMEOUT 上界（rune 面专属默认 45 秒，/eval 走 BROWSE_EVAL_TIMEOUT 300 秒，daemon 级实例内同界，长爬按需调大或拆命名实例），超时/主动停止回执附结构化 timeout/stopped 面（op 在飞调用面、elapsed_ms、cause），CLI 侧 stderr 出一行 JSON。主动停止三道：browse rune stop（动词位，POST /rune/stop；脚本名恰为 stop 且无 --vars 会被当动词，用 @stop 或加 --vars 走脚本道）、引擎失联联动（两次探测断连即停 cause=engine_lost，兜非 CDP 等待段）、脚本侧原生控制流自停（select/分支加 Err 返回，error 面自带 CTA）。",
+        description: "Rune 编排面（三形态运行时之一：rn 脚本小程序握 js+cdp 双能力，方言命令管 cdp、js 小程序管 js）：脚本在独立 VM 跑（Rune 语言，入口 pub async fn main() 返回 Result），经自注册 cdp 模块做效果：goto/eval/eval_handle/call/release/click/type_text/wait_sel 八函数走隔离世界轻探针，wait_event(method,ms) 事件驱动等待（原生 Session::wait_for 直出，活动 tab 与 browser 级事件，超时 Err 可 match 做条件分支），js(src,args) 内联 JS 小程序体与 js_lib(name,vars) 库内 .js 小程序走主世界全量页面逻辑（页面函数可调；args/vars 对象 JSON 字面量注入引号天然安全；js 体须用 return 出值，裸表达式得 null），render(tpl,vars) 运行时 Jinja，stdin() 读管道参数道。输入三通道：文件/实参、管道源码（无实参时 cat plan.rn | browse rune）、管道参数（有实参时）。r# 裸串：r#\"…\"#（Rust 同形，含 \"# 升 r##）编译前重写为转义普通串，任意引号反斜杠多行原样直达 js/eval，模板道免渲染（{% raw %} 仍管 Jinja 面）。双限额（指令与分配），未填模板键网络前拦 exit 2。错误二分：cdp::CdpError{op,message} 与脚本自造 Timeout 属脚本可见失败，VM 错误是终态。eval_handle 句柄经 clone 复用，call 的函数体用 function(){…} 形收 this。方言/--js 契约零动。，requests(opts)/snapshot(opts)/request_detail(sel,opts)/cookies()/set_cookie(name,value,domain) 三支柱同源与 cookie 面（与方言面同一实现）。全部 CDP 调用 30 秒上界、同源腿 60 秒上界、引擎忙 10 秒快错（不无界排队），丢响应快错不挂死；整体执行 BROWSE_RUNE_TIMEOUT 上界（rune 面专属默认 45 秒，/eval 走 BROWSE_EVAL_TIMEOUT 300 秒，daemon 级实例内同界，长爬按需调大或拆命名实例），超时/主动停止回执附结构化 timeout/stopped 面（op 在飞调用面、elapsed_ms、cause），CLI 侧 stderr 出一行 JSON。主动停止三道：browse rune stop（动词位，POST /rune/stop；脚本名恰为 stop 且无 --vars 会被当动词，用 @stop 或加 --vars 走脚本道）、引擎失联联动（两次探测断连即停 cause=engine_lost，兜非 CDP 等待段）、脚本侧原生控制流自停（select/分支加 Err 返回，error 面自带 CTA）。退出码三态：0 含脚本可见失败（main 返 Err/cdp::CdpError 走 ok:true 的 value.error 面），1 宿主终态（编译错/VM 错误/超时/被停），2 用法错。",
         example: "browse rune @x.test/fill-form --vars q=hello",
     },
     CmdSpec {
@@ -511,7 +511,7 @@ pub const COMMANDS: &[CmdSpec] = &[
         kind: CmdKind::Cli,
         signature: "browse --serve [--bind host:port]",
         args: &[arg!("bind", "string", false, "127.0.0.1:9880")],
-        description: "daemon 即只读看板：GET /（HTML 单页零外部资源，实例概览加活动 tab）与 GET /dashboard/sse（2 秒帧事件流，断线原生重连）；看板无任何写路由。前台跑 daemon（--bind 选监听地址）。daemon 即公开 HTTP 契约：POST /eval 求值（body {code,new_tab,js}，错误形判 ok 字段）、GET /health 探活；方言做线协议门外语言不限，完整契约与 curl 三例见 docs/guides/http-api.md。",
+        description: "前台跑 daemon（--bind 选监听地址），只保留 API 面（HTML 看板已移除，总台令 2026-10-02）：POST /eval 求值（body {code,new_tab,js}，错误形判 ok 字段）、POST /rune 与 /rune/stop、POST /engine/up、POST /quit、GET /health 探活；方言做线协议门外语言不限，完整契约与 curl 三例见 docs/guides/http-api.md。",
         example: "browse --serve --bind 127.0.0.1:9880",
     },
     // ---- 全局函数 ----
@@ -1665,7 +1665,7 @@ pub fn render_manual() -> String {
 
     // 意图路由表（#46）：想做什么用什么，一行一带；细节下钻 interaction 层
     out.push_str(
-        "\n意图路由（想做什么用什么；机制细节下钻 browse workspace（仓在 ~/.browse-rs/workspace），HTTP 契约 docs/guides/http-api.md）：\n  去页面并等可用 goto(url,opts)；等加载 waitLoad(s)、等导航事件 waitFor(frameNavigated,s)\n  找元素 findRefs(q)；拿结构 snapshot({depth}) 或 {ref} 子树；点击/填 clickRef/fillRef（ref 来自最近快照或 findRefs）\n  取回值/正文 pageEval(js) 或 session.Runtime.evaluate；多 tab listPageTargets/switchTab/currentTab\n  hover 菜单 hoverRef；右键双击 clickRef(ref,{button,clickCount})；滚轮 mouseWheel；拖拽 mouseDown-Move-Up 手拼\n  传/下文件 dropFiles 与 downloads()/downloadPath()；等特定响应 waitForResponse(pattern,s)；诊断面 detect() 七判、console({minLevel})、jsErrors()、requests()/requestDetail()\n  仿真 emulate/emulateMedia；授权 grantPermissions；登录态热迁 cloneCookies；iframe/shadow 用 snapshot({pierce:true})；录制 recordStart 加 recordChapter\n  引擎层直出（需扩展域版引擎）：语义快照 semanticSnapshot / 变更推送 subscribeChanges / 响应等待 engineWaitForResponse / 截图差分 screenshotDiff\n  复用命令小程序 browse snippets list/show 加 @ 实参 --vars 传参执行（根可 --root/BROWSE_SNIPPETS_ROOT 外置）；宿主侧全控制流编排 browse rune（cdp 模块八函数，隔离世界）；站点/机制知识 browse workspace list/site/page（goto/fetch/detect 回执自动点名）；门外语言 POST /eval；看板 GET /（只读）\n",
+        "\n意图路由（想做什么用什么；机制细节下钻 browse workspace（仓在 ~/.browse-rs/workspace），HTTP 契约 docs/guides/http-api.md）：\n  去页面并等可用 goto(url,opts)；等加载 waitLoad(s)、等导航事件 waitFor(frameNavigated,s)\n  找元素 findRefs(q)；拿结构 snapshot({depth}) 或 {ref} 子树；点击/填 clickRef/fillRef（ref 来自最近快照或 findRefs）\n  取回值/正文 pageEval(js) 或 session.Runtime.evaluate；多 tab listPageTargets/switchTab/currentTab\n  hover 菜单 hoverRef；右键双击 clickRef(ref,{button,clickCount})；滚轮 mouseWheel；拖拽 mouseDown-Move-Up 手拼\n  传/下文件 dropFiles 与 downloads()/downloadPath()；等特定响应 waitForResponse(pattern,s)；诊断面 detect() 七判、console({minLevel})、jsErrors()、requests()/requestDetail()\n  仿真 emulate/emulateMedia；授权 grantPermissions；登录态热迁 cloneCookies；iframe/shadow 用 snapshot({pierce:true})；录制 recordStart 加 recordChapter\n  引擎层直出（需扩展域版引擎）：语义快照 semanticSnapshot / 变更推送 subscribeChanges / 响应等待 engineWaitForResponse / 截图差分 screenshotDiff\n  复用命令小程序 browse snippets list/show 加 @ 实参 --vars 传参执行（根可 --root/BROWSE_SNIPPETS_ROOT 外置）；宿主侧全控制流编排 browse rune（cdp 模块八函数，隔离世界）；站点/机制知识 browse workspace list/site/page（goto/fetch/detect 回执自动点名）；门外语言 POST /eval\n",
     );
     out.push_str(
         "定位：给 agent（也给人）的浏览器驾驶 CLI；JS 方言片段驱动 clean-chrome，\
@@ -1766,6 +1766,10 @@ pub const COMPANION_FLAGS: &[(&str, &str)] = &[
     (
         "--profile <dir>",
         "自定义 user-data-dir（default: 固定 engine-profile）",
+    ),
+    (
+        "--cookies <域csv>",
+        "起引擎后从附着浏览器只读热迁指定域登录态（伴 up；无附着源报错指 storageState 往返）",
     ),
     ("--ws <url>", "显式 WS URL（伴附着与 up）"),
 ];
@@ -1962,9 +1966,9 @@ pub fn render_help() -> String {
         "\n片段方言：\n  const tabs = await listPageTargets()\n  await session.use(tabs[0].targetId)\n  await goto(\"https://example.com\", {waitIdle: true})\n  支持 await/const/return、字面量与成员下标；模板字符串 raw 可多行内嵌页面代码；函数与控制流走 --js；等加载用 goto()/waitLoad()。\n  完整语言面、全局函数与 session 方法清单：browse --llms\n",
     );
     out.push_str(
-        "\nEnvironment Variables:\n  BROWSE_PORT              daemon 端口（default: 9880）\n  BROWSE_NAME              命名实例：状态目录加派生端口 9900-9999，多实例并行\n  BROWSE_CHROME            chrome 路径（default: 走发现序：显式、托管 pin、祖先部署、常规路径）\n  BROWSE_PROFILE           spawn 引擎 user-data-dir（default: 固定 engine-profile，down 不删）\n  BROWSE_CDP_WS            钉死连接的 WS URL\n  BROWSE_NO_ATTACH=1       跳过附着探测，强制 spawn 隔离实例\n  BROWSE_EVAL_TIMEOUT      单次求值超时秒数（default: 300；rune 面走 BROWSE_RUNE_TIMEOUT）
+        "\nEnvironment Variables:\n  BROWSE_PORT              daemon 端口（default: 9880）\n  BROWSE_NAME              命名实例：状态目录加派生端口 9900-9999，多实例并行\n  BROWSE_CHROME            chrome 路径（default: 走发现序：显式、托管 pin、祖先部署、常规路径）\n  BROWSE_PROFILE           spawn 引擎 user-data-dir（default: 固定 engine-profile，down 不删）\n  BROWSE_CDP_WS            钉死连接的 WS URL\n  BROWSE_NO_ATTACH=1       跳过附着探测，强制 spawn 隔离实例\n  BROWSE_NO_AUTO_DIALOG=1  关自动接受 alert/beforeunload（改对话为手动处置面）\n  BROWSE_EVAL_TIMEOUT      单次求值超时秒数（default: 300；rune 面走 BROWSE_RUNE_TIMEOUT）
   BROWSE_RUNE_TIMEOUT      rune 面整体执行上界秒（default: 45；daemon 级：实例内全部 rune 执行同界）\n  BROWSE_IDLE_TIMEOUT      引擎闲置回收毫秒（default: 3600000，0 关闭）\n  BROWSE_PROXY/BYPASS      引擎代理与旁路 --proxy-server/--proxy-bypass-list（同值旗标）\n  BROWSE_ENGINE_ARGS       引擎附加旗标，空格分隔直通 spawn argv（--engine-arg 同道；无显示会话 spawn 自动补 --headless，显式旗标优先）\n  BROWSE_SECRETS           dotenv 密钥文件（--secrets 同值；输出回显脱敏）\n  BROWSE_WORKSPACE         技能仓根（default: ~/.browse-rs/workspace，跨实例共享）\n  BROWSE_SNIPPETS_ROOT     片段库根（default: 状态目录 snippets/；--root 旗标同值，旗标优先）\n  BROWSE_DOMAIN_SKILLS=0   关 goto/fetch 回执域名技能点名\n  BROWSE_PAGE_SKILLS=0     关 goto/detect 回执页面技能点名
-  BROWSE_ENGINE_CONTEXT   操作回执显引擎紧凑行（default: 关；异常告警恒开）\n",
+  BROWSE_ENGINE_CONTEXT   操作回执显引擎紧凑行（default: 关；异常告警恒开）\n  内部/镜像类：BROWSE_CHROME_MIRROR、BROWSE_CHROME_ASSET、BROWSE_RELEASE_MIRROR（产物镜像源）、BROWSE_CHROME_LATEST（chrome update 发现钉）、BROWSE_LEDGER_PRIVATE_KEY（账本签名道私钥位）\n",
     );
     out.push_str("\n退出码：\n  0 成功 / 1 执行失败 / 2 用法错\n");
     out

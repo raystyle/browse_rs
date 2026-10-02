@@ -244,7 +244,6 @@ fn help_lists_every_cli_flag() {
         "--markdown",
         "-m",
         "--timeout",
-        "--cookies",
         "--kind",
         "--name",
         "--type",

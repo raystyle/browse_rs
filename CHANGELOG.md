@@ -2,15 +2,16 @@
 
 版本级里程碑；逐批过程见 docs/diary。semver 判据在册 docs/requirements/REQ-004。
 
-## 0.27.0 - 2026-10-02
+## 0.28.0 - 2026-10-02
 
 - **#69 修复：rune 面 stdin 读上界**：非 TTY stdin 恒读原形在「开着不关」的调用壳（CI/agent）里无上界挂死（战役台实锤「双 eval 必挂」真凶）；读腿移线程加 3 秒静默界，过界按无管道参数道放行并 stderr 提示（cat 文件管道零额外时延）；集成测试双件（持开 stdin 不挂、EOF 管道零回归）
 - **BROWSE_RUNE_TIMEOUT 专属旋钮落地（ADR-0010 增补终裁）**：rune 面整体上界独立旋钮默认 45 秒（战役台诉求口径），`/eval` 的 BROWSE_EVAL_TIMEOUT 300 秒契约零动；daemon 级上界（实例内全部 rune 执行同界），长爬按需调大或拆命名实例；超时 CTA 点名旋钮
 - **主动停止三道 + 检测联动（总台指令，同一 CTA 面）**：`POST /rune/stop` 与 CLI 动词位 `browse rune stop`（幂等）；引擎失联联动（执行期两次连续连通性探测失败即停，cause=engine_lost）；脚本侧原生自停不自封装（select/分支加 Err 返回，error 面自带 CTA）。stopped 回执与超时同构：`op`（在飞调用面）/`elapsed_ms`（实测）/`cause`，CLI stderr 一行 JSON 非零退出，daemon 日志行
 - **`cdp::wait_event(method, ms)`：事件驱动等待原语**：原生 `Session::wait_for` 直出（活动 tab 与 browser 级事件、取出即移除、含缓冲历史），超时 `Err(CdpError)` 带 CTA 提示，脚本 `match` 即条件分支；e2e 锁命中/未中双臂
 - **r# 裸串（战役台裸串研究单 A 案）**：`r#"…"#`/`r##"…"##`（Rust 同形）编译前重写为转义普通串：任意引号、反斜杠、多行 JS 原样直达 `cdp::js`/`cdp::eval`；模板道先抽后渲再回填（r# 区天然免渲染，与 `{% raw %}` 各管一层）；CLI 渲染道与 daemon `run()` 入口单实现于 browse-rune；词法器跳过注释/普通串/模板串（`${}` 递归）/char，多行保真行号不漂；单测十件加 e2e 真引擎例
+- **HTML 看板移除（总台令「不做 html 看板 只保留 api」）**：GET / 与 GET /dashboard/sse 路由退役，daemon 只保留 API 面（/eval、/rune、/rune/stop、/engine/up、/quit、/health）；serve 条目与手册同步；REQ-011 注记
 - **#70 披露口径落地**：Rune 与 Rust std 差异入册 http-api（to_string/splitn 缺席与 `split_once` 正形、M-… 移交报错与 `clone(h)` 正形、直桥原生类型无 Value 方法面）；哈希查表补名留后续批
-- semver 判据结论（0.27.0 裁定）：修复加能力新增加行为变化取 minor（REQ-004 判据行；REQ-017 在册）
+- semver 判据结论（0.28.0 裁定）：含公开路由移除（契约破裂）取 major（REQ-004 判据行；REQ-017 在册）
 
 ## 0.26.1 - 2026-10-02
 

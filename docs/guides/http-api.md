@@ -60,7 +60,7 @@
 | `set_cookie(name, value, domain)` | `-> Result<()>` | `Network.setCookie`（path 恒 /；拒设报错） |
 | `wait_event(method, ms)` | `-> Result<Value>` | 事件驱动等待（原生 `Session::wait_for` 直出：活动 tab 与 browser 级事件，取出即移除，含缓冲内历史；超时 `Err(CdpError)`，脚本 `match` 即条件分支） |
 
-边界：函数都在主 frame（iframe 内不可编排，frame 形后续批）；执行器会自动追加 `__browse_rune_wrap__` 包装函数（用户脚本请勿用同名）。输入三通道：`browse rune <script|@名>`（文件/实参道）、`cat plan.rn | browse rune`（管道即源码）、`browse rune @名 < data`（管道即参数，脚本内 `cdp::stdin()` 读）。请求体可选字段 `root`（js_lib 的片段库根，旗标 > env > 内置）与 `stdin`。快错面（修复批）：全部 CDP 调用 30 秒上界、同源宿主腿 60 秒上界、WS 握手 15 秒上界；引擎忙（另一请求持执行槽）排队 10 秒过界即报错不无界等。单请求理论最坏 ≈ 引擎就绪 + 10 秒队列 + min(300 秒总超时, N×30 秒调用)；外部判挂建议 ≥60 秒，长编排调 `BROWSE_EVAL_TIMEOUT`。
+边界：函数都在主 frame（iframe 内不可编排，frame 形后续批）；执行器会自动追加 `__browse_rune_wrap__` 包装函数（用户脚本请勿用同名）。输入三通道：`browse rune <script|@名>`（文件/实参道）、`cat plan.rn | browse rune`（管道即源码）、`browse rune @名 < data`（管道即参数，脚本内 `cdp::stdin()` 读）。请求体可选字段 `root`（js_lib 的片段库根，旗标 > env > 内置）与 `stdin`。快错面（修复批）：全部 CDP 调用 30 秒上界、同源宿主腿 60 秒上界、WS 握手 15 秒上界；引擎忙（另一请求持执行槽）排队 10 秒过界即报错不无界等。单请求理论最坏 ≈ 引擎就绪 + 10 秒队列 + min(300 秒总超时, N×30 秒调用)；外部判挂建议 ≥60 秒，长编排调 `BROWSE_RUNE_TIMEOUT`（rune 面专属）。
 
 响应 envelope 与 `/eval` 同形（`ok`/`value`/`engineContext` 或 `ok:false`/`error`）；`value` 是 rune 回执：`{"ok": <main 成功载荷>}` 或 `{"error": <脚本可见失败载荷>}`（脚本自造 `Timeout` 型、`cdp::CdpError{op,message}` 都属后者）。编译错、VM 终态（含限额击穿）、超时走 `error` 面。细节与脚本写法见 `browse --llms` 的 rune 条目与 crates/browse-rune 文档。
 

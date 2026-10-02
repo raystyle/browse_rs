@@ -3143,7 +3143,7 @@ impl JsHost {
                 ))
             }
             other => bail!(
-                "未知 session.{other}；下一步：宿主面 connect/close/use/setActiveSession/waitFor/call/peekEvents/peekEventsSince/findEvents/isConnected/getActiveSession；便捷函数（waitLoad/waitIdle/waitForResponse/responseBody/routeMock 等）是全局，直接调不带 session. 前缀；CDP 域写 session.<Domain>.<method>(params)"
+                "未知 session.{other}；下一步：宿主面 connect/close/use/setActiveSession/waitFor/waitJs/call/peekEvents/peekEventsSince/findEvents/isConnected/getActiveSession；便捷函数（waitLoad/waitIdle/waitForResponse/responseBody/routeMock 等）是全局，直接调不带 session. 前缀；CDP 域写 session.<Domain>.<method>(params)"
             ),
         }
     }

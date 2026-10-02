@@ -1,9 +1,9 @@
 ---
 id: REQ-017
-title: rune 面批次二（#69 stdin 上界、停止三道与检测联动、wait_event、r# 裸串、#70 披露）
+title: rune 面批次二与看板移除（#69、停止三道、wait_event、r# 裸串、#70 披露、API-only）
 status: implemented
 priority: should
-trace: 单测（server 超时/停止回执面、engine_lost_watch、rawstr 词法十件、vm_face r# 端到端、stdin 读界集成双件）；e2e 四件（timeout 探针保留、r# 真引擎、wait_event 双臂、既有 rune 回归族）；CLI 实弹三证据（stop 回执/victim stderr 一行 JSON/daemon 日志行）；评审两轮 CONFIRM 后发版 v0.27.0
+trace: 单测（server 超时/停止回执面、engine_lost_watch、rawstr 词法十件、vm_face r# 端到端、stdin 读界集成双件）；e2e 四件（timeout 探针保留、r# 真引擎、wait_event 双臂、既有 rune 回归族）；CLI 实弹三证据（stop 回执/victim stderr 一行 JSON/daemon 日志行）；评审三轮 CONFIRM 后发版 v0.28.0
 ---
 
 # REQ-017：rune 面批次二
@@ -20,10 +20,12 @@ trace: 单测（server 超时/停止回执面、engine_lost_watch、rawstr 词�
 - [x] `cdp::wait_event(method, ms)`：原生 `Session::wait_for` 直出（零新语义）；超时 `Err(CdpError)` 带「下一步」CTA；脚本 `match` 条件分支模式（e2e 锁命中/未中双臂）
 - [x] r# 裸串（A 案）：`r#+"…"+#` 编译前重写为转义普通串（只转 `\`/`"`/CR，换行原样行号不漂）；模板道先抽后渲再回填（r# 区免渲染，与 `{% raw %}` 各管一层）；单实现于 browse-rune（CLI 渲染道依赖，daemon run() 入口兜底，防双轨）；词法器跳过注释/普通串/模板串（`${}` 递归）/char，标识符 run 内不误判；未闭合报起行 CTA
 - [x] #70 披露口径：Rune 与 Rust std 差异入册（to_string/splitn 缺席、`split_once` 正形、M-… 移交报错与 `clone(h)` 正形、直桥原生类型无 Value 方法面）；哈希查表补名留后续批
+- [x] HTML 看板移除（总台令「不做 html 看板 只保留 api」，评审二轮后并入）：GET / 与 GET /dashboard/sse 退役（路由、两 handler、内嵌 HTML、dashboard_tests），daemon 只保留 API 面；serve 条目与 http-api 同步；REQ-011 注记；契约破裂判 major（0.27.0 改判 0.28.0）
 - [x] 文档：surface rune 条目与 env 节（BROWSE_RUNE_TIMEOUT）、http-api（stop 路由行、停止与检测联动节、r# 与 std 差异节）、ADR-0010 增补（r# 语言扩展与上游对齐、停止三道）
 
 ## Notes
 
+- 评审二轮全目录审计（总台授权「review 所有命令的合理性完整性」）：零 F 九 G；G-A1（env 对账补 6 条含 BROWSE_NO_AUTO_DIALOG 行为开关与内部/镜像类尾注）、G-A2（session CTA 补 waitJs）、G-A3（rune 退出码三态入条目）、G-A4（--cookies 入 Options 伴生表）、G-A5（路由表补 GET 行，后随看板移除令改撤两行）随批；G-A6/A7/A8/A9（低）记档后续批
 - 设计纪律（总台指令链 2026-10-02）：不自封装原语（曾实现 `cdp::stop_self` 后按令回撤，脚本自停走原生控制流）；`wait_event` 是原生 `Session::wait_for` 的直出面不算自封装；验收口径＝回归 rn 脚本＋CTA 回执
 - 停止道与超时同构：都丢弃执行 future，清账走 Cleanup Drop 兜底，op 探针保留在飞面（v0.26.1 机制复用）
 - 评审一轮 F1（必修已修）：rawstr 字面量面逐字节 as char 是非 ASCII mojibake 静默变形（run() 无条件过道，全脚本面回归）；修为 UTF-8 整段推进，回归锁＝非 ASCII 词法单测（五面）＋run() 全道非 ASCII 串测试＋r# e2e 中文载荷
