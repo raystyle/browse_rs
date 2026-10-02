@@ -3097,7 +3097,7 @@ async fn rune_raw_string_js_end_to_end() {
         .await
         .expect("r# 验收引擎起不来");
     let script = r###"pub async fn main() {
-        let body = r#"const o = {a: 1, b: {c: 2}}; const re = /\d+"\w+/g; const t = `${{deep: 1}}`; return [o.a, o.b.c, "q\"q".length, t.length];"#;
+        let body = r#"const o = {a: 1, b: {c: 2}}; const re = /\d+"\w+/g; const t = `${{deep: 1}}`; return [o.a, o.b.c, "q\"q".length, t.length, "中文".length];"#;
         cdp::js(body, #{"k": 1}).await
     }"###;
     let r = browse_rune::run(
@@ -3110,7 +3110,7 @@ async fn rune_raw_string_js_end_to_end() {
     .expect("r# 脚本执行失败");
     assert_eq!(
         r,
-        serde_json::json!({ "ok": [1, 2, 3, 15] }),
+        serde_json::json!({ "ok": [1, 2, 3, 15, 2] }),
         "r# 回执：{r}"
     );
     engine.shutdown().await.expect("shutdown");

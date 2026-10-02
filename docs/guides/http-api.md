@@ -71,8 +71,10 @@
 主动停止三道，回执同构（`stopped` 对象：`op` 在飞调用面、`elapsed_ms` 实测毫秒、`cause` 二分流）：
 
 - **请求停**：`POST /rune/stop` 或 CLI 动词位 `browse rune stop`（回 `{ok, running, requested, note}`，幂等：无在跑执行空放）；被停执行回 `ok:false` + `stopped{cause:"stop_request"}`，CLI stderr 一行 JSON 后非零退出
-- **引擎失联联动停**：执行期两次连续连通性探测失败（各隔 300 毫秒，容忍瞬时重连窗）即停，`stopped{cause:"engine_lost"}`，CTA 指 `browse status` 看引擎态重试
+- **引擎失联联动停**：执行期两次连续连通性探测失败（各隔 300 毫秒，容忍瞬时重连窗）即停，`stopped{cause:"engine_lost"}`，CTA 指 `browse status` 看引擎态重试；**可达面**：fail-fast 先到即走：CDP 等待腿悬挂时单调用 30 秒界先到（走脚本错误面），engine_lost 兜非 CDP 等待段（长 `wait_event`、纯计算循环等）
 - **脚本侧原生自停**：不自封装原语，脚本用语言原生控制流（`select`/分支 + `Err` 返回或早退），error 面自带 CTA；自定义检测代码的典型形：`match cdp::wait_event(m, ms).await { Ok(ev) => …, Err(_e) => 停止分支 }`
+- **动词位撞名披露**：脚本名恰为 `stop` 且无 `--vars` 时会被当停止动词；用 `@stop` 或加 `--vars` 走脚本道
+- `stopped.elapsed_ms` 是**实测**毫秒（起跑计时；对照 timeout 面的 `elapsed_ms` 是界值回显）
 
 事件驱动等待：`cdp::wait_event(method, ms)`（上表）直出原生事件面；方言的 `session.waitFor`/`waitForResponse`/`waitLoad` 家族同源。超时机制：整体 `BROWSE_RUNE_TIMEOUT`（45 秒）＋单 CDP 调用 30 秒＋同源腿 60 秒＋引擎忙 10 秒快错，全部结构化回执。
 

@@ -92,35 +92,39 @@ pub fn extract_raw_strings(src: &str) -> Result<(String, Vec<String>), RawStrErr
         match ctx {
             Ctx::Str => {
                 if b == b'\\' && i + 1 < bytes.len() {
-                    out.push(bytes[i] as char);
-                    out.push(bytes[i + 1] as char);
-                    i += 2;
+                    // 转义对整段拷贝（后随字节按 UTF-8 长度推进，防逐字节
+                    // as char 的 mojibake——评审 F1）
+                    let pair = 1 + utf8_len(bytes[i + 1]);
+                    push_bytes(&mut out, bytes, i, pair);
+                    i += pair;
                     continue;
                 }
                 if b == b'"' {
                     stack.pop();
                 }
-                out.push(b as char);
-                i += 1;
+                let ch_len = utf8_len(b);
+                push_bytes(&mut out, bytes, i, ch_len);
+                i += ch_len;
             }
             Ctx::Char => {
                 if b == b'\\' && i + 1 < bytes.len() {
-                    out.push(bytes[i] as char);
-                    out.push(bytes[i + 1] as char);
-                    i += 2;
+                    let pair = 1 + utf8_len(bytes[i + 1]);
+                    push_bytes(&mut out, bytes, i, pair);
+                    i += pair;
                     continue;
                 }
                 if b == b'\'' {
                     stack.pop();
                 }
-                out.push(b as char);
-                i += 1;
+                let ch_len = utf8_len(b);
+                push_bytes(&mut out, bytes, i, ch_len);
+                i += ch_len;
             }
             Ctx::Tpl => {
                 if b == b'\\' && i + 1 < bytes.len() {
-                    out.push(bytes[i] as char);
-                    out.push(bytes[i + 1] as char);
-                    i += 2;
+                    let pair = 1 + utf8_len(bytes[i + 1]);
+                    push_bytes(&mut out, bytes, i, pair);
+                    i += pair;
                     continue;
                 }
                 if b == b'`' {
@@ -135,15 +139,17 @@ pub fn extract_raw_strings(src: &str) -> Result<(String, Vec<String>), RawStrErr
                     i += 2;
                     continue;
                 }
-                out.push(b as char);
-                i += 1;
+                let ch_len = utf8_len(b);
+                push_bytes(&mut out, bytes, i, ch_len);
+                i += ch_len;
             }
             Ctx::Normal | Ctx::TplExpr => {
-                // 行注释（表达式面内到行尾）
+                // 行注释（表达式面内到行尾；UTF-8 整段推进防 mojibake）
                 if b == b'/' && i + 1 < bytes.len() && bytes[i + 1] == b'/' {
                     while i < bytes.len() && bytes[i] != b'\n' {
-                        out.push(bytes[i] as char);
-                        i += 1;
+                        let ch_len = utf8_len(bytes[i]);
+                        push_bytes(&mut out, bytes, i, ch_len);
+                        i += ch_len;
                     }
                     continue;
                 }
@@ -271,14 +277,24 @@ pub fn subst_raw_strings(rendered: &str, literals: &[String]) -> Result<String, 
     let mut out = rendered.to_string();
     for (n, lit) in literals.iter().enumerate() {
         let ph = format!("{PLACEHOLDER_PREFIX}{n}__");
-        if !out.contains(&ph) {
+        // 评审 G1：恰一次校验（--vars 值或 {% for %} 复制占位文本会让
+        // replacen 错位或残留，注入面在此拦）
+        let count = out.matches(&ph).count();
+        if count != 1 {
             return Err(RawStrError {
                 message: format!(
-                    "r# 占位 {ph} 在渲染产物中消失（模板误删占位文本）；下一步：核对模板对占位标识符的改写"
+                    "r# 占位 {ph} 在渲染产物中出现 {count} 次（应为 1；--vars 值或模板复制了占位文本）；下一步：值与模板避开占位标识符前缀"
                 ),
             });
         }
         out = out.replacen(&ph, lit, 1);
+    }
+    if out.contains(PLACEHOLDER_PREFIX) {
+        return Err(RawStrError {
+            message: format!(
+                "渲染产物残留占位前缀 {PLACEHOLDER_PREFIX}（值注入面）；下一步：值避开该前缀"
+            ),
+        });
     }
     Ok(out)
 }
@@ -403,5 +419,35 @@ let s = r#"real"#; s"##;
     fn placeholder_prefix_collision_errors() {
         let err = rewrite_raw_strings("let x = __BROWSE_RN_RAW_0__;").unwrap_err();
         assert!(err.message.contains("占位前缀"), "{}", err.message);
+    }
+
+    /// 评审 F1 回归锁：普通串/char/模板串/行注释里的非 ASCII 必须整段
+    /// UTF-8 拷贝（逐字节 as char 是 mojibake 静默变形）。
+    #[test]
+    fn non_ascii_text_verbatim_in_all_faces() {
+        let src = "// 中文注释\nlet a = \"中文ABC\";\nlet c = '中';\nlet t = `值=${1}文`;\nlet r = r#\"中文裸串\"#;\nlet tail = \"尾串\"";
+        let out = rewrite_raw_strings(src).unwrap();
+        assert!(out.contains("// 中文注释"), "{out}");
+        assert!(out.contains("\"中文ABC\""), "{out}");
+        assert!(out.contains("'中'"), "{out}");
+        assert!(out.contains("`值=${1}文`"), "{out}");
+        assert!(out.contains("\"中文裸串\""), "{out}");
+        assert!(out.contains("\"尾串\""), "{out}");
+    }
+
+    /// 评审 G1：值复制占位文本（两次出现）与残留前缀都拦。
+    #[test]
+    fn subst_rejects_duplicated_or_residual_placeholder() {
+        let (placed, literals) = extract_raw_strings("let s = r#\"x\"#;").unwrap();
+        let evil = placed.replace(
+            "__BROWSE_RN_RAW_0__",
+            "__BROWSE_RN_RAW_0__ __BROWSE_RN_RAW_0__",
+        );
+        let err = subst_raw_strings(&evil, &literals).unwrap_err();
+        assert!(err.message.contains("2 次"), "{}", err.message);
+        // 残留臂：占位 0 恰一次（可替换），但渲染注入了异序号前缀
+        let residual = placed.replace("let s =", "let extra = __BROWSE_RN_RAW_7__; let s =");
+        let err = subst_raw_strings(&residual, &literals).unwrap_err();
+        assert!(err.message.contains("残留"), "{}", err.message);
     }
 }

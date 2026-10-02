@@ -145,6 +145,22 @@ async fn raw_string_script_face() -> anyhow::Result<()> {
     Ok(())
 }
 
+/// 评审 F1 回归锁（run() 全道）：非 ASCII 串载荷经 r# 预处理入口后
+/// 原样（v0.26 语义零回归）。
+#[tokio::test]
+async fn non_ascii_string_face() -> anyhow::Result<()> {
+    let session = cdp::Session::new();
+    let out = run(
+        session,
+        "pub async fn main() { Ok(\"中文ABC 标题\") }",
+        DEFAULT_CAPS,
+        browse_rune::RunOpts::default(),
+    )
+    .await?;
+    assert_eq!(out, serde_json::json!({ "ok": "中文ABC 标题" }));
+    Ok(())
+}
+
 /// 三形态批：render 的 Jinja 面（Strict 未填报 op、default 过滤器通行）
 /// 与 js_wrapper 的转义纪律（args JSON 字面量注入，单双引号反引号原样）。
 #[tokio::test]

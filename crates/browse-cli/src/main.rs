@@ -1304,7 +1304,7 @@ async fn main() -> Result<()> {
                     }
                     StdinRead::Silent => {
                         eprintln!(
-                            "browse: 提示：stdin 3 秒未现数据或 EOF（agent 壳常开管道形），按无管道参数道继续；管道参数道需完整写入并关闭（cat 文件即此形）"
+                            "browse: 提示：stdin 3 秒内未完成读入（无 EOF；agent 壳常开管道形），按无管道参数道继续；管道参数道需期内完整写入并关闭（cat 文件即此形零时延），超界慢生产者数据不候"
                         );
                         None
                     }

@@ -26,5 +26,9 @@ trace: 单测（server 超时/停止回执面、engine_lost_watch、rawstr 词�
 
 - 设计纪律（总台指令链 2026-10-02）：不自封装原语（曾实现 `cdp::stop_self` 后按令回撤，脚本自停走原生控制流）；`wait_event` 是原生 `Session::wait_for` 的直出面不算自封装；验收口径＝回归 rn 脚本＋CTA 回执
 - 停止道与超时同构：都丢弃执行 future，清账走 Cleanup Drop 兜底，op 探针保留在飞面（v0.26.1 机制复用）
+- 评审一轮 F1（必修已修）：rawstr 字面量面逐字节 as char 是非 ASCII mojibake 静默变形（run() 无条件过道，全脚本面回归）；修为 UTF-8 整段推进，回归锁＝非 ASCII 词法单测（五面）＋run() 全道非 ASCII 串测试＋r# e2e 中文载荷
+- 评审一轮 G2 口径：stdin 界语义是「3 秒内 read_to_string 完成」非「首字节」；超界慢/大生产者数据不候（提示文案与 http-api 如实）
+- 评审一轮 G3 披露：fail-fast 先到即走：CDP 等待腿悬挂时单调用 30 秒界先到（脚本错误面），engine_lost 只兜非 CDP 等待段（长 wait_event、纯计算循环）
+- 评审一轮 G1/G4/G5/G6 随批：subst 占位恰一次校验加残留前缀拦截；stop 动词位撞名披露（surface/http-api）；stop note 收尾竞态句；stopped.elapsed_ms 实测口径注明
 - r# 上游对齐：rune-rs #537（2023-05 开册零动作）；上游将来采纳同形语法则预处理幂等退役（ADR-0010 增补条款）；发版后去 #537 贴需求与薄词法重写参考
 - 残留后续批：哈希查表补名（#70 增强腿）、探针并发多槽（G1 披露已入档）、`--vars` 值注入通道文档化（B 通道）

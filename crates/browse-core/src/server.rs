@@ -665,7 +665,7 @@ async fn rune_stop_handler(State(st): State<AppState>) -> impl IntoResponse {
     } else if !requested {
         "执行刚收尾，停止未达（如需再停请重试）"
     } else {
-        "停止信号已投递，在跑执行将以内嵌 stopped 面回执退出"
+        "停止信号已投递，在跑执行将以内嵌 stopped 面回执退出（若恰在收尾则以实际收尾回执为准）"
     };
     Json(json!({ "ok": true, "running": running, "requested": requested, "note": note }))
 }
