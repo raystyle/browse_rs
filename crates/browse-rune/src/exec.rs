@@ -49,6 +49,9 @@ pub struct RunOpts {
     /// 在飞调用面探针（v0.26.1 超时 CTA）：调用方持克隆，整体超时丢弃
     /// 执行 future 后读在飞面。
     pub op_probe: crate::module::OpProbe,
+    /// 模板定界形态（0.30.3 缺省 ERB）：js_lib 与 cdp::render 跟随本执
+    /// 行的选择（CLI 旗标/件首行指令收口后递入）。
+    pub vars_syntax: crate::vars_syntax::VarsSyntax,
 }
 
 /// 自动追加的结果回传包装（入口恒 `pub async fn main()`）。
@@ -129,6 +132,7 @@ async fn run_raw(
         stdin: opts.stdin,
         host_fns: opts.host_fns,
         op_probe: opts.op_probe,
+        vars_syntax: opts.vars_syntax,
     }) {
         Ok(v) => v,
         Err(e) => return (Err(anyhow!("cdp 模块注册失败：{e}")), None),

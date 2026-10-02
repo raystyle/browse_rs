@@ -1,4 +1,4 @@
-# cdp 0.30.2
+# cdp 0.30.3
 
 Chrome DevTools Protocol（CDP）连接层：一条常驻 browser-level WebSocket 会话。
 

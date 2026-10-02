@@ -2827,7 +2827,7 @@ async fn rune_three_channel_integration() {
     std::fs::create_dir_all(lib_root.join("x.test")).expect("建库");
     std::fs::write(
         lib_root.join("x.test/double.js"),
-        "// 用途：翻倍\nreturn {{ n }} * 2\n",
+        "// 用途：翻倍\nreturn <%= n %> * 2\n",
     )
     .expect("写库内 js");
     let session = cdp::Session::new();
@@ -2850,7 +2850,7 @@ async fn rune_three_channel_integration() {
         let via_page_fn = cdp::js("return triple(args.n)", #{"n": 7}).await?;
         let quotes = cdp::js("return window.q + '|' + args.s", #{"s": "say \"hi\""}).await?;
         let via_lib = cdp::js_lib("x.test/double", #{"n": 21}).await?;
-        let rendered = cdp::render("{{ n }}x", #{"n": 5})?;
+        let rendered = cdp::render("<%= n %>x", #{"n": 5})?;
         let pipe = cdp::stdin();
         Ok(#{"page_fn": via_page_fn, "quotes": quotes, "lib": via_lib, "render": rendered, "stdin": pipe})
     }"##;
@@ -3186,7 +3186,7 @@ async fn rune_js_lib_comments_inert() {
     std::fs::create_dir_all(&dir).expect("建临时库根");
     std::fs::write(
         dir.join("cmt.js"),
-        "// 注释 {{ nope }} 与 {% raw %} 字面\n{% if false %}\n// 死分支 {{ dropped }}\n{% endif %}{% for c in list %}\n// 循环 {{ nope }}\n{% endfor %}return [\"{{ q }}\".length, \"{{ list }}\".length];",
+        "// 注释 {{ nope }} 与 {% raw %} 字面\n<% if false %>\n// 死分支 {{ dropped }}\n<% endif %><% for c in list %>\n// 循环 {{ nope }}\n<% endfor %>return [\"<%= q %>\".length, \"<%= list %>\".length];",
     )
     .expect("写库件");
     let session = cdp::Session::new();

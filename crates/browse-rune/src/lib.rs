@@ -20,6 +20,7 @@
 pub mod exec;
 pub mod module;
 pub mod rawstr;
+pub mod vars_syntax;
 
 pub use exec::{Caps, DEFAULT_CAPS, RunOpts, preheat_missing_fn_table, run};
 pub use module::{CdpError, HostFn, HostFns, ModuleCtx, OpProbe, cdp_module};

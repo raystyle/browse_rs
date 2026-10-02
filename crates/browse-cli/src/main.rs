@@ -163,6 +163,9 @@ async fn main() -> Result<()> {
     // 模板道与 snippets 子命令共用一根，三序旗标 > env > 内置）
     let mut vars: Vec<String> = Vec::new();
     let mut snippets_root_flag: Option<String> = None;
+    // 0.30.3 模板定界（缺省 ERB）：--vars-syntax classic|erb；件首行指令
+    // 优先（render 侧收口）
+    let mut vars_syntax_flag: Option<String> = None;
 
     let mut args = Args(std::env::args().skip(1));
     let mut gen_surface: Option<String> = None;
@@ -204,6 +207,7 @@ async fn main() -> Result<()> {
             "--vars" => vars.push(args.next("--vars")),
             // #65/#66 共用根旗标：eval 面模板道与 snippets 子命令同根
             "--root" => snippets_root_flag = Some(args.next("--root")),
+            "--vars-syntax" => vars_syntax_flag = Some(args.next("--vars-syntax")),
             // base64 通道只留长参：`-b` 短参是 issue new 的 --body 既有
             // 契约（REQ-057），不夺权
             "--b64" => b64 = true,
@@ -663,7 +667,7 @@ async fn main() -> Result<()> {
                     });
                 *snip =
                     // G-1 对齐批：方言/--js 面注释惰性化（JS 族只抽注释）
-                    browse_cli::client::render_js_template(&body, &parsed_vars).unwrap_or_else(|e| {
+                    browse_cli::client::render_js_template(cli_vars_syntax(&vars_syntax_flag), &body, &parsed_vars).unwrap_or_else(|e| {
                         eprintln!("{e:#}");
                         std::process::exit(2);
                     });
@@ -1395,7 +1399,11 @@ async fn main() -> Result<()> {
             let body = if parsed_vars.is_empty() {
                 body
             } else {
-                match browse_cli::client::render_rune_template(&body, &parsed_vars) {
+                match browse_cli::client::render_rune_template(
+                    cli_vars_syntax(&vars_syntax_flag),
+                    &body,
+                    &parsed_vars,
+                ) {
                     Ok(b) => b,
                     Err(e) => {
                         eprintln!("{e:#}");
@@ -1425,8 +1433,13 @@ async fn main() -> Result<()> {
             .await?;
             // 评审双批 G1：递根三序终值（旗标 > env > 内置在此收口），防 CLI 与
             // 长命 daemon 两侧 env 各解一次的分叉
-            match browse_cli::client::rune(&body, Some(root.display().to_string()), stdin_param)
-                .await
+            match browse_cli::client::rune(
+                &body,
+                Some(root.display().to_string()),
+                stdin_param,
+                cli_vars_syntax(&vars_syntax_flag),
+            )
+            .await
             {
                 Ok(v) => {
                     println!("{}", serde_json::to_string_pretty(&v)?);
@@ -1528,6 +1541,7 @@ const KNOWN_GLOBAL_FLAGS: &[&str] = &[
     "--version",
     "--vars",
     "--root",
+    "--vars-syntax",
 ];
 
 /// 子命令收集环的旗标 bail 分面（评审 #67 三轮 G10）：认识的全局旗标
@@ -1592,6 +1606,17 @@ fn read_stdin_bounded() -> StdinRead {
         Ok(Ok(s)) => StdinRead::Data(s),
         Ok(Err(e)) => StdinRead::Failed(e),
         Err(_) => StdinRead::Silent,
+    }
+}
+
+/// --vars-syntax 旗标解析（0.30.3）：非法值用法错（不给即缺省 ERB）。
+fn cli_vars_syntax(flag: &Option<String>) -> browse_rune::vars_syntax::VarsSyntax {
+    match flag.as_deref() {
+        None => browse_rune::vars_syntax::VarsSyntax::default(),
+        Some(v) => browse_rune::vars_syntax::VarsSyntax::parse(v).unwrap_or_else(|| {
+            eprintln!("browse: --vars-syntax 要 classic 或 erb（得到 {v}；退出 2）");
+            std::process::exit(2)
+        }),
     }
 }
 

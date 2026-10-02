@@ -1,6 +1,6 @@
 {
   "crate": "browse-cli",
-  "version": "0.30.2",
+  "version": "0.30.3",
   "items": [
     {
       "path": "browse_cli::client",
@@ -96,6 +96,11 @@
       "path": "browse_cli::client::render_template",
       "kind": "function",
       "docs": "`--vars` 模板渲染（#66 命令小程序）：Jinja 语法渲染模板源，`{{ 键 }}`\n直插值（值按源码文本，引号由模板管），`| default()` 给可选参、\n`{% for %}` 生成面可用（引擎 minijinja，ADR-0009）。何时用：@ 实参\n与 `--vars` 同给时，本函数是填充唯一道；不给 `--vars` 的 @ 实参走\n[`expand_at_args`] 纯透传（#64 语义零漂移）。\n\n# Errors\n\n裸占位符有未给键：报错点名全部未填键并给 `--vars` 补齐 CTA（引擎\nStrict 兜底复杂表达式面的未定义值，错误形不带键名）；模板语法错：\n报引擎原始错误。\n\n# Examples\n\n```\n# use browse_cli::client::render_template;\nlet vars = vec![(\"n\".to_string(), \"2\".to_string())];\nassert_eq!(\n    render_template(\"return {{ n }} + 1\", &vars).unwrap(),\n    \"return 2 + 1\"\n);\n// default 过滤器：可选参不填不报错\nassert_eq!(render_template(\"{{ opt | default(\\\"x\\\") }}\", &vars).unwrap(), \"x\");\n// 未填键硬错且点名\nlet err = render_template(\"{{ a }} + {{ b }}\", &vars).unwrap_err();\nlet msg = err.to_string();\nassert!(msg.contains(\"a\") && msg.contains(\"b\"), \"{msg}\");\n// 值原样直插（含引号与等号）\nlet v2 = vec![(\"q\".to_string(), \"'a=b'\".to_string())];\nassert_eq!(render_template(\"f({{ q }})\", &v2).unwrap(), \"f('a=b')\");\n```"
+    },
+    {
+      "path": "browse_cli::client::render_template_with",
+      "kind": "function",
+      "docs": "[`render_template`] 的定界形态参数版（0.30.3：四面同源语法选择）。\n\n# Errors\n\n同 [`render_template`]（未填键点名、语法错带 CTA）。"
     },
     {
       "path": "browse_cli::client::rune",

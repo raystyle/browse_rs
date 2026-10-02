@@ -48,6 +48,10 @@ pub struct RuneRequest {
     /// 管道参数道捕获串（`cdp::stdin()` 的值；无管道不传）。
     #[serde(default)]
     pub stdin: Option<String>,
+    /// 模板定界形态（0.30.3 缺省 ERB；`classic`/`erb`，CLI 旗标收口递
+    /// 入，未知值回落缺省）。
+    #[serde(default)]
+    pub vars_syntax: Option<String>,
 }
 
 /// 描述 POST /engine/up 的请求体。
@@ -395,6 +399,12 @@ async fn rune_handler(
         host_fns: host_fns(&d.host),
         // v0.26.1 超时 CTA：探针克隆自持，超时丢弃执行 future 后读在飞面
         op_probe: browse_rune::OpProbe::default(),
+        // 模板定界（0.30.3 缺省 ERB）：CLI 旗标/件指令收口后随请求递入
+        vars_syntax: req
+            .vars_syntax
+            .as_deref()
+            .and_then(browse_rune::vars_syntax::VarsSyntax::parse)
+            .unwrap_or_default(),
     };
     let op_probe = opts.op_probe.clone();
     // 主动停止道（批次二总台指令）：本执行的取消通道入槽，select 上与

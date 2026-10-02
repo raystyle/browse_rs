@@ -75,6 +75,8 @@ pub(crate) struct CdpState {
     host_fns: HostFns,
     /// 在飞调用面探针（v0.26.1 超时 CTA）。
     op_probe: OpProbe,
+    /// 模板定界形态（js_lib 件级指令可覆写；cdp::render 跟随）。
+    vars_syntax: crate::vars_syntax::VarsSyntax,
 }
 
 const WORLD_NAME: &str = "browse-rune";
@@ -333,19 +335,9 @@ pub struct ModuleCtx {
     pub host_fns: HostFns,
     /// 在飞调用面探针（v0.26.1 超时 CTA；daemon 持克隆读在飞面）。
     pub op_probe: OpProbe,
-}
-
-/// 运行时 Jinja 引擎（ADR-0009 同配置：Strict undefined、零 autoescape；
-/// 与命令小程序 CLI 侧渲染同一套约定，配置五行在两处各持一份由
-/// ADR-0009 钉住）。
-fn jinja_env() -> &'static minijinja::Environment<'static> {
-    static ENV: std::sync::OnceLock<minijinja::Environment<'static>> = std::sync::OnceLock::new();
-    ENV.get_or_init(|| {
-        let mut env = minijinja::Environment::new();
-        env.set_undefined_behavior(minijinja::UndefinedBehavior::Strict);
-        env.set_auto_escape_callback(|_| minijinja::AutoEscape::None);
-        env
-    })
+    /// 模板定界形态（0.30.3 缺省 ERB）：js_lib（件级指令可覆写）与
+    /// cdp::render 跟随。
+    pub vars_syntax: crate::vars_syntax::VarsSyntax,
 }
 
 /// js 体的包裹器（纯函数便于单测）：体原样入、args 经
@@ -371,6 +363,7 @@ pub fn cdp_module(ctx: ModuleCtx) -> Result<(Module, Cleanup), rune::ContextErro
         stdin,
         host_fns,
         op_probe,
+        vars_syntax,
     } = ctx;
     let mut m = Module::with_crate("cdp")?;
     m.ty::<CdpError>()?;
@@ -398,6 +391,7 @@ pub fn cdp_module(ctx: ModuleCtx) -> Result<(Module, Cleanup), rune::ContextErro
         stdin,
         host_fns,
         op_probe,
+        vars_syntax,
     });
 
     {
@@ -757,12 +751,17 @@ pub fn cdp_module(ctx: ModuleCtx) -> Result<(Module, Cleanup), rune::ContextErro
                             ));
                         }
                     };
-                    // G-1 对齐批：库体是 JS 族，注释区先抽占位惰性化再渲染
+                    // G-1 对齐批：库体是 JS 族，注释区先抽占位惰性化再渲染；
+                    // 定界=件首行指令覆写本执行选择（0.30.3 缺省 ERB）
+                    let lib_syntax =
+                        crate::vars_syntax::directive_of(&body).unwrap_or(st.vars_syntax);
                     let (placed, regions) =
                         crate::rawstr::extract_comment_regions(&body).map_err(|e| {
                             cdp_err("js_lib", format!("注释惰性化预处理失败：{}", e.message))
                         })?;
-                    let pre = match jinja_env().render_str(&placed, vars_json) {
+                    let pre = match crate::vars_syntax::env_for(lib_syntax)
+                        .render_str(&placed, vars_json)
+                    {
                         Ok(t) => t,
                         Err(e) => {
                             return Err(cdp_err(
@@ -785,25 +784,29 @@ pub fn cdp_module(ctx: ModuleCtx) -> Result<(Module, Cleanup), rune::ContextErro
         })
         .build()?;
     }
-    m.function("render", |tpl: String, vars: RuneValue| {
-        let vars_json = match serde_json::to_value(&vars) {
-            Ok(v) => v,
-            Err(e) => {
-                return Err(cdp_err(
+    {
+        let st = state.clone();
+        m.function("render", move |tpl: String, vars: RuneValue| {
+            // 定界随本执行（0.30.3 缺省 ERB；CLI 旗标/件指令收口递入）
+            let vars_json = match serde_json::to_value(&vars) {
+                Ok(v) => v,
+                Err(e) => {
+                    return Err(cdp_err(
+                        "render",
+                        format!("vars 不可 JSON 化：{e}（外部类型先在脚本内转基本值）"),
+                    ));
+                }
+            };
+            match crate::vars_syntax::env_for(st.vars_syntax).render_str(&tpl, vars_json) {
+                Ok(out) => Ok(out),
+                Err(e) => Err(cdp_err(
                     "render",
-                    format!("vars 不可 JSON 化：{e}（外部类型先在脚本内转基本值）"),
-                ));
+                    format!("模板渲染失败：{e}（未填键补 vars 或模板给 default）"),
+                )),
             }
-        };
-        match jinja_env().render_str(&tpl, vars_json) {
-            Ok(out) => Ok(out),
-            Err(e) => Err(cdp_err(
-                "render",
-                format!("模板渲染失败：{e}（未填键补 vars 或模板给 default）"),
-            )),
-        }
-    })
-    .build()?;
+        })
+        .build()?;
+    }
     {
         let st = state.clone();
         m.function("stdin", move || st.stdin.clone()).build()?;

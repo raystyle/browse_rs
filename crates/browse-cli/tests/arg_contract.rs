@@ -359,7 +359,7 @@ fn template_vars_arg_contract() {
     std::fs::create_dir_all(&root).expect("建根");
 
     // 未填键：exit 2、点名全部未填键、已给键不点名（附着证明）、零 daemon
-    std::fs::write(root.join("miss.js"), "return {{ alpha }} + {{ beta }}\n").expect("写模板");
+    std::fs::write(root.join("miss.js"), "return <%= alpha %> + <%= beta %>\n").expect("写模板");
     let (code, _, err) = run(
         &[
             "--js",
@@ -378,7 +378,7 @@ fn template_vars_arg_contract() {
 
     // 根第一等：库内与 cwd 同名（库内含未填占位符、cwd 是合法正文），
     // 命中库内即模板未填错；若字面道先解析则会走到引擎连接（可判别）
-    std::fs::write(root.join("dup.js"), "{{ boom }}\n").expect("写库内同名");
+    std::fs::write(root.join("dup.js"), "<%= boom %>\n").expect("写库内同名");
     let cwd = base.join("cwd");
     std::fs::create_dir_all(&cwd).expect("建 cwd 位");
     std::fs::write(cwd.join("dup.js"), "return 1\n").expect("写 cwd 同名");
@@ -473,7 +473,7 @@ fn rune_arg_contract() {
     assert_eq!(code, 2, "{err}");
     assert!(err.contains("--vars 要 键=值"), "{err}");
 
-    std::fs::write(&f, "pub async fn main() { Ok(\"{{ alpha }}\") }\n").expect("写模板脚本");
+    std::fs::write(&f, "pub async fn main() { Ok(\"<%= alpha %>\") }\n").expect("写模板脚本");
     let (code, _, err) = run(&["rune", &f.to_string_lossy(), "--vars", "x=1"], &[]);
     assert_eq!(code, 2, "{err}");
     assert!(

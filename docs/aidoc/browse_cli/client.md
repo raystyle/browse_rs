@@ -20,6 +20,7 @@ daemon 客户端：本地 HTTP 调用 + 首次使用自动拉起 detached daemon
 - `render_js_template` — JS 族模板渲染（方言片段与 `--js` 小程序，G-1 对齐批）：先抽出注释
 - `render_rune_template` — rune 面模板渲染（批次二 r# 裸串、批次三注释惰性化）：先抽出 r# 区
 - `render_template` — `--vars` 模板渲染（#66 命令小程序）：Jinja 语法渲染模板源，`{{ 键 }}`
+- `render_template_with` — [`render_template`] 的定界形态参数版（0.30.3：四面同源语法选择）。
 - `rune` — 把 Rune 编排脚本 POST 到 daemon 的 /rune 执行（账本 #67）。
 - `rune_stop` — 主动停止在跑的 rune 执行（批次二总台指令）：POST /rune/stop，回
 - `skills_passthrough_env` — 技能层透传环境（#50/#51）：拉起新 daemon 时把 CLI 进程里的 workspace

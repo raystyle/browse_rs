@@ -189,7 +189,7 @@ async fn render_and_js_wrapper_face() -> anyhow::Result<()> {
     let out = run(
         session,
         r##"pub async fn main() {
-        let t = "f({{ q }}, {{ n | default(7) }})";
+        let t = "f(<%= q %>, <%= n | default(7) %>)";
         cdp::render(t, #{"q": "he said \"hi\""})
     }"##,
         browse_rune::DEFAULT_CAPS,
@@ -205,7 +205,7 @@ async fn render_and_js_wrapper_face() -> anyhow::Result<()> {
     let session = cdp::Session::new();
     let err = run(
         session,
-        r#"pub async fn main() { cdp::render("{{ missing }}", #{}) }"#,
+        r#"pub async fn main() { cdp::render("<%= missing %>", #{}) }"#,
         browse_rune::DEFAULT_CAPS,
         browse_rune::RunOpts::default(),
     )

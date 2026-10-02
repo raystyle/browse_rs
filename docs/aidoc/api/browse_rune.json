@@ -1,6 +1,6 @@
 {
   "crate": "browse-rune",
-  "version": "0.30.2",
+  "version": "0.30.3",
   "items": [
     {
       "path": "browse_rune::exec",
@@ -106,6 +106,26 @@
       "path": "browse_rune::rawstr::subst_raw_strings",
       "kind": "function",
       "docs": "渲染后回填：占位源里第 n 个占位换 literals 第 n 项的转义普通串字面量。\n\n# Errors\n\n占位缺失（渲染方吃掉了占位文本）时报 CTA。"
+    },
+    {
+      "path": "browse_rune::vars_syntax",
+      "kind": "module",
+      "docs": "模板语法选择（总台令「{{ 与 jinja 不冲突」批）：四面（rune 源模板\n道、方言/--js 片段模板道、js_lib 库体、cdp::render 运行时）同源的\n定界形态。缺省 Jinja 经典形 `{{ }}`；ERB 形 `<%= %>` opt-in——`<%`\n邻接在合法 JS 中不存在（`a<%b` 即 `a < (%b)`，JS 无 `%` 一元），模\n板工程五十年实证的 JS 免撞定界。入口双轨：件首行指令\n`// browse-vars: erb`（库件自描述，优先）与 CLI `--vars-syntax erb`\n旗标（调用方）；同值同效。"
+    },
+    {
+      "path": "browse_rune::vars_syntax::VarsSyntax",
+      "kind": "enum",
+      "docs": "模板定界形态。**缺省 ERB**（总台令「默认开启 erb」，0.30.3）：`<%`\n邻接在合法 JS 中不存在，`{{ }}`（format! 转义/对象字面量相邻）整类\n撞面消；存量 `{{ }}` 件走件首行 `// browse-vars: classic` 回退。"
+    },
+    {
+      "path": "browse_rune::vars_syntax::directive_of",
+      "kind": "function",
+      "docs": "件首行指令：`// browse-vars: erb`（或 `classic`）。返回 None 表示无\n指令（走缺省/旗标）。指令行本身保持原样进渲染（注释惰性化道会圈它，\n对 Jinja 无害）。"
+    },
+    {
+      "path": "browse_rune::vars_syntax::env_for",
+      "kind": "function",
+      "docs": "按形态取 Jinja 引擎（ADR-0009 同配置：Strict 加零 autoescape；两形\n各一份 OnceLock）。"
     }
   ]
 }

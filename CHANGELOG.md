@@ -2,6 +2,13 @@
 
 版本级里程碑；逐批过程见 docs/diary。semver 判据在册 docs/requirements/REQ-004。
 
+## 0.30.3 - 2026-10-02
+
+- **模板定界缺省 ERB（总台令「js rn 的 jinja 全部默认 erb」）**：四面（rune 模板道、方言/--js 片段道、js_lib 库体、cdp::render 运行时）槽形一律 `<%= 键 %>`、块 `<% %>`、注释 `<%# %>`：`<%` 邻接在合法 JS 中不存在（`a<%b` 即 `a < (%b)`，JS 无 `%` 一元），`{{`（format! 转义/JS 对象字面量相邻）整类撞面消。回退道：`--vars-syntax classic` 旗标或件首行 `// browse-vars: classic` 指令（指令优先）；minijinja custom_syntax 双引擎单例。**行为变化**：存量 `{{ 键 }}` 件需加首行指令或迁 `<%= %>`
+- 传播链：CLI 旗标/件指令收口 至 render_template_with(syntax)（rune/JS 两 wrapper + 未填键扫描器双形）至 RuneRequest.vars_syntax 至 RunOpts 至 ModuleCtx 至 js_lib（件级指令覆写）与 cdp::render 跟随
+- 实弹：`<%= url %>` 渲染 + `{{ safe_literal }}` 字面 + format! 双花括号安全全链过；classic 指令回退过；指令优先旗标实证
+- semver 判据结论（0.30.3 裁定）：定界缺省翻转属行为变化按判据应取 minor；总台明令封 0.30.3（patch），从令（REQ-022 在册）
+
 ## 0.30.2 - 2026-10-02
 
 - **休眠项与 REQ-020 记档全清（总台令，版本定 0.30.2）**：

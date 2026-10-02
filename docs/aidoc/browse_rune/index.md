@@ -1,4 +1,4 @@
-# browse-rune 0.30.2
+# browse-rune 0.30.3
 
 Rune 编排面（账本 #67，ADR-0010）：`browse rune` 的 VM 构建、自注册
 `cdp` 模块与执行器。
@@ -24,4 +24,5 @@ Rune 编排面（账本 #67，ADR-0010）：`browse rune` 的 VM 构建、自注
 - [`exec`](exec.md): Rune 执行器（账本 #67）：一套 `Context` 编译一次，VM 经
 - [`module`](module.md): 自注册 `cdp` 模块（账本 #67）：八个效果函数全走自有 [`cdp::Session`]
 - [`rawstr`](rawstr.md): r# 裸串预处理（战役台裸串研究单定谳 2026-10-02，批次二落地）：Rune
+- [`vars_syntax`](vars_syntax.md): 模板语法选择（总台令「{{ 与 jinja 不冲突」批）：四面（rune 源模板
 

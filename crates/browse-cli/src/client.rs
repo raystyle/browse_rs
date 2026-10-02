@@ -224,11 +224,16 @@ pub async fn eval(code: &str, new_tab: bool, js: bool) -> Result<Value> {
 /// # Errors
 ///
 /// HTTP 失败或 daemon 执行失败（编译错、VM 终态、限额击穿、超时）。
-pub async fn rune(code: &str, root: Option<String>, stdin: Option<String>) -> Result<Value> {
+pub async fn rune(
+    code: &str,
+    root: Option<String>,
+    stdin: Option<String>,
+    vars_syntax: browse_rune::vars_syntax::VarsSyntax,
+) -> Result<Value> {
     let c = client();
     let resp = c
         .post(format!("{}/rune", http()))
-        .json(&json!({ "code": code, "root": root, "stdin": stdin }))
+        .json(&json!({ "code": code, "root": root, "stdin": stdin, "vars_syntax": vars_syntax.name() }))
         .send()
         .await
         .context("POST /rune")?;
@@ -428,20 +433,6 @@ pub fn expand_at_args(snippets: &mut [String]) -> Result<()> {
 
 // ---- #66 JS 命令小程序：@ 实参 + --vars 模板道 ----
 
-/// 模板引擎单例（ADR-0009）：minijinja，Strict undefined（未填键硬错）
-/// 加零 autoescape（产物是 JS 源码不是 HTML，转义即破坏源码）。
-fn template_env() -> &'static minijinja::Environment<'static> {
-    static ENV: std::sync::OnceLock<minijinja::Environment<'static>> = std::sync::OnceLock::new();
-    ENV.get_or_init(|| {
-        let mut env = minijinja::Environment::new();
-        env.set_undefined_behavior(minijinja::UndefinedBehavior::Strict);
-        // 零转义显式钉死（评审 #66 一轮三核建议）：render_str 匿名名落
-        // AutoEscape::None 属隐式不变量，写死防引擎升级改道
-        env.set_auto_escape_callback(|_| minijinja::AutoEscape::None);
-        env
-    })
-}
-
 /// 解析 `--vars` 单值（`键=值`）：键是标识符（字母或下划线开头，字母
 /// 数字下划线续），值是首个 `=` 后的整段——可空串、可含 `=` 与引号，
 /// 原样直取（shell 引号由调用方管）。非 `k=v` 形返回 `None`（调用方
@@ -479,17 +470,22 @@ pub fn parse_vars_arg(s: &str) -> Option<(String, String)> {
 /// 未定义类错误后用这层做带名富化（评审 #66 一轮 F1：富化在渲染后，
 /// 死分支占位符不误报）；带过滤器或表达式的占位（`{{ k | default("x") }}`）
 /// 不属裸形，交给引擎（可选参由此通行）。
-fn missing_bare_placeholders(body: &str, vars: &[(String, String)]) -> Vec<String> {
+fn missing_bare_placeholders(
+    syntax: browse_rune::vars_syntax::VarsSyntax,
+    body: &str,
+    vars: &[(String, String)],
+) -> Vec<String> {
+    let (open, close): (&str, &str) = match syntax {
+        browse_rune::vars_syntax::VarsSyntax::Classic => ("{{", "}}"),
+        browse_rune::vars_syntax::VarsSyntax::Erb => ("<%=", "%>"),
+    };
     let keys: Vec<&str> = vars.iter().map(|(k, _)| k.as_str()).collect();
     let mut missing: Vec<String> = Vec::new();
-    let bytes = body.as_bytes();
     let mut i = 0;
-    while i + 1 < bytes.len() {
-        if bytes[i] == b'{'
-            && bytes[i + 1] == b'{'
-            && let Some(end) = body[i + 2..].find("}}")
-        {
-            let inner = body[i + 2..i + 2 + end].trim();
+    while let Some(rel) = body[i..].find(open) {
+        let start = i + rel;
+        if let Some(end) = body[start + open.len()..].find(close) {
+            let inner = body[start + open.len()..start + open.len() + end].trim();
             let bare = !inner.is_empty()
                 && inner.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
                 && inner
@@ -499,10 +495,10 @@ fn missing_bare_placeholders(body: &str, vars: &[(String, String)]) -> Vec<Strin
             if bare && !keys.contains(&inner) && !missing.iter().any(|m| m == inner) {
                 missing.push(inner.to_string());
             }
-            i += 2 + end + 2;
+            i = start + open.len() + end + close.len();
             continue;
         }
-        i += 1;
+        i = start + open.len();
     }
     missing
 }
@@ -514,11 +510,16 @@ fn missing_bare_placeholders(body: &str, vars: &[(String, String)]) -> Vec<Strin
 /// # Errors
 ///
 /// 占位冲撞/被模板误删，或渲染错误（同 [`render_template`]）。
-pub fn render_js_template(body: &str, vars: &[(String, String)]) -> Result<String> {
+pub fn render_js_template(
+    syntax: browse_rune::vars_syntax::VarsSyntax,
+    body: &str,
+    vars: &[(String, String)],
+) -> Result<String> {
     vars_value_guard(vars)?;
+    let syntax = browse_rune::vars_syntax::directive_of(body).unwrap_or(syntax);
     let (placed, literals) = browse_rune::rawstr::extract_comment_regions(body)
         .map_err(|e| anyhow::anyhow!("注释惰性化预处理失败：{}", e.message))?;
-    let rendered = render_template(&placed, vars)?;
+    let rendered = render_template_with(syntax, &placed, vars)?;
     browse_rune::rawstr::subst_raw_strings(&rendered, &literals)
         .map_err(|e| anyhow::anyhow!("注释惰性化预处理失败：{}", e.message))
 }
@@ -545,11 +546,16 @@ fn vars_value_guard(vars: &[(String, String)]) -> Result<()> {
 ///
 /// r# 词法错（未闭合/占位冲撞/占位被模板误删）或渲染错误（同
 /// [`render_template`]）。
-pub fn render_rune_template(body: &str, vars: &[(String, String)]) -> Result<String> {
+pub fn render_rune_template(
+    syntax: browse_rune::vars_syntax::VarsSyntax,
+    body: &str,
+    vars: &[(String, String)],
+) -> Result<String> {
     vars_value_guard(vars)?;
+    let syntax = browse_rune::vars_syntax::directive_of(body).unwrap_or(syntax);
     let (placed, literals) = browse_rune::rawstr::extract_raw_strings(body)
         .map_err(|e| anyhow::anyhow!("r# 裸串预处理失败：{}", e.message))?;
-    let rendered = render_template(&placed, vars)?;
+    let rendered = render_template_with(syntax, &placed, vars)?;
     browse_rune::rawstr::subst_raw_strings(&rendered, &literals)
         .map_err(|e| anyhow::anyhow!("r# 裸串预处理失败：{}", e.message))
 }
@@ -586,7 +592,20 @@ pub fn render_rune_template(body: &str, vars: &[(String, String)]) -> Result<Str
 /// assert_eq!(render_template("f({{ q }})", &v2).unwrap(), "f('a=b')");
 /// ```
 pub fn render_template(body: &str, vars: &[(String, String)]) -> Result<String> {
-    let env = template_env();
+    render_template_with(browse_rune::vars_syntax::VarsSyntax::Classic, body, vars)
+}
+
+/// [`render_template`] 的定界形态参数版（0.30.3：四面同源语法选择）。
+///
+/// # Errors
+///
+/// 同 [`render_template`]（未填键点名、语法错带 CTA）。
+pub fn render_template_with(
+    syntax: browse_rune::vars_syntax::VarsSyntax,
+    body: &str,
+    vars: &[(String, String)],
+) -> Result<String> {
+    let env = browse_rune::vars_syntax::env_for(syntax);
     // BTreeMap 收拢：同键重复 --vars 后值胜
     let map: std::collections::BTreeMap<String, String> = vars.iter().cloned().collect();
     let ctx = minijinja::Value::from_serialize(&map);
@@ -598,7 +617,7 @@ pub fn render_template(body: &str, vars: &[(String, String)]) -> Result<String> 
         // 判据走结构化 kind（二轮 G9）：措辞启发式不耐引擎版本变化
         Err(e) => {
             if e.kind() == minijinja::ErrorKind::UndefinedError {
-                let missing = missing_bare_placeholders(body, vars);
+                let missing = missing_bare_placeholders(syntax, body, vars);
                 if !missing.is_empty() {
                     let cta = missing
                         .iter()
@@ -781,6 +800,7 @@ pub async fn quit() -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use browse_rune::vars_syntax::VarsSyntax;
 
     /// 评审 F-1（0.30.0 对齐轮）：占位遇 Jinja 控制流——死分支丢弃静默
     /// 略过、循环体复制全量回填，不再误报 exit 2；rune 与 JS 双面锁。
@@ -792,27 +812,27 @@ mod tests {
         ];
         // 死分支：区间被 Jinja 丢弃，渲染成功且注释消失（注释到行尾，
         // 控制流标签须另起行——与真实 JS/Rune 词法一致）
-        let dead = "{% if false %}\n// dead {{ nope }}\n{% endif %}return \"{{ q }}\";";
-        let out = render_rune_template(dead, &vars).unwrap();
+        let dead = "<% if false %>\n// dead {{ nope }}\n<% endif %>return \"<%= q %>\";";
+        let out = render_rune_template(VarsSyntax::default(), dead, &vars).unwrap();
         assert!(!out.contains("nope"), "{out}");
         assert!(out.contains("\"v\""), "{out}");
-        let out = render_js_template(dead, &vars).unwrap();
+        let out = render_js_template(VarsSyntax::default(), dead, &vars).unwrap();
         assert!(!out.contains("nope"), "{out}");
         // 循环体：复制两次全量回填
-        let body = "{% for c in list %}\n// loop {{ nope }}\n{% endfor %}return \"{{ q }}\";";
-        let out = render_rune_template(body, &vars).unwrap();
+        let body = "<% for c in list %>\n// loop {{ nope }}\n<% endfor %>return \"<%= q %>\";";
+        let out = render_rune_template(VarsSyntax::default(), body, &vars).unwrap();
         assert_eq!(out.matches("// loop {{ nope }}").count(), 2, "{out}");
         assert!(out.contains("\"v\""), "{out}");
-        let out = render_js_template(body, &vars).unwrap();
+        let out = render_js_template(VarsSyntax::default(), body, &vars).unwrap();
         assert_eq!(out.matches("// loop {{ nope }}").count(), 2, "{out}");
     }
 
     /// G-1 对齐批：JS 族（方言/--js 面）注释惰性化，字符串照旧渲染。
     #[test]
     fn js_template_comments_are_inert() {
-        let body = "// 用法 {{ nope }} 与 {% raw %} 字面\nreturn \"{{ q }}\";";
+        let body = "// 用法 {{ nope }} 与 {% raw %} 字面\nreturn \"<%= q %>\";";
         let vars = vec![("q".to_string(), "填了".to_string())];
-        let out = render_js_template(body, &vars).unwrap();
+        let out = render_js_template(VarsSyntax::default(), body, &vars).unwrap();
         assert!(
             out.contains("// 用法 {{ nope }} 与 {% raw %} 字面\n"),
             "{out}"
@@ -824,11 +844,15 @@ mod tests {
     #[test]
     fn vars_value_with_placeholder_prefix_rejected() {
         let vars = vec![("q".to_string(), "__BROWSE_RN_RAW_0__".to_string())];
-        let err = render_rune_template("let s = r#\"x\"#; let v = \"{{ q }}\";", &vars);
+        let err = render_rune_template(
+            VarsSyntax::Classic,
+            "let s = r#\"x\"#; let v = \"{{ q }}\";",
+            &vars,
+        );
         assert!(err.is_err());
         let msg = err.unwrap_err().to_string();
         assert!(msg.contains("占位前缀"), "{msg}");
-        let err2 = render_js_template("// c\nreturn \"{{ q }}\";", &vars);
+        let err2 = render_js_template(VarsSyntax::Classic, "// c\nreturn \"{{ q }}\";", &vars);
         assert!(err2.is_err());
     }
 
@@ -836,10 +860,9 @@ mod tests {
     /// 字面 `{{ }}` 与 raw 标签逐字回填）。
     #[test]
     fn rune_template_comments_are_inert() {
-        let body =
-            "// 用法：{{ q }} 会填，注释里 {{ not_given }} 与 {% raw %} 字面\nlet s = \"{{ q }}\";";
+        let body = "// 用法：{{ q }} 会填，注释里 {{ not_given }} 与 {% raw %} 字面\nlet s = \"<%= q %>\";";
         let vars = vec![("q".to_string(), "填了".to_string())];
-        let out = render_rune_template(body, &vars).unwrap();
+        let out = render_rune_template(VarsSyntax::default(), body, &vars).unwrap();
         assert!(
             out.contains("// 用法：{{ q }} 会填，注释里 {{ not_given }} 与 {% raw %} 字面\n"),
             "{out}"
