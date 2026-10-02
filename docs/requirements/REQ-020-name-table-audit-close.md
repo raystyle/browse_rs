@@ -3,7 +3,7 @@ id: REQ-020
 title: #70 补名腿与目录审计收尾（v0.30.1）
 status: implemented
 priority: should
-trace: exec 单测双件（战役台锚点锁）＋vm_face missing_fn_error_carries_name＋arg_contract roster_flags_all_recognized_in_rune_tail_position（31 旗标旁证）；评审快核 CONFIRM 后发版 v0.30.1
+trace: exec 单测双件（战役台锚点锁）＋vm_face missing_fn_error_carries_name＋arg_contract roster_flags_all_recognized_in_rune_tail_position（名册 32 项尾置旁证 30 项）；评审快核 CONFIRM 后发版 v0.30.1
 ---
 
 # REQ-020：#70 补名腿与目录审计收尾
@@ -16,7 +16,7 @@ trace: exec 单测双件（战役台锚点锁）＋vm_face missing_fn_error_carr
 
 - [x] 补名表：首次遇缺失实例函数错误时以一次性 VM 探针收割（String/i64/Vec × 28 常用方法名，OnceLock 缓存，仅默认模块零 cdp 依赖）
 - [x] 终态错误补名：命中即在报错里带方法名并保留哈希（`to_string（哈希 0x871c…）` 形可溯源）；未命中原文
-- [x] G-A7 名册旁证：KNOWN_GLOBAL_FLAGS 名册 32 项、尾置旁证 30 项（--vars/--root 是 rune 环合法子旗标除外）（--vars/--root 是 rune 环合法子旗标不入名单），漏同步解析臂即红
+- [x] G-A7 名册旁证：KNOWN_GLOBAL_FLAGS 名册 32 项、尾置旁证 30 项（--vars/--root 是 rune 环合法子旗标，不入旁证名单）（--vars/--root 是 rune 环合法子旗标不入名单），漏同步解析臂即红
 - [x] G-A6/A9：artifact publish 签名补 --version/--note/--git-range；-V 入 version 条目
 - [x] G-A8：手册补旗标位置口径句（全局旗标尾置合法、无关子命令静默忽略、未知旗标用法错三分面）
 - [x] 测试：锚点双锁（to_string=0x871c12da43b176d2、splitn=0x7d6f3bd0775df4c8）＋vm_face 端到端＋名册旁证

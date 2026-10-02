@@ -23,7 +23,7 @@
 | REQ-017 | implemented | should | rune 面批次二与看板移除（#69/停止三道/wait_event/r# 裸串/#70 披露/API-only，v0.28.0） | 单测族加 e2e 四件加 CLI 实弹三证据（stop 回执/stderr JSON/daemon 日志行）；评审三轮 CONFIRM |
 | REQ-018 | implemented | should | 注释区 Jinja 惰性化与三层正交文档（v0.29.0） | rawstr 14 件加 CLI 渲染道一件加全族回归；评审快核 CONFIRM |
 | REQ-019 | implemented | should | 注释惰性化对齐全模板道（方言/--js/js_lib，v0.30.0） | JS 族单测三件加 CLI 一件加 e2e 真引擎一件；评审快核 CONFIRM |
-| REQ-020 | implemented | should | #70 补名腿与目录审计收尾（v0.30.1） | 锚点双锁加 vm_face 端到端加名册旁证 31 旗标；评审快核 CONFIRM |
+| REQ-020 | implemented | should | #70 补名腿与目录审计收尾（v0.30.1） | 锚点双锁加 vm_face 端到端加名册旁证 30 项；评审快核 CONFIRM |
 
 ## Roadmap（issue 台账批次规划）
 
