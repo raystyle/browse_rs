@@ -228,8 +228,8 @@ fn extract_with(src: &str, family: Family) -> Result<(String, Vec<String>), RawS
                     out.push_str(&format!("{PLACEHOLDER_PREFIX}{}__", literals.len()));
                     literals.push(src[start..end].to_string());
                     i = end;
-                    prev_sig = Some(b'\n');
-                    last_word.clear();
+                    // prev_sig 透明（终审建议）：注释不改前一显著面——
+                    // 1 /* c */ / 2 判除法、return /* c */ /re/ 判正则两形皆对
                     continue;
                 }
                 // 块注释（不嵌套）：整段占位抽取（含定界符逐字回填；未闭合
@@ -242,8 +242,7 @@ fn extract_with(src: &str, family: Family) -> Result<(String, Vec<String>), RawS
                     out.push_str(&format!("{PLACEHOLDER_PREFIX}{}__", literals.len()));
                     literals.push(src[start..end].to_string());
                     i = end;
-                    prev_sig = Some(b'\n');
-                    last_word.clear();
+                    // prev_sig 透明：同上
                     continue;
                 }
                 // JS 族正则字面量起点（启发式：前一显著面属运算/开括号类
@@ -590,6 +589,18 @@ let s = r#"real"#; s"##;
         let residual = placed.replace("let s =", "let extra = __BROWSE_RN_RAW_7__; let s =");
         let err = subst_raw_strings(&residual, &literals).unwrap_err();
         assert!(err.message.contains("残留"), "{}", err.message);
+    }
+
+    /// 终审建议钉：注释对 prev_sig 透明——块注释后除法仍判除法，行尾注
+    /// 释仍被抽出。
+    #[test]
+    fn js_family_block_comment_transparent_to_division() {
+        let src = "let a = 1 /* c */ / 2; // note {{x}}";
+        let (placed, literals) = extract_comment_regions(src).unwrap();
+        assert!(!placed.contains("note"), "行尾注释应被抽出：{placed}");
+        assert!(placed.contains("/ 2"), "除法保留：{placed}");
+        let out = subst_raw_strings(&placed, &literals).unwrap();
+        assert_eq!(out, src);
     }
 
     /// 评审 G-1（0.30.0 对齐轮）：`++`/`--` 后的 `/` 判除法，行尾注释仍
