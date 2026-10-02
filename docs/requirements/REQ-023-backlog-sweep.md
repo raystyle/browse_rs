@@ -3,7 +3,7 @@ id: REQ-023
 title: 余量清扫批（总台令「做一封v0.30.4」：js_lib 值守卫、G-A6/A9 surface、bh 94 站迁移）
 status: implemented
 priority: should
-trace: json_contains_placeholder 三单测（顶层/嵌套/零误伤）＋surface_contract 重生成锁＋workspace 仓 c5140a4（94 站 108 件）＋goto musicbrainz.org 实弹命中 domain_skills；评审 CONFIRM 后发版 v0.30.4
+trace: json_contains_placeholder 三单测（顶层/嵌套/零误伤）＋surface_contract 重生成锁＋workspace 仓 c5140a4（94 站 107 件：106 md + 1 py；MIGRATION.md 另计）＋goto musicbrainz.org 实弹命中 domain_skills；评审 CONFIRM 后发版 v0.30.4
 ---
 
 # REQ-023：余量清扫批
