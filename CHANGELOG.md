@@ -2,6 +2,14 @@
 
 版本级里程碑；逐批过程见 docs/diary。semver 判据在册 docs/requirements/REQ-004。
 
+## 0.30.4 - 2026-10-02
+
+- **余量清扫批（总台令「做一封v0.30.4」；二三层永搁从令）**：
+- js_lib 值注入理论形守卫（v0.30.2 评审 G-2 记档件）：运行时 vars 绕过 CLI 的 vars_value_guard（直 POST /rune 或脚本内拼串），值含内部占位前缀会在 subst 回填段被当作占位记号；js_lib 臂渲染前递归扫 vars_json（嵌套对象/数组深处串值同拦）报错带 CTA；cdp::render 不经占位道无需同守卫
+- 目录审计低项收尾：G-A6 artifact publish signature 补列 `--version`/`--git-range`/`--note`；G-A9 version-flag 显 `-V` 同义短参与「同名不同位」一句；G-A8/G-A7 已闭引证（读序句在册、名册双向守卫在册）
+- REQ-015 残留清账：bh 94 站 domain-skills 迁 workspace 仓（逐字保真+源注横幅+段名改位+域族并档+MIGRATION.md 清单；browse_workspace c5140a4），goto 自动命中面实弹过（musicbrainz.org 回 domain_skills）；种子四站原生件保位
+- e2e flake（spawn_port_channel）：不适用面（REQ-022 已记，未复发不预改）
+
 ## 0.30.3 - 2026-10-02
 
 - **模板定界缺省 ERB（总台令「js rn 的 jinja 全部默认 erb」）**：四面（rune 模板道、方言/--js 片段道、js_lib 库体、cdp::render 运行时）槽形一律 `<%= 键 %>`、块 `<% %>`、注释 `<%# %>`：`<%` 邻接在合法 JS 中不存在（`a<%b` 即 `a < (%b)`，JS 无 `%` 一元），`{{`（format! 转义/JS 对象字面量相邻）整类撞面消。回退道：`--vars-syntax classic` 旗标或件首行 `// browse-vars: classic` 指令（指令优先）；minijinja custom_syntax 双引擎单例。**行为变化**：存量 `{{ 键 }}` 件需加首行指令或迁 `<%= %>`

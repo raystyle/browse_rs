@@ -25,7 +25,7 @@ trace: 单测（server 超时/停止回执面、engine_lost_watch、rawstr 词�
 
 ## Notes
 
-- 评审二轮全目录审计（总台授权「review 所有命令的合理性完整性」）：零 F 九 G；G-A1（env 对账补 6 条含 BROWSE_NO_AUTO_DIALOG 行为开关与内部/镜像类尾注）、G-A2（session CTA 补 waitJs）、G-A3（rune 退出码三态入条目）、G-A4（--cookies 入 Options 伴生表）、G-A5（路由表补 GET 行，后随看板移除令改撤两行）随批；G-A6/A7/A8/A9（低）记档后续批
+- 评审二轮全目录审计（总台授权「review 所有命令的合理性完整性」）：零 F 九 G；G-A1（env 对账补 6 条含 BROWSE_NO_AUTO_DIALOG 行为开关与内部/镜像类尾注）、G-A2（session CTA 补 waitJs）、G-A3（rune 退出码三态入条目）、G-A4（--cookies 入 Options 伴生表）、G-A5（路由表补 GET 行，后随看板移除令改撤两行）随批；G-A6/A7/A8/A9（低）记档后续批（G-A7 随 REQ-021 双向守卫闭、G-A8 随读序句闭、G-A6/G-A9 随 REQ-023 闭）
 - 设计纪律（总台指令链 2026-10-02）：不自封装原语（曾实现 `cdp::stop_self` 后按令回撤，脚本自停走原生控制流）；`wait_event` 是原生 `Session::wait_for` 的直出面不算自封装；验收口径＝回归 rn 脚本＋CTA 回执
 - 停止道与超时同构：都丢弃执行 future，清账走 Cleanup Drop 兜底，op 探针保留在飞面（v0.26.1 机制复用）
 - 评审一轮 F1（必修已修）：rawstr 字面量面逐字节 as char 是非 ASCII mojibake 静默变形（run() 无条件过道，全脚本面回归）；修为 UTF-8 整段推进，回归锁＝非 ASCII 词法单测（五面）＋run() 全道非 ASCII 串测试＋r# e2e 中文载荷

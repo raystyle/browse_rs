@@ -33,7 +33,8 @@ impl std::fmt::Display for RawStrError {
 impl std::error::Error for RawStrError {}
 
 /// 占位标识符前缀（后接区序号）：合法 Rune 标识符，Jinja 惰性文本。
-const PLACEHOLDER_PREFIX: &str = "__BROWSE_RN_RAW_";
+/// `pub(crate)`：js_lib 的运行时 vars 值守卫（module.rs）同源取用。
+pub(crate) const PLACEHOLDER_PREFIX: &str = "__BROWSE_RN_RAW_";
 
 fn is_word(b: u8) -> bool {
     b.is_ascii_alphanumeric() || b == b'_'

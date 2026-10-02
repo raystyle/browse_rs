@@ -224,9 +224,9 @@ pub const COMMANDS: &[CmdSpec] = &[
     CmdSpec {
         name: "version-flag",
         kind: CmdKind::Cli,
-        signature: "browse --version",
+        signature: "browse --version | -V",
         args: &[],
-        description: "打印版本号（资产解包冒烟与安装核对用）。",
+        description: "打印版本号（资产解包冒烟与安装核对用；-V 同义短参）。",
         example: "browse --version",
     },
     CmdSpec {
@@ -360,7 +360,7 @@ pub const COMMANDS: &[CmdSpec] = &[
     CmdSpec {
         name: "artifact-publish",
         kind: CmdKind::Cli,
-        signature: "browse artifact publish --name <n> --kind <k> --digest <d> [--summary <s>] [--outcome <success|failure>] [--git-sha <sha>] [--dep <d>]…",
+        signature: "browse artifact publish --name <n> --kind <k> --digest <d> [--summary <s>] [--outcome <success|failure>] [--git-sha <sha>] [--version <v>] [--git-range <r>] [--note <n>] [--dep <d>]…",
         args: &[
             arg!("name", "string", true),
             arg!("kind", "string", true),
@@ -373,7 +373,7 @@ pub const COMMANDS: &[CmdSpec] = &[
             arg!("note", "string", false),
             arg!("dep", "string", false, "可重复：依赖出处，回溯链即证据链"),
         ],
-        description: "产物共享库发布（参数面随标准 crate ledger-client v0.1.3）：kind 十五枚举必填（binary/experience/lesson/research/prototype/…），digest=正文或记录哈希（sha256:<64hex>），summary 与 outcome 是结构化字段（非正文拼接，账本人类网页按字段渲染），回 {ok,artifact_id}。",
+        description: "产物共享库发布（参数面随标准 crate ledger-client v0.1.3）：kind 十五枚举必填（binary/experience/lesson/research/prototype/…），digest=正文或记录哈希（sha256:<64hex>），summary 与 outcome 是结构化字段（非正文拼接，账本人类网页按字段渲染），回 {ok,artifact_id}。字段 --version 与全局版本旗标同名不同位：publish 环内取值形是字段，全局位裸旗标打 CLI 版本即退。",
         example: "browse artifact publish --name browse-0.8 --kind prototype --digest sha256:... --summary '集成实战摘' --outcome success --dep github.com/raystyle/hst_rs",
     },
     CmdSpec {

@@ -122,6 +122,19 @@ fn cdp_err(op: &str, message: impl std::fmt::Display) -> CdpError {
     }
 }
 
+/// js_lib 运行时 vars 的占位前缀扫描（REQ-023 值注入理论形收口）：
+/// 递归查任意深度对象/数组里的串值是否含内部占位前缀。何时用：js_lib
+/// 渲染前（CLI 道的 `--vars` 已有 vars_value_guard，直 POST /rune 与
+/// 脚本内拼串只经此面）。边界：非串标量恒 false。
+fn json_contains_placeholder(v: &serde_json::Value) -> bool {
+    match v {
+        serde_json::Value::String(s) => s.contains(crate::rawstr::PLACEHOLDER_PREFIX),
+        serde_json::Value::Array(a) => a.iter().any(json_contains_placeholder),
+        serde_json::Value::Object(o) => o.values().any(json_contains_placeholder),
+        _ => false,
+    }
+}
+
 impl CdpState {
     /// 确保隔离世界在位：`Page.createIsolatedWorld`（每 tab 首次与每次
     /// 导航后），并随会话幂等注册 `Page.addScriptToEvaluateOnNewDocument`
@@ -751,6 +764,20 @@ pub fn cdp_module(ctx: ModuleCtx) -> Result<(Module, Cleanup), rune::ContextErro
                             ));
                         }
                     };
+                    // 值注入理论形守卫（REQ-023）：运行时 vars 绕过 CLI 的
+                    // vars_value_guard（直 POST /rune 或脚本内拼串都到这），
+                    // 值含内部占位前缀会在回填段被当作占位记号（拼接注释
+                    // 区文本）或触发误导性残留报错；渲染前拦（递归含嵌套
+                    // 对象/数组里的串值）
+                    if json_contains_placeholder(&vars_json) {
+                        return Err(cdp_err(
+                            "js_lib",
+                            format!(
+                                "vars 值含内部占位前缀 {}（值注入面）；下一步：值避开该前缀",
+                                crate::rawstr::PLACEHOLDER_PREFIX
+                            ),
+                        ));
+                    }
                     // G-1 对齐批：库体是 JS 族，注释区先抽占位惰性化再渲染；
                     // 定界=件首行指令覆写本执行选择（0.30.3 缺省 ERB）
                     let lib_syntax =
@@ -1032,5 +1059,41 @@ mod wrapper_tests {
         assert!(w.contains("`${{x:1}}`;"), "{w}");
         assert!(w.starts_with("(async (args) => {"), "{w}");
         assert!(w.ends_with("})({})"), "{w}");
+    }
+}
+
+#[cfg(test)]
+mod vars_guard_tests {
+    use super::json_contains_placeholder;
+    use serde_json::json;
+
+    /// REQ-023：顶层串值含前缀命中（js_lib 运行时道收口的主形）。
+    #[test]
+    fn top_level_string_hits() {
+        assert!(json_contains_placeholder(&json!({
+            "code": "x __BROWSE_RN_RAW_0__ y"
+        })));
+    }
+
+    /// REQ-023：嵌套对象/数组深处的串值也命中（运行时 vars 是任意 JSON）。
+    #[test]
+    fn nested_string_hits() {
+        assert!(json_contains_placeholder(&json!({
+            "rows": [{"v": "a"}, {"v": "__BROWSE_RN_RAW_1__"}],
+            "meta": {"ok": true}
+        })));
+    }
+
+    /// REQ-023：正常值（含非串标量与无前缀串）零误伤。
+    #[test]
+    fn clean_values_pass() {
+        assert!(!json_contains_placeholder(&json!({
+            "url": "https://example.com/a__b",
+            "n": 7,
+            "f": 0.5,
+            "b": false,
+            "nil": null,
+            "arr": ["plain", 3]
+        })));
     }
 }

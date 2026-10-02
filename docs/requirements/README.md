@@ -26,6 +26,7 @@
 | REQ-020 | implemented | should | #70 补名腿与目录审计收尾（v0.30.1） | 锚点双锁加 vm_face 端到端加名册旁证 30 项；评审快核 CONFIRM |
 | REQ-021 | implemented | should | 休眠项与 REQ-020 记档全清（v0.30.2） | 多槽单测加双向守卫加集成件；评审快核 CONFIRM |
 | REQ-022 | implemented | must | 模板定界缺省 ERB（v0.30.3，总台令） | 单测双引擎加全族 ERB 迁移加实弹四证；评审快核 CONFIRM |
+| REQ-023 | implemented | should | 余量清扫批：js_lib 值守卫、G-A6/A9、bh 94 站迁移（v0.30.4，总台令） | 守卫三单测加 surface 重生成锁加 goto 实弹命中；评审 CONFIRM |
 
 ## Roadmap（issue 台账批次规划）
 
