@@ -768,6 +768,31 @@ pub async fn quit() -> Result<()> {
 mod tests {
     use super::*;
 
+    /// 评审 F-1（0.30.0 对齐轮）：占位遇 Jinja 控制流——死分支丢弃静默
+    /// 略过、循环体复制全量回填，不再误报 exit 2；rune 与 JS 双面锁。
+    #[test]
+    fn template_placeholder_survives_jinja_control_flow() {
+        let vars = vec![
+            ("q".to_string(), "v".to_string()),
+            ("list".to_string(), "ab".to_string()),
+        ];
+        // 死分支：区间被 Jinja 丢弃，渲染成功且注释消失（注释到行尾，
+        // 控制流标签须另起行——与真实 JS/Rune 词法一致）
+        let dead = "{% if false %}\n// dead {{ nope }}\n{% endif %}return \"{{ q }}\";";
+        let out = render_rune_template(dead, &vars).unwrap();
+        assert!(!out.contains("nope"), "{out}");
+        assert!(out.contains("\"v\""), "{out}");
+        let out = render_js_template(dead, &vars).unwrap();
+        assert!(!out.contains("nope"), "{out}");
+        // 循环体：复制两次全量回填
+        let body = "{% for c in list %}\n// loop {{ nope }}\n{% endfor %}return \"{{ q }}\";";
+        let out = render_rune_template(body, &vars).unwrap();
+        assert_eq!(out.matches("// loop {{ nope }}").count(), 2, "{out}");
+        assert!(out.contains("\"v\""), "{out}");
+        let out = render_js_template(body, &vars).unwrap();
+        assert_eq!(out.matches("// loop {{ nope }}").count(), 2, "{out}");
+    }
+
     /// G-1 对齐批：JS 族（方言/--js 面）注释惰性化，字符串照旧渲染。
     #[test]
     fn js_template_comments_are_inert() {

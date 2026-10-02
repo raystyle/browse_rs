@@ -89,9 +89,14 @@ enum Family {
 
 fn extract_with(src: &str, family: Family) -> Result<(String, Vec<String>), RawStrError> {
     if src.contains(PLACEHOLDER_PREFIX) {
+        let what = if family == Family::Rune {
+            "r# 预处理"
+        } else {
+            "注释占位"
+        };
         return Err(RawStrError {
             message: format!(
-                "源码已含占位前缀 {PLACEHOLDER_PREFIX}（与 r# 预处理冲撞）；下一步：改用别的标识符名"
+                "源码已含占位前缀 {PLACEHOLDER_PREFIX}（与 {what} 冲撞）；下一步：改用别的标识符名"
             ),
         });
     }
@@ -176,6 +181,8 @@ fn extract_with(src: &str, family: Family) -> Result<(String, Vec<String>), RawS
                     stack.push(Ctx::TplExpr);
                     out.push_str("${");
                     i += 2;
+                    prev_sig = Some(b'{');
+                    last_word.clear();
                     continue;
                 }
                 let ch_len = utf8_len(b);
@@ -221,6 +228,8 @@ fn extract_with(src: &str, family: Family) -> Result<(String, Vec<String>), RawS
                     out.push_str(&format!("{PLACEHOLDER_PREFIX}{}__", literals.len()));
                     literals.push(src[start..end].to_string());
                     i = end;
+                    prev_sig = Some(b'\n');
+                    last_word.clear();
                     continue;
                 }
                 // 块注释（不嵌套）：整段占位抽取（含定界符逐字回填；未闭合
@@ -233,6 +242,8 @@ fn extract_with(src: &str, family: Family) -> Result<(String, Vec<String>), RawS
                     out.push_str(&format!("{PLACEHOLDER_PREFIX}{}__", literals.len()));
                     literals.push(src[start..end].to_string());
                     i = end;
+                    prev_sig = Some(b'\n');
+                    last_word.clear();
                     continue;
                 }
                 // JS 族正则字面量起点（启发式：前一显著面属运算/开括号类
@@ -265,6 +276,8 @@ fn extract_with(src: &str, family: Family) -> Result<(String, Vec<String>), RawS
                     // TplExpr 内的花括号交由下方字符面处理（深度由闭括号平衡）
                     out.push(b as char);
                     i += 1;
+                    prev_sig = Some(b);
+                    last_word.clear();
                     // 压一层表达式上下文以平衡
                     stack.push(Ctx::TplExpr);
                     continue;
@@ -273,6 +286,8 @@ fn extract_with(src: &str, family: Family) -> Result<(String, Vec<String>), RawS
                     stack.pop();
                     out.push(b as char);
                     i += 1;
+                    prev_sig = Some(b);
+                    last_word.clear();
                     continue;
                 }
                 // 标识符 run：整段消费；Rune 族 run 恰为 "r" 且后随 #+"
@@ -353,6 +368,8 @@ fn regex_allowed(prev_sig: Option<u8>, last_word: &str) -> bool {
     match prev_sig {
         None => true,
         Some(b) => {
+            // 评审 G-1：+ 与 - 不入集（++/-- 后的 / 判除法，防吞同行注
+            // 释；代价是 = +/re/ 的病理性一元正则前缀判除法，输出中性）
             matches!(
                 b,
                 b'(' | b','
@@ -366,8 +383,6 @@ fn regex_allowed(prev_sig: Option<u8>, last_word: &str) -> bool {
                     | b'{'
                     | b'}'
                     | b';'
-                    | b'+'
-                    | b'-'
                     | b'*'
                     | b'%'
                     | b'~'
@@ -403,17 +418,14 @@ pub fn subst_raw_strings(rendered: &str, literals: &[String]) -> Result<String, 
     let mut out = rendered.to_string();
     for (n, lit) in literals.iter().enumerate() {
         let ph = format!("{PLACEHOLDER_PREFIX}{n}__");
-        // 评审 G1：恰一次校验（--vars 值或 {% for %} 复制占位文本会让
-        // replacen 错位或残留，注入面在此拦）
-        let count = out.matches(&ph).count();
-        if count != 1 {
-            return Err(RawStrError {
-                message: format!(
-                    "r# 占位 {ph} 在渲染产物中出现 {count} 次（应为 1；--vars 值或模板复制了占位文本）；下一步：值与模板避开占位标识符前缀"
-                ),
-            });
+        // 评审 F-1（0.30.0 对齐轮）：Jinja 控制流会丢弃（死分支 0 次）或
+        // 复制（循环体 N 次）占位区间——0 次静默略过（区间被控制流丢
+        // 弃）、出现即全量替换（每次复制都回填原文）；注入面由渲染后的
+        // 残留前缀检查兜
+        if !out.contains(&ph) {
+            continue;
         }
-        out = out.replacen(&ph, lit, 1);
+        out = out.replace(&ph, lit);
     }
     if out.contains(PLACEHOLDER_PREFIX) {
         return Err(RawStrError {
@@ -561,20 +573,34 @@ let s = r#"real"#; s"##;
         assert!(out.contains("\"尾串\""), "{out}");
     }
 
-    /// 评审 G1：值复制占位文本（两次出现）与残留前缀都拦。
+    /// 评审 F-1（0.30.0 对齐轮）：占位复制（循环体）合法全量替换；残留
+    /// 前缀（值注入面）仍拦；死分支丢弃由 0 次静默略过（client 级测覆
+    /// 盖真 Jinja 面）。
     #[test]
-    fn subst_rejects_duplicated_or_residual_placeholder() {
+    fn subst_replaces_replicas_and_rejects_residual() {
         let (placed, literals) = extract_raw_strings("let s = r#\"x\"#;").unwrap();
-        let evil = placed.replace(
+        // 循环体复制：两次出现都回填
+        let looped = placed.replace(
             "__BROWSE_RN_RAW_0__",
             "__BROWSE_RN_RAW_0__ __BROWSE_RN_RAW_0__",
         );
-        let err = subst_raw_strings(&evil, &literals).unwrap_err();
-        assert!(err.message.contains("2 次"), "{}", err.message);
-        // 残留臂：占位 0 恰一次（可替换），但渲染注入了异序号前缀
+        let out = subst_raw_strings(&looped, &literals).unwrap();
+        assert_eq!(out, "let s = \"x\" \"x\";", "{out}");
+        // 残留臂：占位 0 被丢弃，渲染注入了异序号前缀
         let residual = placed.replace("let s =", "let extra = __BROWSE_RN_RAW_7__; let s =");
         let err = subst_raw_strings(&residual, &literals).unwrap_err();
         assert!(err.message.contains("残留"), "{}", err.message);
+    }
+
+    /// 评审 G-1（0.30.0 对齐轮）：`++`/`--` 后的 `/` 判除法，行尾注释仍
+    /// 被抽出（启发式收紧钉）。
+    #[test]
+    fn js_family_postfix_increment_then_division_keeps_comment() {
+        let src = "let a = b++ / c; // note {{x}}";
+        let (placed, literals) = extract_comment_regions(src).unwrap();
+        assert!(!placed.contains("note"), "注释应被抽出：{placed}");
+        let out = subst_raw_strings(&placed, &literals).unwrap();
+        assert_eq!(out, src);
     }
 
     /// 批次三①：注释区 Jinja 惰性化——注释内的 `{{ }}`/`{% raw %}` 字面

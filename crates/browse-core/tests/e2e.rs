@@ -3186,7 +3186,7 @@ async fn rune_js_lib_comments_inert() {
     std::fs::create_dir_all(&dir).expect("建临时库根");
     std::fs::write(
         dir.join("cmt.js"),
-        "// 注释 {{ nope }} 与 {% raw %} 字面\nreturn [\"{{ q }}\".length, 1];",
+        "// 注释 {{ nope }} 与 {% raw %} 字面\n{% if false %}\n// 死分支 {{ dropped }}\n{% endif %}{% for c in list %}\n// 循环 {{ nope }}\n{% endfor %}return [\"{{ q }}\".length, \"{{ list }}\".length];",
     )
     .expect("写库件");
     let session = cdp::Session::new();
@@ -3204,7 +3204,8 @@ async fn rune_js_lib_comments_inert() {
         })
         .await
         .expect("js_lib 注释验收引擎起不来");
-    let script = r#"pub async fn main() { Ok(cdp::js_lib("cmt", #{"q": "ab"}).await?) }"#;
+    let script =
+        r#"pub async fn main() { Ok(cdp::js_lib("cmt", #{"q": "ab", "list": "cd"}).await?) }"#;
     let r = browse_rune::run(
         session,
         script,
@@ -3216,7 +3217,11 @@ async fn rune_js_lib_comments_inert() {
     )
     .await
     .expect("js_lib 注释脚本执行失败");
-    assert_eq!(r, serde_json::json!({ "ok": [2, 1] }), "js_lib 回执：{r}");
+    assert_eq!(
+        r,
+        serde_json::json!({ "ok": [2, 2] }),
+        "js_lib 回执（q=ab 长度 2、list=cd 长度 2；死分支消失循环体两次回填）：{r}"
+    );
     engine.shutdown().await.expect("shutdown");
     clean_profile().await;
     let _ = std::fs::remove_dir_all(&dir);
