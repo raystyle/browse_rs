@@ -76,7 +76,11 @@ pub async fn run(
     caps: Caps,
     opts: RunOpts,
 ) -> Result<Value> {
-    run_with_cleanup(session, source, caps, opts).await
+    // r# 裸串预处理（免渲染道兜底；CLI 模板道已在渲染侧先抽后填，此处
+    // 对无 r# 记号的源是幂等空转）
+    let source = crate::rawstr::rewrite_raw_strings(source)
+        .map_err(|e| anyhow!("r# 裸串预处理失败：{}", e.message))?;
+    run_with_cleanup(session, &source, caps, opts).await
 }
 
 /// [`run`] 的实现腿：收尾清账（对象组释放加引导脚本注销）。

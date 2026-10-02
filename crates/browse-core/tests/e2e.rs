@@ -3070,3 +3070,104 @@ async fn rune_timeout_probe_retains_inflight_op() {
     engine.shutdown().await.expect("shutdown");
     clean_profile().await;
 }
+
+/// 批次二 r# 裸串：真引擎 `cdp::js` 吃 r# 包裹的任意引号/反斜杠 JS
+/// （嵌套引号、正则反斜杠、`{{` 相邻原样），值原样回。
+#[tokio::test]
+async fn rune_raw_string_js_end_to_end() {
+    if !gated() {
+        eprintln!("skip: BROWSE_E2E 未设 1");
+        return;
+    }
+    let _seq = SEQ.lock().await;
+    clean_profile().await;
+    let session = cdp::Session::new();
+    let engine = Engine::new(session.clone());
+    engine
+        .ensure(&EngineSpec::Auto {
+            chrome: None,
+            headless: true,
+            pipe: false,
+            profile: None,
+            proxy: None,
+            proxy_bypass: None,
+            isolated: false,
+            engine_args: Vec::new(),
+        })
+        .await
+        .expect("r# 验收引擎起不来");
+    let script = r###"pub async fn main() {
+        let body = r#"const o = {a: 1, b: {c: 2}}; const re = /\d+"\w+/g; const t = `${{deep: 1}}`; return [o.a, o.b.c, "q\"q".length, t.length];"#;
+        cdp::js(body, #{"k": 1}).await
+    }"###;
+    let r = browse_rune::run(
+        session,
+        script,
+        browse_rune::DEFAULT_CAPS,
+        browse_rune::RunOpts::default(),
+    )
+    .await
+    .expect("r# 脚本执行失败");
+    assert_eq!(
+        r,
+        serde_json::json!({ "ok": [1, 2, 3, 15] }),
+        "r# 回执：{r}"
+    );
+    engine.shutdown().await.expect("shutdown");
+    clean_profile().await;
+}
+
+/// 批次二事件驱动等待：`cdp::wait_event` 命中（导航后从事件缓冲取
+/// Page.frameNavigated）与未中（超时 Err）双臂，脚本侧 `match` 即条件分
+/// 支模式（不 `?` 传播）。
+#[tokio::test]
+async fn rune_wait_event_face() {
+    if !gated() {
+        eprintln!("skip: BROWSE_E2E 未设 1");
+        return;
+    }
+    let _seq = SEQ.lock().await;
+    clean_profile().await;
+    let session = cdp::Session::new();
+    let engine = Engine::new(session.clone());
+    engine
+        .ensure(&EngineSpec::Auto {
+            chrome: None,
+            headless: true,
+            pipe: false,
+            profile: None,
+            proxy: None,
+            proxy_bypass: None,
+            isolated: false,
+            engine_args: Vec::new(),
+        })
+        .await
+        .expect("wait_event 验收引擎起不来");
+    let script = r#"pub async fn main() {
+        cdp::goto("data:text/html,<title>we</title>").await?;
+        let hit = match cdp::wait_event("Page.frameNavigated", 3000).await {
+            Ok(_p) => "hit",
+            Err(_e) => "miss",
+        };
+        let miss = match cdp::wait_event("Never.happens", 200).await {
+            Ok(_p) => "hit",
+            Err(_e) => "miss",
+        };
+        Ok(format!("{}|{}", hit, miss))
+    }"#;
+    let r = browse_rune::run(
+        session,
+        script,
+        browse_rune::DEFAULT_CAPS,
+        browse_rune::RunOpts::default(),
+    )
+    .await
+    .expect("wait_event 脚本执行失败");
+    assert_eq!(
+        r,
+        serde_json::json!({ "ok": "hit|miss" }),
+        "wait_event 回执：{r}"
+    );
+    engine.shutdown().await.expect("shutdown");
+    clean_profile().await;
+}

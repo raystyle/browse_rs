@@ -239,9 +239,11 @@ pub async fn rune(code: &str, root: Option<String>, stdin: Option<String>) -> Re
         }
         Ok(body.get("value").cloned().unwrap_or(Value::Null))
     } else {
-        // v0.26.1 超时 CTA 最小形：daemon 的结构化 timeout 面以一行 JSON
-        // 打到 stderr（上层 agent 可直接解析换通道重试），人读错误行照旧
-        if let Some(t) = body.get("timeout")
+        // v0.26.1 超时 CTA 最小形（批次二扩到主动停止面）：daemon 的结构化
+        // timeout/stopped 面以一行 JSON 打到 stderr（上层 agent 可直接解析
+        // 换通道重试），人读错误行照旧
+        let detail = body.get("timeout").or(body.get("stopped"));
+        if let Some(t) = detail
             && let Ok(line) = serde_json::to_string(t)
         {
             eprintln!("{line}");
@@ -253,6 +255,22 @@ pub async fn rune(code: &str, root: Option<String>, stdin: Option<String>) -> Re
                 .unwrap_or("未知错误")
         ))
     }
+}
+
+/// 主动停止在跑的 rune 执行（批次二总台指令）：POST /rune/stop，回
+/// `{ok, running, requested, note}`。
+///
+/// # Errors
+///
+/// HTTP 失败或响应解析失败。
+pub async fn rune_stop() -> Result<Value> {
+    let c = client();
+    let resp = c
+        .post(format!("{}/rune/stop", http()))
+        .send()
+        .await
+        .context("POST /rune/stop")?;
+    resp.json().await.context("解析 /rune/stop 响应")
 }
 
 /// #60 渲染操作信封的引擎上下文（crate 内缝，eval 与 fetch 引擎腿共用）：
@@ -487,6 +505,23 @@ fn missing_bare_placeholders(body: &str, vars: &[(String, String)]) -> Vec<Strin
         i += 1;
     }
     missing
+}
+
+/// rune 面模板渲染（批次二 r# 裸串）：先抽出 r# 区换占位（区内容对
+/// Jinja 惰性，`{{`/`{%` 原样直达），渲染余下源，再回填转义普通串——
+/// 「裸串免渲染」与 `{% raw %}` 各管一层（raw 管 Jinja 面任意区，r# 管
+/// Rune 串字面量面）；无 r# 记号时与 [`render_template`] 等价。
+///
+/// # Errors
+///
+/// r# 词法错（未闭合/占位冲撞/占位被模板误删）或渲染错误（同
+/// [`render_template`]）。
+pub fn render_rune_template(body: &str, vars: &[(String, String)]) -> Result<String> {
+    let (placed, literals) = browse_rune::rawstr::extract_raw_strings(body)
+        .map_err(|e| anyhow::anyhow!("r# 裸串预处理失败：{}", e.message))?;
+    let rendered = render_template(&placed, vars)?;
+    browse_rune::rawstr::subst_raw_strings(&rendered, &literals)
+        .map_err(|e| anyhow::anyhow!("r# 裸串预处理失败：{}", e.message))
 }
 
 /// `--vars` 模板渲染（#66 命令小程序）：Jinja 语法渲染模板源，`{{ 键 }}`

@@ -642,6 +642,42 @@ pub fn cdp_module(ctx: ModuleCtx) -> Result<(Module, Cleanup), rune::ContextErro
         })
         .build()?;
     }
+    // ---- 批次二（总台指令）：事件驱动等待原语（CDP 事件面） ----
+    {
+        let st = state.clone();
+        m.function("wait_event", move |method: String, ms: i64| {
+            let st = st.clone();
+            async move {
+                st.set_op("wait_event");
+                let out = async {
+                    // 事件驱动等待（非轮询）：方言 session.waitFor 同源——活
+                    // 动 tab 与 browser 级事件，取出即移除；超时走
+                    // CdpError（脚本 ? 传播即失败面，match 即条件分支面）
+                    let ev = st
+                        .session
+                        .wait_for(&method, ms.max(0) as u64)
+                        .await
+                        .map_err(|e| {
+                            cdp_err(
+                                "wait_event",
+                                format!(
+                                    "等 {method} 超时（{ms} 毫秒）或会话异常：{e:#}；下一步：调大毫秒数、先触发事件再等（缓冲含历史），或 match 本错误走替代分支"
+                                ),
+                            )
+                        })?;
+                    let params = ev.get("params").cloned().unwrap_or(json!({}));
+                    let rv = serde_json::from_value::<RuneValue>(params).map_err(|e| {
+                        cdp_err("wait_event", format!("事件参数过桥失败：{e}"))
+                    })?;
+                    Ok::<RuneValue, CdpError>(rv)
+                }
+                .await;
+                st.clear_op();
+                out
+            }
+        })
+        .build()?;
+    }
     // 错误载荷降形（vm_face 实弹抓的坑）：json 模块与 Debug 协议对外部
     // 类型都出「object at 0x…」占位，CdpError 的 op/message 会丢——宿主
     // 侧专降 JSON 形，wrapper 的 Err 臂消费（其余错误值照旧 json/Debug）

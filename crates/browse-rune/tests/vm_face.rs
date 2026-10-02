@@ -125,6 +125,26 @@ async fn op_probe_clears_after_fast_error() {
     );
 }
 
+/// 批次二 r# 裸串：run() 入口重写后脚本可用 r#"…"# 嵌任意引号与反斜杠
+/// 的 JS 串（多行保真），值原样出。
+#[tokio::test]
+async fn raw_string_script_face() -> anyhow::Result<()> {
+    let session = cdp::Session::new();
+    let out = run(
+        session,
+        r###"pub async fn main() {
+        let js = r#"const o = {a: 1, b: {c: 2}}; const re = /\d+"\w+/g; try { f(); } catch (e) {} const t = `${{deep: 1}}`; return [o.a, `${{x:1}}`.length];"#;
+        let lit = r##"含 "# 升级形"##;
+        Ok(format!("{}|{}", js.len() > 80, lit))
+    }"###,
+        DEFAULT_CAPS,
+        browse_rune::RunOpts::default(),
+    )
+    .await?;
+    assert_eq!(out, serde_json::json!({ "ok": "true|含 \"# 升级形" }));
+    Ok(())
+}
+
 /// 三形态批：render 的 Jinja 面（Strict 未填报 op、default 过滤器通行）
 /// 与 js_wrapper 的转义纪律（args JSON 字面量注入，单双引号反引号原样）。
 #[tokio::test]

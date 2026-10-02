@@ -112,6 +112,9 @@ enum Mode {
     LedgerKeygen { force: bool },
     /// `browse rune <script.rn|@名> [--vars k=v] [--root <dir>]`：Rune 编排面（#67）。
     Rune { script: Option<String> },
+    /// `browse rune stop`：主动停止在跑的 rune 执行（批次二总台指令；
+    /// 名是动词位，脚本文件别叫 stop）。
+    RuneStop,
 }
 
 /// 账本调用统一走阻塞线程（收口适配 2026-09-20）：ledger-client 是
@@ -414,7 +417,12 @@ async fn main() -> Result<()> {
                         }
                     }
                 }
-                mode = Mode::Rune { script };
+                // stop 动词位（批次二）：首位置位恰为 stop 即停止道
+                if script.as_deref() == Some("stop") && vars.is_empty() {
+                    mode = Mode::RuneStop;
+                } else {
+                    mode = Mode::Rune { script };
+                }
             }
             "snippets" if snippets.is_empty() && mode_is_eval(&mode) => {
                 match args.next("snippets").as_str() {
@@ -1288,12 +1296,17 @@ async fn main() -> Result<()> {
             let piped: Option<String> = if std::io::stdin().is_terminal() {
                 None
             } else {
-                let mut buf = String::new();
-                match std::io::Read::read_to_string(&mut std::io::stdin(), &mut buf) {
-                    Ok(_) => Some(buf),
-                    Err(e) => {
+                match read_stdin_bounded() {
+                    StdinRead::Data(s) => Some(s),
+                    StdinRead::Failed(e) => {
                         eprintln!("browse: rune 读管道失败：{e}（退出 2）");
                         std::process::exit(2);
+                    }
+                    StdinRead::Silent => {
+                        eprintln!(
+                            "browse: 提示：stdin 3 秒未现数据或 EOF（agent 壳常开管道形），按无管道参数道继续；管道参数道需完整写入并关闭（cat 文件即此形）"
+                        );
+                        None
                     }
                 }
             };
@@ -1366,11 +1379,12 @@ async fn main() -> Result<()> {
                     }
                 }
             };
-            // --vars 模板道（与 #66 同一道）：给了即渲染（未填键 exit 2 带键名）
+            // --vars 模板道（与 #66 同一道）：给了即渲染（未填键 exit 2 带键
+            // 名）；r# 裸串区先抽出免渲染（批次二），渲染毕回填
             let body = if parsed_vars.is_empty() {
                 body
             } else {
-                match browse_cli::client::render_template(&body, &parsed_vars) {
+                match browse_cli::client::render_rune_template(&body, &parsed_vars) {
                     Ok(b) => b,
                     Err(e) => {
                         eprintln!("{e:#}");
@@ -1409,6 +1423,13 @@ async fn main() -> Result<()> {
                 }
                 Err(e) => Err(e),
             }
+        }
+        // 主动停止道（批次二总台指令）：POST /rune/stop，回执直出 ----
+        Mode::RuneStop => {
+            client::ensure_daemon().await?;
+            let v = browse_cli::client::rune_stop().await?;
+            println!("{}", serde_json::to_string_pretty(&v)?);
+            Ok(())
         }
         Mode::Eval => {
             // 裸调用 = 导航事件：无参不弹交互，TTY 裸跑出本仓帮助体 exit 0；
@@ -1529,6 +1550,37 @@ impl Args {
     /// `snippets list [site]`）专用，不报错。
     fn next_opt(&mut self) -> Option<String> {
         self.0.next()
+    }
+}
+
+/// rune 面管道参数道的有界读结果（#69）。
+enum StdinRead {
+    /// 读到 EOF 的完整串。
+    Data(String),
+    /// 读错误（原 exit 2 路径保留）。
+    Failed(std::io::Error),
+    /// 期内既无数据也无 EOF（开而不关的 stdin，agent 壳/CI 形）。
+    Silent,
+}
+
+/// rune 面管道参数道的有界读（#69）：非 TTY stdin 恒读原形在「开着不
+/// 关」的调用壳里无上界挂死（战役台实锤，快错全被挡在读腿后面）；读腿
+/// 移线程，静默 3 秒过界即按无管道参数道放行（提示进 stderr）。数据与
+/// EOF 在期内到达则零额外时延（cat 文件管道不受影响）。读线程在放行后
+/// 残留等待，随进程退出回收。
+fn read_stdin_bounded() -> StdinRead {
+    /// 静默界：期内无数据且无 EOF 即放行。
+    const SILENCE: std::time::Duration = std::time::Duration::from_secs(3);
+    let (tx, rx) = std::sync::mpsc::channel::<Result<String, std::io::Error>>();
+    std::thread::spawn(move || {
+        let mut buf = String::new();
+        let r = std::io::Read::read_to_string(&mut std::io::stdin(), &mut buf).map(|_| buf);
+        let _ = tx.send(r);
+    });
+    match rx.recv_timeout(SILENCE) {
+        Ok(Ok(s)) => StdinRead::Data(s),
+        Ok(Err(e)) => StdinRead::Failed(e),
+        Err(_) => StdinRead::Silent,
     }
 }
 

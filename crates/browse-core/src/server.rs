@@ -154,6 +154,11 @@ pub struct Daemon {
     pub last_fp: std::sync::Mutex<Option<serde_json::Value>>,
     /// 最近活动时刻（#25.1 idle-timeout 判据）：eval/up 请求刷新。
     pub last_activity: std::sync::Mutex<Instant>,
+    /// rune 执行的主动停止道（批次二）：执行腿置发送端，`POST /rune/stop`
+    /// 取出发送端置真丢弃执行 future（与整体超时同构，清账走 Drop 兜底）。
+    pub rune_cancel: std::sync::Mutex<Option<tokio::sync::watch::Sender<bool>>>,
+    /// rune 是否在跑（stop 回执的 running 判据）。
+    pub rune_running: Arc<AtomicBool>,
 }
 
 impl Daemon {
@@ -182,6 +187,8 @@ impl Daemon {
             spec: std::sync::Mutex::new(spec),
             last_fp: std::sync::Mutex::new(None),
             last_activity: std::sync::Mutex::new(Instant::now()),
+            rune_cancel: std::sync::Mutex::new(None),
+            rune_running: Arc::new(AtomicBool::new(false)),
         })
     }
 }
@@ -204,6 +211,19 @@ fn eval_timeout() -> Duration {
         .unwrap_or(Duration::from_secs(300))
 }
 
+/// rune 面整体执行上界（ADR-0010 增补终裁 2026-10-02，批次二落地）：
+/// 独立旋钮 `BROWSE_RUNE_TIMEOUT`（秒，默认 45，战役台诉求口径）；
+/// `/eval` 的 `BROWSE_EVAL_TIMEOUT` 300 秒契约零动（长跑方言片段正当
+/// 面）。daemon 级上界：实例内全部 rune 执行同界，长爬（逐页 goto 累计
+/// 分钟级）触顶按需调大或拆专用命名实例。
+fn rune_timeout() -> Duration {
+    std::env::var("BROWSE_RUNE_TIMEOUT")
+        .ok()
+        .and_then(|s| s.parse::<u64>().ok())
+        .map(Duration::from_secs)
+        .unwrap_or(Duration::from_secs(45))
+}
+
 /// 起 HTTP daemon，监听 `bind`，直到 POST /quit。
 ///
 /// # Errors
@@ -216,6 +236,7 @@ pub async fn serve(daemon: Arc<Daemon>, bind: &str) -> anyhow::Result<()> {
     let app = Router::new()
         .route("/eval", post(eval_handler))
         .route("/rune", post(rune_handler))
+        .route("/rune/stop", post(rune_stop_handler))
         .route("/health", get(health_handler))
         .route("/engine/up", post(engine_up_handler))
         .route("/quit", post(quit_handler))
@@ -380,19 +401,40 @@ async fn rune_handler(
         op_probe: browse_rune::OpProbe::default(),
     };
     let op_probe = opts.op_probe.clone();
-    let outcome = tokio::time::timeout(
-        eval_timeout(),
-        browse_rune::run(d.host.session(), &req.code, browse_rune::DEFAULT_CAPS, opts),
-    )
-    .await;
+    // 主动停止道（批次二总台指令）：本执行的取消通道入槽，select 上与
+    // 整体超时并列；停止即丢弃执行 future（清账走 Drop 兜底，与超时同构）
+    let started = Instant::now();
+    let (cancel_tx, mut cancel_rx) = tokio::sync::watch::channel(false);
+    *d.rune_cancel.lock().unwrap_or_else(|e| e.into_inner()) = Some(cancel_tx);
+    d.rune_running.store(true, Ordering::Relaxed);
+    let watch_session = d.host.session();
+    enum Outcome {
+        Done(anyhow::Result<Value>),
+        Timeout,
+        Stopped,
+        EngineLost,
+    }
+    let outcome = tokio::select! {
+        r = tokio::time::timeout(
+            rune_timeout(),
+            browse_rune::run(d.host.session(), &req.code, browse_rune::DEFAULT_CAPS, opts),
+        ) => match r {
+            Ok(v) => Outcome::Done(v),
+            Err(_) => Outcome::Timeout,
+        },
+        _ = cancel_rx.changed() => Outcome::Stopped,
+        _ = engine_lost_watch(&watch_session) => Outcome::EngineLost,
+    };
+    d.rune_running.store(false, Ordering::Relaxed);
+    *d.rune_cancel.lock().unwrap_or_else(|e| e.into_inner()) = None;
     let value = match outcome {
-        Ok(Ok(v)) => v,
-        Ok(Err(e)) => return err_response(e),
-        Err(_) => {
-            // 整体超时（v0.26.1 最小 CTA）：结构化 timeout 面（op 在飞调用
-            // 面、elapsed_ms 已等待毫秒、bound_s 上界秒）加 daemon 日志行；
-            // 错误文案保持 CTA 形
-            let bound = eval_timeout();
+        Outcome::Done(Ok(v)) => v,
+        Outcome::Done(Err(e)) => return err_response(e),
+        Outcome::Timeout => {
+            // 整体超时（v0.26.1 最小 CTA，批次二换 rune 专属旋钮）：结构化
+            // timeout 面（op 在飞调用面、elapsed_ms 已等待毫秒、bound_s 上
+            // 界秒）加 daemon 日志行；错误文案保持 CTA 形
+            let bound = rune_timeout();
             let op = op_probe.lock().ok().and_then(|g| *g);
             eprintln!(
                 "{}",
@@ -403,6 +445,28 @@ async fn rune_handler(
                 }})
             );
             return rune_timeout_response(op, bound);
+        }
+        Outcome::Stopped | Outcome::EngineLost => {
+            // 主动停止（批次二）：结构化 stopped 面与超时同构（op 在飞调用
+            // 面、elapsed_ms 实测毫秒、cause 二分流：stop_request 请求停 /
+            // engine_lost 失联联动停）加日志行；脚本侧自停走原生控制流
+            //（select/分支加 Err 返回，error 面自带 CTA，不自封装原语）
+            let cause = if matches!(outcome, Outcome::EngineLost) {
+                "engine_lost"
+            } else {
+                "stop_request"
+            };
+            let elapsed = started.elapsed().as_millis() as u64;
+            let op = op_probe.lock().ok().and_then(|g| *g);
+            eprintln!(
+                "{}",
+                json!({ "runeStopped": {
+                    "op": op,
+                    "elapsedMs": elapsed,
+                    "cause": cause,
+                }})
+            );
+            return rune_stopped_response(op, elapsed, cause);
         }
     };
     let ctx = d.engine.context_snapshot(&d.desc).await;
@@ -528,7 +592,7 @@ fn rune_timeout_response(
         Json(json!({
             "ok": false,
             "error": format!(
-                "browse: rune 执行超时（{} 秒；BROWSE_EVAL_TIMEOUT 可调）；下一步：看 timeout.op 定位在飞调用面，核对长等待段（goto 等加载、js awaitPromise、wait_sel 轮询）或调大 BROWSE_EVAL_TIMEOUT 重试",
+                "browse: rune 执行超时（{} 秒；BROWSE_RUNE_TIMEOUT 可调，daemon 级上界实例内全部 rune 执行同界）；下一步：看 timeout.op 定位在飞调用面，核对长等待段（goto 等加载、js awaitPromise、wait_sel 轮询）或调大 BROWSE_RUNE_TIMEOUT 重试（长爬拆专用命名实例）",
                 bound.as_secs()
             ),
             "timeout": {
@@ -538,6 +602,72 @@ fn rune_timeout_response(
             }
         })),
     )
+}
+
+/// rune 主动停止的结构化回执（批次二）：形状与超时回执同构——`stopped`
+/// 面给 `op`（在飞调用面）、`elapsed_ms`（实测毫秒）、`cause`
+/// （`stop_request` 主动停 / `engine_lost` 引擎失联联动停）；CTA 按
+/// cause 分流，对停止方是预期回执，对被停方指中断定位法。
+fn rune_stopped_response(
+    op: Option<&str>,
+    elapsed_ms: u64,
+    cause: &str,
+) -> (axum::http::StatusCode, Json<Value>) {
+    let cta = match cause {
+        "engine_lost" => format!(
+            "browse: rune 执行因引擎失联被主动停止（已跑 {elapsed_ms} 毫秒；两次连通性探测失败）；下一步：browse status 看引擎态（崩溃/被关/网络），重试即自动重拉引擎"
+        ),
+        _ => format!(
+            "browse: rune 执行被主动停止（已跑 {elapsed_ms} 毫秒；POST /rune/stop 或 browse rune stop）；下一步：停止方属预期回执；被停方看 stopped.op 定位中断调用面，长等待段可拆批或改事件等待后重跑"
+        ),
+    };
+    (
+        axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+        Json(json!({
+            "ok": false,
+            "error": cta,
+            "stopped": {
+                "op": op,
+                "elapsed_ms": elapsed_ms,
+                "cause": cause,
+            }
+        })),
+    )
+}
+
+/// 引擎失联监视（批次二联动，总台指令）：执行期两次连续断连探测（各
+/// 隔 300 毫秒）判失联即触发主动停止分支；容忍瞬时重连窗与导航期瞬断。
+async fn engine_lost_watch(session: &Arc<cdp::Session>) {
+    loop {
+        tokio::time::sleep(Duration::from_millis(300)).await;
+        if !session.is_connected() {
+            tokio::time::sleep(Duration::from_millis(300)).await;
+            if !session.is_connected() {
+                return;
+            }
+        }
+    }
+}
+
+/// 主动停止在跑的 rune 执行（批次二）：取当前执行的取消发送端置真；无
+/// 在跑执行时空放（幂等，回 running=false）。
+async fn rune_stop_handler(State(st): State<AppState>) -> impl IntoResponse {
+    let d = &st.daemon;
+    let running = d.rune_running.load(Ordering::Relaxed);
+    let tx = d
+        .rune_cancel
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .take();
+    let requested = tx.is_some_and(|t| t.send(true).is_ok());
+    let note = if !running {
+        "无在跑 rune 执行（停止请求空放，幂等）"
+    } else if !requested {
+        "执行刚收尾，停止未达（如需再停请重试）"
+    } else {
+        "停止信号已投递，在跑执行将以内嵌 stopped 面回执退出"
+    };
+    Json(json!({ "ok": true, "running": running, "requested": requested, "note": note }))
 }
 
 fn err_response(e: anyhow::Error) -> (axum::http::StatusCode, Json<Value>) {
@@ -762,6 +892,10 @@ mod tests {
         assert_eq!(v["ok"], json!(false));
         let msg = v["error"].as_str().unwrap_or_default();
         assert!(msg.starts_with("browse: rune 执行超时（45 秒"), "{msg}");
+        assert!(
+            msg.contains("BROWSE_RUNE_TIMEOUT"),
+            "CTA 点名专属旋钮：{msg}"
+        );
         assert!(msg.contains("下一步"), "{msg}");
         assert_eq!(v["timeout"]["op"], json!("js"));
         assert_eq!(v["timeout"]["elapsed_ms"], json!(45000));
@@ -770,6 +904,39 @@ mod tests {
         let (_, Json(v)) = rune_timeout_response(None, Duration::from_secs(300));
         assert_eq!(v["timeout"]["op"], json!(null));
         assert_eq!(v["timeout"]["bound_s"], json!(300));
+    }
+
+    /// 主动停止回执的结构化面（批次二）：stopped 三字段（op/elapsed_ms/
+    /// cause）与 CTA 文案（stop_request 与 engine_lost 双形）。
+    #[test]
+    fn rune_stopped_envelope_has_structured_face() {
+        let (code, Json(v)) = rune_stopped_response(Some("goto"), 1234, "stop_request");
+        assert_eq!(code, axum::http::StatusCode::INTERNAL_SERVER_ERROR);
+        assert_eq!(v["ok"], json!(false));
+        let msg = v["error"].as_str().unwrap_or_default();
+        assert!(
+            msg.starts_with("browse: rune 执行被主动停止（已跑 1234 毫秒"),
+            "{msg}"
+        );
+        assert!(msg.contains("stopped.op"), "{msg}");
+        assert_eq!(v["stopped"]["op"], json!("goto"));
+        assert_eq!(v["stopped"]["elapsed_ms"], json!(1234));
+        assert_eq!(v["stopped"]["cause"], json!("stop_request"));
+        // 引擎失联联动形：cause 与 CTA 分流
+        let (_, Json(v)) = rune_stopped_response(Some("wait_event"), 5678, "engine_lost");
+        let msg = v["error"].as_str().unwrap_or_default();
+        assert!(msg.contains("引擎失联"), "{msg}");
+        assert!(msg.contains("browse status"), "{msg}");
+        assert_eq!(v["stopped"]["cause"], json!("engine_lost"));
+    }
+
+    /// 引擎失联监视：未连接会话（Session::new）两次探测即返回——联动
+    /// 分支可达；已连接会话不触发（用真引擎的 e2e 面覆盖）。
+    #[tokio::test]
+    async fn engine_lost_watch_fires_on_dead_session() {
+        let session = std::sync::Arc::new(cdp::Session::new());
+        let fired = tokio::time::timeout(Duration::from_secs(2), engine_lost_watch(&session)).await;
+        assert!(fired.is_ok(), "未连接会话应在两次探测后触发失联分支");
     }
 
     /// 错误链脱敏调用点锁（#25.4 评审 G4 二轮）：err_response 必须过

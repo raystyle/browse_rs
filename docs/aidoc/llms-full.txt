@@ -1,5 +1,5 @@
 <!-- browse_cli/index.md -->
-# browse-cli 0.26.1
+# browse-cli 0.27.0
 
 browse CLI 的可测半边：daemon 客户端（HTTP 调用 + 自动拉起）。
 
@@ -37,8 +37,10 @@ daemon 客户端：本地 HTTP 调用 + 首次使用自动拉起 detached daemon
 - `load_template_ext` — [`load_template`] 的扩展名与语境标签变体（#67：Rune 脚本用 `.rn` 与
 - `parse_vars_arg` — 解析 `--vars` 单值（`键=值`）：键是标识符（字母或下划线开头，字母
 - `quit` — POST /quit 退 daemon，daemon 侧顺带只终结自起引擎（附着来源不动）。
+- `render_rune_template` — rune 面模板渲染（批次二 r# 裸串）：先抽出 r# 区换占位（区内容对
 - `render_template` — `--vars` 模板渲染（#66 命令小程序）：Jinja 语法渲染模板源，`{{ 键 }}`
 - `rune` — 把 Rune 编排脚本 POST 到 daemon 的 /rune 执行（账本 #67）。
+- `rune_stop` — 主动停止在跑的 rune 执行（批次二总台指令）：POST /rune/stop，回
 - `skills_passthrough_env` — 技能层透传环境（#50/#51）：拉起新 daemon 时把 CLI 进程里的 workspace
 - `state_dir` — 返回 daemon 日志与运行面目录（`%USERPROFILE%\.browse-rs[\<name>]`，多实例各一份）。
 
@@ -124,7 +126,7 @@ ledger.ohmygh.com（替代 issues.ohmygh.com 客户端面；旧服务只读保�
 
 
 <!-- browse_core/index.md -->
-# browse-core 0.26.1
+# browse-core 0.27.0
 
 browse CLI 的核心库：方言宿主、引擎策略、daemon HTTP API。
 
@@ -608,7 +610,7 @@ list/site/page）。git 维护走 shell-out `git`（不引 git crate）：instal
 
 
 <!-- browse_rune/index.md -->
-# browse-rune 0.26.1
+# browse-rune 0.27.0
 
 Rune 编排面（账本 #67，ADR-0010）：`browse rune` 的 VM 构建、自注册
 `cdp` 模块与执行器。
@@ -633,6 +635,7 @@ Rune 编排面（账本 #67，ADR-0010）：`browse rune` 的 VM 构建、自注
 
 - [`exec`](exec.md): Rune 执行器（账本 #67）：一套 `Context` 编译一次，VM 经
 - [`module`](module.md): 自注册 `cdp` 模块（账本 #67）：八个效果函数全走自有 [`cdp::Session`]
+- [`rawstr`](rawstr.md): r# 裸串预处理（战役台裸串研究单定谳 2026-10-02，批次二落地）：Rune
 
 
 <!-- browse_rune/exec.md -->
@@ -694,8 +697,40 @@ object`、数组对数组），DOM 节点只留 [`ObjHandle`] 不透明句柄；
 - `OpProbe` — 在飞调用面探针（v0.26.1 超时 CTA）：cdp 函数入口置名、正常退出清空、
 
 
+<!-- browse_rune/rawstr.md -->
+# browse-rune::rawstr
+
+r# 裸串预处理（战役台裸串研究单定谳 2026-10-02，批次二落地）：Rune
+上游无 r#"…"# 形（rune-rs #537 自 2023-05 在册零动作，#802 重复件已
+关），browse 侧在编译前把 r# 裸串重写为转义普通串：任意引号与反
+斜杠原样直达 `cdp::js`/`cdp::eval`，多行保真（换行原样入串，编译诊
+断行号不漂移）。
+
+管道序（ADR-0010 增补）：CLI 模板道先 [`extract_raw_strings`] 把 r#
+区换占位标识符，Jinja 只渲染余下源（r# 区天然免渲染，`{{`/`{%` 原
+样），渲染毕 [`subst_raw_strings`] 回填；免渲染道（无 --vars、管道源
+码、实参）由 [`rewrite_raw_strings`] 在 `run()` 入口兜底。两道单实现
+在本 crate，CLI 直接依赖防双轨。
+
+词法器是单遍状态机（近似面）：跳过 `//` 与 `/* */` 注释、普通串、
+模板串（`${}` 插值内递归按表达式扫）、char 字面量，只重写表达式位
+的 r# 记号；非 ASCII 标识符紧贴 r# 的罕见形可能误判，报错即回退普
+通串写法。形与 Rust 全同：`r` + N 个 `#` + `"` 开、`"` + N 个 `#`
+闭（N 大于等于 1），内容含 `"#` 时升 N。
+
+## Functions
+
+- `extract_raw_strings` — 抽出源内全部 r# 裸串区：每处 `r#+"…"+#` 记号替换为占位标识符
+- `rewrite_raw_strings` — 全量重写（免渲染道兜底）：源内全部 r# 裸串直接换转义普通串。
+- `subst_raw_strings` — 渲染后回填：占位源里第 n 个占位换 literals 第 n 项的转义普通串字面量。
+
+## Types
+
+- `RawStrError` — r# 词法错：一行 CTA 形（带行号与下一步）。
+
+
 <!-- cdp/index.md -->
-# cdp 0.26.1
+# cdp 0.27.0
 
 Chrome DevTools Protocol（CDP）连接层：一条常驻 browser-level WebSocket 会话。
 

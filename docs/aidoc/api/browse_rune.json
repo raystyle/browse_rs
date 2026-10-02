@@ -1,6 +1,6 @@
 {
   "crate": "browse-rune",
-  "version": "0.26.1",
+  "version": "0.27.0",
   "items": [
     {
       "path": "browse_rune::exec",
@@ -71,6 +71,31 @@
       "path": "browse_rune::module::cdp_module",
       "kind": "function",
       "docs": "注册 `cdp` 模块（方案八函数面 + 三形态批四函数）：`goto`/`eval`/\n`eval_handle`/`call`/`release`/`click`/`type_text`/`wait_sel` 加\n`js`/`js_lib`/`render`/`stdin`，全部返回 `Result`（`render`/`stdin`\n不可失败面直接返值）。\n\n# Errors\n\n模块注册失败（函数签名或类型登记冲突）。"
+    },
+    {
+      "path": "browse_rune::rawstr",
+      "kind": "module",
+      "docs": "r# 裸串预处理（战役台裸串研究单定谳 2026-10-02，批次二落地）：Rune\n上游无 r#\"…\"# 形（rune-rs #537 自 2023-05 在册零动作，#802 重复件已\n关），browse 侧在编译前把 r# 裸串重写为转义普通串：任意引号与反\n斜杠原样直达 `cdp::js`/`cdp::eval`，多行保真（换行原样入串，编译诊\n断行号不漂移）。\n\n管道序（ADR-0010 增补）：CLI 模板道先 [`extract_raw_strings`] 把 r#\n区换占位标识符，Jinja 只渲染余下源（r# 区天然免渲染，`{{`/`{%` 原\n样），渲染毕 [`subst_raw_strings`] 回填；免渲染道（无 --vars、管道源\n码、实参）由 [`rewrite_raw_strings`] 在 `run()` 入口兜底。两道单实现\n在本 crate，CLI 直接依赖防双轨。\n\n词法器是单遍状态机（近似面）：跳过 `//` 与 `/* */` 注释、普通串、\n模板串（`${}` 插值内递归按表达式扫）、char 字面量，只重写表达式位\n的 r# 记号；非 ASCII 标识符紧贴 r# 的罕见形可能误判，报错即回退普\n通串写法。形与 Rust 全同：`r` + N 个 `#` + `\"` 开、`\"` + N 个 `#`\n闭（N 大于等于 1），内容含 `\"#` 时升 N。"
+    },
+    {
+      "path": "browse_rune::rawstr::RawStrError",
+      "kind": "struct",
+      "docs": "r# 词法错：一行 CTA 形（带行号与下一步）。"
+    },
+    {
+      "path": "browse_rune::rawstr::extract_raw_strings",
+      "kind": "function",
+      "docs": "抽出源内全部 r# 裸串区：每处 `r#+\"…\"+#` 记号替换为占位标识符\n`__BROWSE_RN_RAW_n__`（n 是区序号），返回（占位后的源，各区转义普\n通串字面量列表，含首尾引号）。模板道用：占位源交 Jinja 渲染，渲染\n毕按序回填 [`subst_raw_strings`]。\n\n# Errors\n\nr# 裸串未闭合、或源已含占位前缀（标识符冲撞）时报带行号 CTA。"
+    },
+    {
+      "path": "browse_rune::rawstr::rewrite_raw_strings",
+      "kind": "function",
+      "docs": "全量重写（免渲染道兜底）：源内全部 r# 裸串直接换转义普通串。\n\n# Errors\n\n同 [`extract_raw_strings`]。"
+    },
+    {
+      "path": "browse_rune::rawstr::subst_raw_strings",
+      "kind": "function",
+      "docs": "渲染后回填：占位源里第 n 个占位换 literals 第 n 项的转义普通串字面量。\n\n# Errors\n\n占位缺失（渲染方吃掉了占位文本）时报 CTA。"
     }
   ]
 }
