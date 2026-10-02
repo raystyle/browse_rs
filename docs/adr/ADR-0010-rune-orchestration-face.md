@@ -30,6 +30,10 @@ superseded_by: null
 
 战役台 agent 壳退役外部 timeout 兜底后引擎内 CTA 成唯一安全网，v0.26.1 先行结构化超时回执（`timeout` 对象：op 在飞调用面/elapsed_ms/bound_s，daemon 日志行，CLI stderr 一行 JSON；探针函数级置名清空律见 REQ-016）。**旋钮终裁**：`BROWSE_RUNE_TIMEOUT` 独立旋钮，rune 面整体上界默认 45 秒（战役台诉求口径）；`/eval` 的 `BROWSE_EVAL_TIMEOUT` 300 秒契约零动（长跑方言片段正当面）。上界是 daemon 级（实例内全部 rune 执行同界，env 在 daemon 进程定格）：长爬编排（逐页 goto 累计分钟级）在 45 秒界触顶，按需调大或拆专用命名实例；超时报错 CTA 点名旋钮。实现随批次二（v0.27.0）。
 
+## 增补（2026-10-02，批次二：停止三道、事件等待直出、r# 裸串语言扩展）
+
+总台指令链定谳（同日）：「结合事件驱动、主动条件停止和超时机制集成 CTA」＋「不自封装，原生 CDP 能实现就行」。**停止三道**：`POST /rune/stop`/`browse rune stop`（请求停）、引擎失联联动（两次连续探测断连即停，检测驱动主动停止的 daemon 侧实例）、脚本侧原生自停（select/分支加 Err 返回；曾按「现成 rn 原语」实现 `cdp::stop_self` 后依「不自封装」令回撤）；三道与超时同构丢弃执行 future，stopped 面带 op/elapsed_ms/cause。**事件等待**：`cdp::wait_event(method, ms)` 是自有 cdp crate `Session::wait_for` 的直出面（方言 session.waitFor 同源，零新语义），脚本 match 即条件分支。**r# 裸串（browse 侧语言扩展）**：Rune 上游无 r#"…"# 形（rune-rs #537 自 2023-05 在册零动作），browse 在编译前把 r# 裸串重写为转义普通串（词法边界五点案见战役台回执；模板道先抽后渲再回填，r# 区免渲染与 {% raw %} 各管一层）；**上游对齐条款**：上游将来采纳同形语法（# + N×# + " 对）则预处理幂等空转、无缝退役；browse-rs 单实现（CLI 渲染道与 daemon 入口共用），发版后去 #537 贴实战需求与薄词法重写参考。#69 stdin 读上界与 #70 披露口径随批（REQ-017）。
+
 ## Alternatives
 
 - chromiumoxide（方案原文）：被否。自有 cdp crate 协议完整（652 方法）、生产验证、域策略守卫在 `Session::call` 层；引第二套 CDP 栈重复且守卫面要重建

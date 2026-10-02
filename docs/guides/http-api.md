@@ -8,6 +8,7 @@
 |---|---|---|
 | POST | `/eval` | 求值一段方言片段（或 `js: true` 时全量 JS） |
 | POST | `/rune` | 执行一段 Rune 编排脚本（宿主侧全控制流，隔离世界碰页面） |
+| POST | `/rune/stop` | 主动停止在跑的 rune 执行（幂等；stopped 面回执见下） |
 | GET | `/health` | 探活与状态（就绪即 200，响应形见下） |
 | POST | `/engine/up` | 显式起引擎 |
 | POST | `/quit` | 退 daemon（只杀自起引擎） |
@@ -57,12 +58,34 @@
 | `request_detail(sel, opts)` | `-> Result<Value>` | 单请求详情（index 或 requestId；响应头含 Set-Cookie 可取） |
 | `cookies()` | `-> Result<Value>` | `Network.getCookies`（当前会话 cookie 全量） |
 | `set_cookie(name, value, domain)` | `-> Result<()>` | `Network.setCookie`（path 恒 /；拒设报错） |
+| `wait_event(method, ms)` | `-> Result<Value>` | 事件驱动等待（原生 `Session::wait_for` 直出：活动 tab 与 browser 级事件，取出即移除，含缓冲内历史；超时 `Err(CdpError)`，脚本 `match` 即条件分支） |
 
 边界：函数都在主 frame（iframe 内不可编排，frame 形后续批）；执行器会自动追加 `__browse_rune_wrap__` 包装函数（用户脚本请勿用同名）。输入三通道：`browse rune <script|@名>`（文件/实参道）、`cat plan.rn | browse rune`（管道即源码）、`browse rune @名 < data`（管道即参数，脚本内 `cdp::stdin()` 读）。请求体可选字段 `root`（js_lib 的片段库根，旗标 > env > 内置）与 `stdin`。快错面（修复批）：全部 CDP 调用 30 秒上界、同源宿主腿 60 秒上界、WS 握手 15 秒上界；引擎忙（另一请求持执行槽）排队 10 秒过界即报错不无界等。单请求理论最坏 ≈ 引擎就绪 + 10 秒队列 + min(300 秒总超时, N×30 秒调用)；外部判挂建议 ≥60 秒，长编排调 `BROWSE_EVAL_TIMEOUT`。
 
 响应 envelope 与 `/eval` 同形（`ok`/`value`/`engineContext` 或 `ok:false`/`error`）；`value` 是 rune 回执：`{"ok": <main 成功载荷>}` 或 `{"error": <脚本可见失败载荷>}`（脚本自造 `Timeout` 型、`cdp::CdpError{op,message}` 都属后者）。编译错、VM 终态（含限额击穿）、超时走 `error` 面。细节与脚本写法见 `browse --llms` 的 rune 条目与 crates/browse-rune 文档。
 
-超时回执（v0.26.1 起）：整体超时的 `ok:false` 帧除 `error` 文案（带下一步 CTA）外，附机器可读 `timeout` 对象：`op`（在飞调用面，如 `"js"`/`"goto"`；执行间隙为 null）、`elapsed_ms`（界值回显毫秒，恒等于 bound_s×1000，非独立秒表）、`bound_s`（上界秒，即 `BROWSE_EVAL_TIMEOUT`）；daemon 同字段写一行 JSON 进日志。CLI 侧 `browse rune` 把该对象以一行 JSON 打到 stderr 后非零退出，上层 agent 可直接解析换通道重试，无需外部 timeout 兜底。探针是单槽：脚本经 `future::join` 并发在飞多个 cdp 调用时 `op` 可能为 null 或非卡点面（默认串行 await 面不受影响）。
+超时回执（v0.26.1 起，批次二换 rune 专属旋钮）：整体超时的 `ok:false` 帧除 `error` 文案（带下一步 CTA）外，附机器可读 `timeout` 对象：`op`（在飞调用面，如 `"js"`/`"goto"`；执行间隙为 null）、`elapsed_ms`（界值回显毫秒，恒等于 bound_s×1000，非独立秒表）、`bound_s`（上界秒，即 `BROWSE_RUNE_TIMEOUT`，默认 45，`/eval` 的 `BROWSE_EVAL_TIMEOUT` 300 秒契约零动）；daemon 同字段写一行 JSON 进日志。CLI 侧 `browse rune` 把该对象以一行 JSON 打到 stderr 后非零退出，上层 agent 可直接解析换通道重试，无需外部 timeout 兜底。探针是单槽：脚本经 `future::join` 并发在飞多个 cdp 调用时 `op` 可能为 null 或非卡点面（默认串行 await 面不受影响）。
+
+### 停止与检测联动（批次二：事件等待、主动停止、超时同一 CTA 面）
+
+主动停止三道，回执同构（`stopped` 对象：`op` 在飞调用面、`elapsed_ms` 实测毫秒、`cause` 二分流）：
+
+- **请求停**：`POST /rune/stop` 或 CLI 动词位 `browse rune stop`（回 `{ok, running, requested, note}`，幂等：无在跑执行空放）；被停执行回 `ok:false` + `stopped{cause:"stop_request"}`，CLI stderr 一行 JSON 后非零退出
+- **引擎失联联动停**：执行期两次连续连通性探测失败（各隔 300 毫秒，容忍瞬时重连窗）即停，`stopped{cause:"engine_lost"}`，CTA 指 `browse status` 看引擎态重试
+- **脚本侧原生自停**：不自封装原语，脚本用语言原生控制流（`select`/分支 + `Err` 返回或早退），error 面自带 CTA；自定义检测代码的典型形：`match cdp::wait_event(m, ms).await { Ok(ev) => …, Err(_e) => 停止分支 }`
+
+事件驱动等待：`cdp::wait_event(method, ms)`（上表）直出原生事件面；方言的 `session.waitFor`/`waitForResponse`/`waitLoad` 家族同源。超时机制：整体 `BROWSE_RUNE_TIMEOUT`（45 秒）＋单 CDP 调用 30 秒＋同源腿 60 秒＋引擎忙 10 秒快错，全部结构化回执。
+
+```bash
+# 主动停在跑执行
+curl -s localhost:9880/rune/stop -X POST
+# -> {"ok":true,"running":true,"requested":true,"note":"停止信号已投递…"}
+```
+
+### r# 裸串与 Rune std 差异（批次二）
+
+- **r# 裸串**：`r#"…"#`（Rust 同形；内容含 `"#` 时升 `r##"…"##`，逐级类推）编译前重写为转义普通串：任意引号、反斜杠、多行 JS 原样直达 `cdp::js`/`cdp::eval`；模板道（`--vars`）下 r# 区**免渲染**（`{{`/`{%` 原样，与 `{% raw %}` 各管一层：raw 管 Jinja 面任意区，r# 管 Rune 串字面量面）；换行原样保真（编译诊断行号不漂）
+- **Rune 与 Rust std 差异（#70 披露口径）**：String 无 `to_string`（字面量已是 String：直返或 `String::from`）；无 `splitn`（`"a=b".split_once("=")` 回 `Option<(String,String)>` 是 kv 形正形；`split` 全拆可用）；值被移交后再读报 `Cannot read/take, value is M-…`（哈希址无变量名，上游诊断限制；正形是 `clone(h)` 复用句柄）；实例函数缺失报哈希无名（常见名查表翻译留后续批）；直桥返回的原生类型（i64/String/bool）不带 Value 实例方法面（`as_i64`/`as_str` 只在 Value 上），要方法面在脚本内保持对象形
 
 ```bash
 curl -s localhost:9880/rune -H 'Content-Type: application/json' \
