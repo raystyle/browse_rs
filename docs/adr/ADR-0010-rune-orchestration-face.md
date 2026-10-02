@@ -26,6 +26,10 @@ superseded_by: null
 
 小程序三形态定位（用户定谳）：rn 脚本小程序（js+cdp 双能力）、方言命令（cdp）、js 小程序（js）。rn 形态增 `cdp::js`/`cdp::js_lib`/`cdp::render`/`cdp::stdin` 四函数与输入三通道（文件、管道源码、管道参数）。**两世界分工修订**：原文「Chrome 只经隔离世界碰页面」修订为 eval 族（eval/eval_handle/click 等）走隔离世界轻探针，js 族（js/js_lib）走主世界全量页面逻辑（`--js` 同语义，页面函数可调），rn 形态按需双世界选用。minijinja 引擎配置（Strict 加零 autoescape）在 browse-cli 与 browse-rune 各持一份，由 ADR-0009 钉住同构；js_lib 的库解析与 CLI 侧 load_template_ext 属库内双轨（同一语义两处实现，漂移由各自测试锁）。
 
+## 增补（2026-10-02，超时回执与专属旋钮终裁）
+
+战役台 agent 壳退役外部 timeout 兜底后引擎内 CTA 成唯一安全网，v0.26.1 先行结构化超时回执（`timeout` 对象：op 在飞调用面/elapsed_ms/bound_s，daemon 日志行，CLI stderr 一行 JSON；探针函数级置名清空律见 REQ-016）。**旋钮终裁**：`BROWSE_RUNE_TIMEOUT` 独立旋钮，rune 面整体上界默认 45 秒（战役台诉求口径）；`/eval` 的 `BROWSE_EVAL_TIMEOUT` 300 秒契约零动（长跑方言片段正当面）。上界是 daemon 级（实例内全部 rune 执行同界，env 在 daemon 进程定格）：长爬编排（逐页 goto 累计分钟级）在 45 秒界触顶，按需调大或拆专用命名实例；超时报错 CTA 点名旋钮。实现随批次二（v0.27.0）。
+
 ## Alternatives
 
 - chromiumoxide（方案原文）：被否。自有 cdp crate 协议完整（652 方法）、生产验证、域策略守卫在 `Session::call` 层；引第二套 CDP 栈重复且守卫面要重建

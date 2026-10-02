@@ -2,6 +2,11 @@
 
 版本级里程碑；逐批过程见 docs/diary。semver 判据在册 docs/requirements/REQ-004。
 
+## 0.26.1 - 2026-10-02
+
+- **rune 整体超时回执结构化（最小 CTA，战役台需求）**：`/rune` 整体超时（`BROWSE_EVAL_TIMEOUT`）的 `ok:false` 帧附机器可读 `timeout` 对象：`op`（在飞调用面，browse-rune cdp 函数入口置名/正常退出清空/future 被丢弃即保留）、`elapsed_ms`、`bound_s`；daemon 同字段写一行 JSON 日志；CLI `browse rune` 把 `timeout` 对象一行 JSON 打到 stderr 后非零退出（上层 agent 直接解析换通道重试，不依赖外部 timeout 兜底）。browse-rune 增 `OpProbe`（RunOpts/ModuleCtx 装配，daemon 持克隆）。默认值与既有契约零动（45 秒专属旋钮 `BROWSE_RUNE_TIMEOUT` 已终裁进 ADR-0010 增补，实现随批次二）；配套裁决：reqs #69 stdin 无界读（战役台实锤「双 eval 必挂」的真凶）与 #70 报错可读性同批在排
+- semver 判据结论（0.26.1 裁定）：错误信息增强零契约变更取 patch（REQ-004 判据行；REQ-016 在册）
+
 ## 0.26.0 - 2026-10-01
 
 - **#68 修复批：rune 面挂死根修（三段有界）与三支柱薄封装**：根因三段闭合：①cdp `Session` 的 `open_ws` 裸 `connect_async` 无超时（冷引擎半开口上 WS 握手可挂到 OS TCP 时限，冷挂暖过竞态的真根因），包 15 秒上界快错带 CTA；②cdp 模块全部 CDP 调用（八函数加 js/js_lib 主世界腿加 Cleanup 清账）换 `call_with_deadline`（30 秒上界，丢响应快错 `CdpError{op,message}` 不永挂）；③同源宿主腿（js_host `global_json` 闭包）整体 60 秒上界。连坐修复：`/rune` 与 `/eval` 的 `eval_lock` 获取排队 10 秒过界快错「引擎忙」（执行串行不变，不无界排队）。验收：规范四形（canon 三连冷跑、json::from_string、递归 async 携 cdp::eval）60 秒内回执 ok，真 chrome e2e 锁定；三冷循环 pillars 全过

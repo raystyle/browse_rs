@@ -19,6 +19,7 @@
 | REQ-013 | implemented | must | 账本面（ohmycloud REQ-063 客户端集成与总台修正令收口） | v0.8.0 实弹三绿（6b055cd）加收口批 v0.1.1 GET 实弹与移除面三拒（104f37d） |
 | REQ-014 | implemented | should | 引擎附加旗标直通道（issue #48，clean-chrome 扩展域启用面） | 实弹四绿加 spawn_extra_args_shape 锁形；评审两轮 CONFIRM（61d0297） |
 | REQ-015 | implemented | should | 技能触发层与 workspace 单仓（issue #50/#51） | e2e 三块断言（双通道实弹）加单测 12 件加实弹 install/goto 命中；ADR-0008 立册 |
+| REQ-016 | implemented | should | rune 整体超时回执结构化（最小 CTA，v0.26.1） | 单测三件加 e2e rune_timeout_probe 真引擎锁（悬挂 js 保留 op）；旋钮终裁进 ADR-0010 增补（实现批次二） |
 
 ## Roadmap（issue 台账批次规划）
 

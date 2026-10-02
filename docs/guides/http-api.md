@@ -62,6 +62,8 @@
 
 响应 envelope 与 `/eval` 同形（`ok`/`value`/`engineContext` 或 `ok:false`/`error`）；`value` 是 rune 回执：`{"ok": <main 成功载荷>}` 或 `{"error": <脚本可见失败载荷>}`（脚本自造 `Timeout` 型、`cdp::CdpError{op,message}` 都属后者）。编译错、VM 终态（含限额击穿）、超时走 `error` 面。细节与脚本写法见 `browse --llms` 的 rune 条目与 crates/browse-rune 文档。
 
+超时回执（v0.26.1 起）：整体超时的 `ok:false` 帧除 `error` 文案（带下一步 CTA）外，附机器可读 `timeout` 对象：`op`（在飞调用面，如 `"js"`/`"goto"`；执行间隙为 null）、`elapsed_ms`（已等待毫秒）、`bound_s`（上界秒，即 `BROWSE_EVAL_TIMEOUT`）；daemon 同字段写一行 JSON 进日志。CLI 侧 `browse rune` 把该对象以一行 JSON 打到 stderr 后非零退出，上层 agent 可直接解析换通道重试，无需外部 timeout 兜底。
+
 ```bash
 curl -s localhost:9880/rune -H 'Content-Type: application/json' \
   -d '{"code":"pub async fn main() { Ok(42) }"}'   # -> {"ok":true,"value":{"ok":42},…}
