@@ -752,6 +752,21 @@ pub async fn quit() -> Result<()> {
 mod tests {
     use super::*;
 
+    /// 批次三①：rune 模板道里注释区 Jinja 惰性化（含槽占位渲染、注释
+    /// 字面 `{{ }}` 与 raw 标签逐字回填）。
+    #[test]
+    fn rune_template_comments_are_inert() {
+        let body =
+            "// 用法：{{ q }} 会填，注释里 {{ not_given }} 与 {% raw %} 字面\nlet s = \"{{ q }}\";";
+        let vars = vec![("q".to_string(), "填了".to_string())];
+        let out = render_rune_template(body, &vars).unwrap();
+        assert!(
+            out.contains("// 用法：{{ q }} 会填，注释里 {{ not_given }} 与 {% raw %} 字面\n"),
+            "{out}"
+        );
+        assert!(out.contains("\"填了\""), "{out}");
+    }
+
     /// #64 文件实参形态：@ 前缀实参换成文件内容，其余实参不动；读失败
     /// 报错带 CTA。纯文件系统，零网络。
     #[test]

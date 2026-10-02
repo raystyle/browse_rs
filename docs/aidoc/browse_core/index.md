@@ -1,4 +1,4 @@
-# browse-core 0.28.0
+# browse-core 0.29.0
 
 browse CLI 的核心库：方言宿主、引擎策略、daemon HTTP API。
 

@@ -5,10 +5,11 @@
 //! 断行号不漂移）。
 //!
 //! 管道序（ADR-0010 增补）：CLI 模板道先 [`extract_raw_strings`] 把 r#
-//! 区换占位标识符，Jinja 只渲染余下源（r# 区天然免渲染，`{{`/`{%` 原
-//! 样），渲染毕 [`subst_raw_strings`] 回填；免渲染道（无 --vars、管道源
-//! 码、实参）由 [`rewrite_raw_strings`] 在 `run()` 入口兜底。两道单实现
-//! 在本 crate，CLI 直接依赖防双轨。
+//! 区与**注释区**换占位标识符，Jinja 只渲染余下源（r# 区与注释区天然免
+//! 渲染，`{{`/`{%`/字面 raw 标签原样——批次三①注释惰性化），渲染毕
+//! [`subst_raw_strings`] 回填；免渲染道（无 --vars、管道源码、实参）由
+//! [`rewrite_raw_strings`] 在 `run()` 入口兜底（注释占位逐字回填，幂等
+//! 空转）。两道单实现在本 crate，CLI 直接依赖防双轨。
 //!
 //! 词法器是单遍状态机（近似面）：跳过 `//` 与 `/* */` 注释、普通串、
 //! 模板串（`${}` 插值内递归按表达式扫）、char 字面量，只重写表达式位
@@ -53,10 +54,11 @@ fn escape_body(content: &str) -> String {
     out
 }
 
-/// 抽出源内全部 r# 裸串区：每处 `r#+"…"+#` 记号替换为占位标识符
-/// `__BROWSE_RN_RAW_n__`（n 是区序号），返回（占位后的源，各区转义普
-/// 通串字面量列表，含首尾引号）。模板道用：占位源交 Jinja 渲染，渲染
-/// 毕按序回填 [`subst_raw_strings`]。
+/// 抽出源内全部 r# 裸串区与注释区：每处记号替换为占位标识符
+/// `__BROWSE_RN_RAW_n__`（n 是区序号），返回（占位后的源，各区文本列
+/// 表——r# 区是转义普通串字面量含首尾引号，注释区是逐字原文含定界
+/// 符）。模板道用：占位源交 Jinja 渲染（两类区都免渲染），渲染毕按序
+/// 回填 [`subst_raw_strings`]。
 ///
 /// # Errors
 ///
@@ -144,32 +146,29 @@ pub fn extract_raw_strings(src: &str) -> Result<(String, Vec<String>), RawStrErr
                 i += ch_len;
             }
             Ctx::Normal | Ctx::TplExpr => {
-                // 行注释（表达式面内到行尾；UTF-8 整段推进防 mojibake）
+                // 行注释（表达式面内到行尾）：整段占位抽取（批次三①：注释
+                // 区 Jinja 惰性化，字面回填行数不变），换行留在源内
                 if b == b'/' && i + 1 < bytes.len() && bytes[i + 1] == b'/' {
-                    while i < bytes.len() && bytes[i] != b'\n' {
-                        let ch_len = utf8_len(bytes[i]);
-                        push_bytes(&mut out, bytes, i, ch_len);
-                        i += ch_len;
-                    }
+                    let start = i;
+                    let end = src[start..]
+                        .find('\n')
+                        .map(|o| start + o)
+                        .unwrap_or(bytes.len());
+                    out.push_str(&format!("{PLACEHOLDER_PREFIX}{}__", literals.len()));
+                    literals.push(src[start..end].to_string());
+                    i = end;
                     continue;
                 }
-                // 块注释（不嵌套）
+                // 块注释（不嵌套）：整段占位抽取（含定界符逐字回填；未闭合
+                // 到 EOF 也整段，无词法错面）
                 if b == b'/' && i + 1 < bytes.len() && bytes[i + 1] == b'*' {
-                    out.push_str("/*");
-                    i += 2;
-                    while i + 1 < bytes.len() && !(bytes[i] == b'*' && bytes[i + 1] == b'/') {
-                        if bytes[i] == b'\n' {
-                            line += 1;
-                        }
-                        // 非 ASCII 多字节整段拷贝由下方通用路径处理：此处按字节推进
-                        let ch_len = utf8_len(bytes[i]);
-                        push_bytes(&mut out, bytes, i, ch_len);
-                        i += ch_len;
-                    }
-                    if i + 1 < bytes.len() {
-                        out.push_str("*/");
-                        i += 2;
-                    }
+                    let start = i;
+                    let close = src[start + 2..].find("*/").map(|o| start + 2 + o);
+                    let end = close.map(|c| c + 2).unwrap_or(bytes.len());
+                    line += src[start..end].matches('\n').count() as u32;
+                    out.push_str(&format!("{PLACEHOLDER_PREFIX}{}__", literals.len()));
+                    literals.push(src[start..end].to_string());
+                    i = end;
                     continue;
                 }
                 if b == b'"' {
@@ -449,5 +448,41 @@ let s = r#"real"#; s"##;
         let residual = placed.replace("let s =", "let extra = __BROWSE_RN_RAW_7__; let s =");
         let err = subst_raw_strings(&residual, &literals).unwrap_err();
         assert!(err.message.contains("残留"), "{}", err.message);
+    }
+
+    /// 批次三①：注释区 Jinja 惰性化——注释内的 `{{ }}`/`{% raw %}` 字面
+    /// 标签/`r#` 形文本都不进渲染，逐字回填；普通串照旧渲染。
+    #[test]
+    fn comments_are_jinja_inert() {
+        let src = "// 注释 {{ q }} 与 {% raw %} 与 r#\"x\"#\nlet s = \"{{ q }}\";";
+        let (placed, literals) = extract_raw_strings(src).unwrap();
+        // 注释整段被占位（渲染器看不到），普通串的 {{ q }} 可见
+        assert!(!placed.contains("注释"), "{placed}");
+        assert!(placed.contains("{{ q }}"), "{placed}");
+        let rendered = placed.replace("{{ q }}", "SUBST");
+        let out = subst_raw_strings(&rendered, &literals).unwrap();
+        assert!(
+            out.contains("// 注释 {{ q }} 与 {% raw %} 与 r#\"x\"#\n"),
+            "{out}"
+        );
+        assert!(out.contains("\"SUBST\""), "{out}");
+        // 行数不变（换行留在源内）
+        assert_eq!(out.lines().count(), src.lines().count());
+    }
+
+    /// 批次三① 边界：EOF 无换行的行注释与未闭合块注释整段惰性回填。
+    #[test]
+    fn comment_edges_eof_and_unterminated_block() {
+        let src = "let a = 1; // 尾注释无换行 {{ x }}";
+        let (placed, literals) = extract_raw_strings(src).unwrap();
+        assert!(!placed.contains("尾注释"), "{placed}");
+        let out = subst_raw_strings(&placed, &literals).unwrap();
+        assert_eq!(out, src, "逐字回填");
+
+        let src2 = "let a = 1; /* 未闭合到 EOF {{ y }}";
+        let (placed2, literals2) = extract_raw_strings(src2).unwrap();
+        assert!(!placed2.contains("未闭合"), "{placed2}");
+        let out2 = subst_raw_strings(&placed2, &literals2).unwrap();
+        assert_eq!(out2, src2, "未闭合块注释整段回填");
     }
 }

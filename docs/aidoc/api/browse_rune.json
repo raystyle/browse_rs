@@ -1,6 +1,6 @@
 {
   "crate": "browse-rune",
-  "version": "0.28.0",
+  "version": "0.29.0",
   "items": [
     {
       "path": "browse_rune::exec",
@@ -75,7 +75,7 @@
     {
       "path": "browse_rune::rawstr",
       "kind": "module",
-      "docs": "r# 裸串预处理（战役台裸串研究单定谳 2026-10-02，批次二落地）：Rune\n上游无 r#\"…\"# 形（rune-rs #537 自 2023-05 在册零动作，#802 重复件已\n关），browse 侧在编译前把 r# 裸串重写为转义普通串：任意引号与反\n斜杠原样直达 `cdp::js`/`cdp::eval`，多行保真（换行原样入串，编译诊\n断行号不漂移）。\n\n管道序（ADR-0010 增补）：CLI 模板道先 [`extract_raw_strings`] 把 r#\n区换占位标识符，Jinja 只渲染余下源（r# 区天然免渲染，`{{`/`{%` 原\n样），渲染毕 [`subst_raw_strings`] 回填；免渲染道（无 --vars、管道源\n码、实参）由 [`rewrite_raw_strings`] 在 `run()` 入口兜底。两道单实现\n在本 crate，CLI 直接依赖防双轨。\n\n词法器是单遍状态机（近似面）：跳过 `//` 与 `/* */` 注释、普通串、\n模板串（`${}` 插值内递归按表达式扫）、char 字面量，只重写表达式位\n的 r# 记号；非 ASCII 标识符紧贴 r# 的罕见形可能误判，报错即回退普\n通串写法。形与 Rust 全同：`r` + N 个 `#` + `\"` 开、`\"` + N 个 `#`\n闭（N 大于等于 1），内容含 `\"#` 时升 N。"
+      "docs": "r# 裸串预处理（战役台裸串研究单定谳 2026-10-02，批次二落地）：Rune\n上游无 r#\"…\"# 形（rune-rs #537 自 2023-05 在册零动作，#802 重复件已\n关），browse 侧在编译前把 r# 裸串重写为转义普通串：任意引号与反\n斜杠原样直达 `cdp::js`/`cdp::eval`，多行保真（换行原样入串，编译诊\n断行号不漂移）。\n\n管道序（ADR-0010 增补）：CLI 模板道先 [`extract_raw_strings`] 把 r#\n区与**注释区**换占位标识符，Jinja 只渲染余下源（r# 区与注释区天然免\n渲染，`{{`/`{%`/字面 raw 标签原样——批次三①注释惰性化），渲染毕\n[`subst_raw_strings`] 回填；免渲染道（无 --vars、管道源码、实参）由\n[`rewrite_raw_strings`] 在 `run()` 入口兜底（注释占位逐字回填，幂等\n空转）。两道单实现在本 crate，CLI 直接依赖防双轨。\n\n词法器是单遍状态机（近似面）：跳过 `//` 与 `/* */` 注释、普通串、\n模板串（`${}` 插值内递归按表达式扫）、char 字面量，只重写表达式位\n的 r# 记号；非 ASCII 标识符紧贴 r# 的罕见形可能误判，报错即回退普\n通串写法。形与 Rust 全同：`r` + N 个 `#` + `\"` 开、`\"` + N 个 `#`\n闭（N 大于等于 1），内容含 `\"#` 时升 N。"
     },
     {
       "path": "browse_rune::rawstr::RawStrError",
@@ -85,7 +85,7 @@
     {
       "path": "browse_rune::rawstr::extract_raw_strings",
       "kind": "function",
-      "docs": "抽出源内全部 r# 裸串区：每处 `r#+\"…\"+#` 记号替换为占位标识符\n`__BROWSE_RN_RAW_n__`（n 是区序号），返回（占位后的源，各区转义普\n通串字面量列表，含首尾引号）。模板道用：占位源交 Jinja 渲染，渲染\n毕按序回填 [`subst_raw_strings`]。\n\n# Errors\n\nr# 裸串未闭合、或源已含占位前缀（标识符冲撞）时报带行号 CTA。"
+      "docs": "抽出源内全部 r# 裸串区与注释区：每处记号替换为占位标识符\n`__BROWSE_RN_RAW_n__`（n 是区序号），返回（占位后的源，各区文本列\n表——r# 区是转义普通串字面量含首尾引号，注释区是逐字原文含定界\n符）。模板道用：占位源交 Jinja 渲染（两类区都免渲染），渲染毕按序\n回填 [`subst_raw_strings`]。\n\n# Errors\n\nr# 裸串未闭合、或源已含占位前缀（标识符冲撞）时报带行号 CTA。"
     },
     {
       "path": "browse_rune::rawstr::rewrite_raw_strings",
