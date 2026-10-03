@@ -35,30 +35,28 @@
 { "code": "pub async fn main() { cdp::goto(\"data:text/html,<title>t</title>\").await?; Ok(cdp::eval(\"document.title\").await?) }" }
 ```
 
-脚本在 daemon 侧独立 VM 执行（Rune 语言，入口恒 `pub async fn main()` 且返回 `Result`；`?` 传播 `cdp::CdpError`）。宿主只装 json/time/cdp 三模块；cdp 模块八函数 `goto`/`eval`/`eval_handle`/`call`/`release`/`click`/`type_text`/`wait_sel`，全走自有 CDP 会话，Chrome 只经隔离世界（worldName `browse-rune`）`Runtime.evaluate` 碰页面。双限额（指令一千万、分配 16MB）；对象组执行收尾整组释放。
+脚本在 daemon 侧独立 VM 执行（Rune 语言，入口恒 `pub async fn main()` 且返回 `Result`；`?` 传播 `cdp::CdpError`）。宿主只装 json/time/cdp 三模块；cdp 模块是通用通道形（ADR-0011）：探针五件 `goto`/`eval`/`eval_handle`/`call`/`release` 走自有 CDP 会话的隔离世界（worldName `browse-rune`）`Runtime.evaluate`，事件件 `wait_event` 与命令件 `raw` 对偶开放任意 method 名，js 族四件走主世界，三支柱三件与方言同源。双限额（指令一千万、分配 16MB）；对象组执行收尾整组释放。
 
-八函数签名（`Result` 的 `E` 恒 `cdp::CdpError`）：
+函数签名（`Result` 的 `E` 恒 `cdp::CdpError`）：
 
 | 函数 | 形 | 说明 |
 |---|---|---|
-| `goto(url)` | `-> Result<String>` | `Page.navigate` 加等 readyState 脱 loading（上限 15s）；返回 frameId |
+| `goto(url)` | `-> Result<String>` | `Page.navigate` 加等 readyState 脱 loading（上限 15s）；返回 frameId；导航即废隔离世界待重建 |
 | `eval(expr)` | `-> Result<Value>` | 隔离世界求值（`awaitPromise` 加 `returnByValue`）；`() ↔ null`、对象/数组直桥 |
 | `eval_handle(expr)` | `-> Result<ObjHandle>` | 同上不取值，返回不透明句柄（对象组记账） |
 | `call(handle, fn_src)` | `-> Result<Value>` | `Runtime.callFunctionOn`；`fn_src` 用 `function(){…}` 形收 `this`（箭头函数是词法 this） |
 | `release(handle)` | `-> Result<()>` | 释放单个句柄 |
-| `click(sel)` | `-> Result<()>` | 隔离世界定位取中心点，`Input.dispatchMouseEvent` 真实点击；未命中报错 |
-| `type_text(sel, text)` | `-> Result<()>` | 聚焦后 `Input.insertText` 插在插入点（不清空原值）；未命中报错 |
-| `wait_sel(sel, ms)` | `-> Result<bool>` | 百毫秒轮询，超时返 `false` 不报错（脚本自裁 `Timeout`） |
 | `js(src, args)` | `-> Result<Value>` | 内联 JS 小程序体（**主世界**执行、页面函数可调）；args 对象 JSON 字面量注入（引号天然安全）；体须用 `return` 出值（裸表达式得 null，与 `--js` 的完成值语义不同） |
 | `js_lib(name, vars)` | `-> Result<Value>` | 直调 snippets 库内 `.js` 小程序（名原样与补 `.js` 两试），vars 做 Jinja 渲染（#66 全同管线）后主世界执行 |
 | `render(tpl, vars)` | `-> Result<String>` | 运行时 Jinja（Strict；未填键走 `CdpError{op:"render"}`） |
 | `stdin()` | `-> String` | 管道参数道捕获串（CLI 有实参时管道串经请求体 stdin 字段递入；无管道空串） |
+| `wait_event(method, ms)` | `-> Result<Value>` | 事件驱动等待（原生 `Session::wait_for` 直出：活动 tab 与 browser 级事件，取出即移除，含缓冲内历史；超时 `Err(CdpError)`，脚本 `match` 即条件分支）；回的是事件 params 层 |
+| `raw(method, params_json)` | `-> Result<Value>` | 任意 CDP 命令直发到当前页面会话（params_json 是 JSON 对象串，空串等价空对象，非对象形预检拦；响应整体过桥）。与内置函数同一道守卫与 30 秒上界（域策略对 Page.navigate/Target.createTarget 照拦）；Page.navigate/Page.reload 成功后与 goto 同款废隔离世界；Target.createTarget 不登记 own（closeTarget 会被守卫拦，新页走 goto）；开 Fetch.enable 后 requestPaused 由脚本自己应答。rune 的 `format!` 无字面大括号转义，params 拼接用字符串相加 |
 | `requests(opts)` | `-> Result<Value>` | 交互请求对账（与方言 `requests()` 同源同参：since/filter；Network 事件环形 1000 条） |
 | `snapshot(opts)` | `-> Result<Value>` | ax 树快照（与方言 `snapshot()` 同源同参：ref/depth/pierce；返回 url/title/nodes） |
 | `request_detail(sel, opts)` | `-> Result<Value>` | 单请求详情（index 或 requestId；响应头含 Set-Cookie 可取） |
-| `cookies()` | `-> Result<Value>` | `Network.getCookies`（当前会话 cookie 全量） |
-| `set_cookie(name, value, domain)` | `-> Result<()>` | `Network.setCookie`（path 恒 /；拒设报错） |
-| `wait_event(method, ms)` | `-> Result<Value>` | 事件驱动等待（原生 `Session::wait_for` 直出：活动 tab 与 browser 级事件，取出即移除，含缓冲内历史；超时 `Err(CdpError)`，脚本 `match` 即条件分支） |
+
+回收件（click/type_text/wait_sel/cookies/set_cookie）的 raw 组合形，自检纪律是脚本侧责任：点击＝`eval` 量中心点加 `raw` 两发 `Input.dispatchMouseEvent`（mousePressed/mouseReleased）；填值＝`eval` 先验选择器命中再加 focus 加 `raw` `Input.insertText`（未验命中会把文本插进当前焦点元素）；等选择器＝`eval` 探测加 `time::sleep` 步进循环；cookie＝`raw` `Network.setCookie`/`getAllCookies`（setCookie 响应的 `success:false` 由脚本自检报错）。
 
 边界：函数都在主 frame（iframe 内不可编排，frame 形后续批）；执行器会自动追加 `__browse_rune_wrap__` 包装函数（用户脚本请勿用同名）。输入三通道：`browse rune <script|@名>`（文件/实参道）、`cat plan.rn | browse rune`（管道即源码）、`browse rune @名 < data`（管道即参数，脚本内 `cdp::stdin()` 读）。请求体可选字段 `root`（js_lib 的片段库根，旗标 > env > 内置）与 `stdin`。快错面（修复批）：全部 CDP 调用 30 秒上界、同源宿主腿 60 秒上界、WS 握手 15 秒上界；引擎忙（另一请求持执行槽）排队 10 秒过界即报错不无界等。单请求理论最坏 ≈ 引擎就绪 + 10 秒队列 + min(300 秒总超时, N×30 秒调用)；外部判挂建议 ≥60 秒，长编排调 `BROWSE_RUNE_TIMEOUT`（rune 面专属）。
 

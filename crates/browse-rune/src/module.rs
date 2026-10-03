@@ -628,8 +628,11 @@ pub fn cdp_module(ctx: ModuleCtx) -> Result<(Module, Cleanup), rune::ContextErro
     // failRequest/continueRequest 组按 resourceType 断流放行、
     // Network.setCookie/getAllCookies 组 cookie 面。边界：与内置函数同一
     // 道 `Session::call_with_deadline` 守卫与 30 秒上界（域策略对
-    // Page.navigate/Target.createTarget 照拦）；开 Fetch.enable 后
-    // requestPaused 由脚本自己应答（本函数不代答）。params 取 JSON 串形而
+    // Page.navigate/Target.createTarget 照拦）；Page.navigate/Page.reload
+    // 成功后与 goto 同款废隔离世界待重建，Target.createTarget 不登记 own
+    // （后续 Target.closeTarget 被守卫拦，新页开档走 goto）；开
+    // Fetch.enable 后 requestPaused 由脚本自己应答（本函数不代答）。
+    // params 取 JSON 串形而
     // 非 rune 对象：对象形实测可行（嵌套组合与 null 经 `()` 都过桥，
     // vm_face 探针在册），选串形是协议文档参数形原样粘贴（r# 免转义，
     // 与 wait_event 的任意 method 名对偶）且避开外部类型的序列化错面
@@ -650,6 +653,11 @@ pub fn cdp_module(ctx: ModuleCtx) -> Result<(Module, Cleanup), rune::ContextErro
                         .call_with_deadline(&method, params, CALL_DEADLINE)
                         .await
                         .map_err(|e| cdp_err("raw", format!("{method}: {e:#}")))?;
+                    // 导航类经 raw 触发即废世界（评审 G-6）：与 goto 同款
+                    // 置空待重建，否则后续 eval 撞死 context
+                    if matches!(method.as_str(), "Page.navigate" | "Page.reload") {
+                        st.world.lock().await.context_id = 0;
+                    }
                     CdpState::bridge_no_result_check(&r, "raw")
                 }
                 .await;
@@ -973,10 +981,10 @@ mod raw_params_tests {
         assert_eq!(v, json!({"x": 40, "mods": [1, 2], "o": {"k": true}}));
     }
 
-    /// 坏 JSON 与非对象形（数组、字符串、数字）都拦，op 恒 raw。
+    /// 坏 JSON 与非对象形（数组、字符串、数字、布尔、null）都拦，op 恒 raw。
     #[test]
     fn non_object_and_bad_json_error() {
-        for bad in [r#"[1, 2]"#, "42", "\"x\"", "true", "{oops"] {
+        for bad in [r#"[1, 2]"#, "42", "\"x\"", "true", "null", "{oops"] {
             let e = parse_raw_params(bad).unwrap_err();
             assert_eq!(e.op, "raw", "{bad}");
             assert!(!e.message.is_empty(), "{bad}");

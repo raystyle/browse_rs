@@ -15,14 +15,14 @@ superseded_by: null
 ## Decision
 
 - 新增 `cdp::raw(method, params_json)`：params_json 是 JSON 对象串（空串等价空对象，非对象形预检拦），透传 `Session::call_with_deadline`（30 秒上界与域策略守卫同享），响应对象整体过桥回脚本。会话作用域：活动 tab 的 session target（Browser.* 前缀走 browser 级端点）。
-- 回收五件纯透传糖皮：`click`/`type_text`/`wait_sel`/`cookies`/`set_cookie`（raw 加 eval/js/time 组合全覆盖）。wait_sel 裁定回收：纯轮询壳（eval 探测加睡步进，`time::sleep` 在 rune-modules time 特性内），无引擎侧状态，留它即唯一被豁免的糖皮、无判据。
+- 回收五件纯透传糖皮：`click`/`type_text`/`wait_sel`/`cookies`/`set_cookie`（raw 加 eval/js/time 组合全覆盖）。wait_sel 裁定回收：纯轮询壳（eval 探测加睡步进，`time::sleep` 在 rune-modules time 特性内），无引擎侧状态，留它即唯一被豁免的糖皮、无判据。注：旧 set_cookie 内建 `success:false` 报错、旧 type_text 内建选择器未命中守卫，回收后这两道自检归脚本侧（组合形示例与 e2e 在册，见 http-api.md 的组合形段）。
 - 保留件与理由（各有不可透传语义）：goto（有界等加载与会话世界重建）、eval 族（隔离世界探针语义）、eval_handle/call/release（JS 句柄生命周期，组合件）、js/js_lib/render/stdin（编排面非 CDP 透传）、wait_event（事件对偶件）、requests/snapshot/request_detail（引擎侧有态聚合，js_host 同源注入）。
 - params 选串形而非 rune 对象：对象形实测可行（嵌套组合与 null 经 `()` 都过桥，vm_face 探针在册），选串形是协议文档参数形原样粘贴（r# 裸串免转义，与 wait_event 任意 method 名对偶）加避开外部类型的序列化错面（js 的「args 不可 JSON 化」先例），不是对象形坏了。
 
 ## Consequences
 
-- 好：rn 面获得全协议面（652 方法一道通道），策略逻辑（如 resourceType 分流断流）归脚本层自由表达；函数面收缩（12 件收到 8 件）手册与 --llms 行减负；rn 面与方言面仍是并列消费面（raw 走同一 Session 守卫，不另造第二实现）
-- 坏：存量 rn 脚本破（click/type_text/wait_sel/cookies/set_cookie 五件用法编译红；pentest_rs 战役件用量 9 处由总台自行迁 raw 组合形）；常见操作样板变长（click 由一件变 eval 量点加两发 raw）；rune format! 无字面大括号转义，params 拼接要走字符串相加（e2e 实测记档）
+- 好：rn 面获得全协议面（652 方法一道通道），策略逻辑（如 resourceType 分流断流）归脚本层自由表达；函数面收缩（脚本可见件 19 收到 14：删五加一）手册与 --llms 行减负；rn 面与方言面仍是并列消费面（raw 走同一 Session 守卫，不另造第二实现）
+- 坏：存量 rn 脚本破（click/type_text/wait_sel/cookies/set_cookie 五件用法编译红；pentest_rs 战役件用量 9 处由总台自行迁 raw 组合形）；常见操作样板变长（click 由一件变 eval 量点加两发 raw）；旧 set_cookie/type_text 的内建自检（success 报错、未命中报错）不再内建，脚本须自检；rune format! 无字面大括号转义，params 拼接要走字符串相加（e2e 实测记档）
 - 缓解：组合形三例（拟人鼠标、断流分流、cookie 面）进 --llms 行描述与 e2e 用例；迁移样板见 crates/browse-rune/examples/pillars.rn
 
 ## Alternatives

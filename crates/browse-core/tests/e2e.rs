@@ -2745,9 +2745,10 @@ async fn no_display_headless_fallback_spawns() {
 }
 
 /// #67 Rune 编排面真 chrome 端到端：隔离世界 goto/eval/handle 全链。
-/// 糖皮回收批（ADR-0011）：wait_sel/click 改 raw 组合形（eval 探测加
-/// time 睡步进；隔离世界量中心点加 Input 域两发），本测试即组合回收的
-/// 天然用例。独立 spawn（SEQ 互斥），receipt 形 `{"ok": …}` 锁定。
+/// 糖皮回收批（ADR-0011）：wait_sel/click/type_text 改 raw 组合形（eval
+/// 探测加 time 睡步进；隔离世界量中心点加 Input 域两发；先验命中加
+/// focus 加 insertText），本测试即组合回收的天然用例。独立 spawn（SEQ
+/// 互斥），receipt 形 `{"ok": …}` 锁定。
 #[tokio::test]
 async fn rune_orchestration_roundtrip() {
     if !gated() {
@@ -2773,7 +2774,7 @@ async fn rune_orchestration_roundtrip() {
         .expect("rune e2e 引擎起不来");
     let script = r##"
         pub async fn main() {
-            cdp::goto("data:text/html,<title>rune-e2e</title><button id='b'>go</button><span id='out'></span><script>document.getElementById('b').onclick=()=>{document.getElementById('out').textContent='clicked'}</script>").await?;
+            cdp::goto("data:text/html,<title>rune-e2e</title><button id='b'>go</button><input id='t'><span id='out'></span><script>document.getElementById('b').onclick=()=>{document.getElementById('out').textContent='clicked'}</script>").await?;
             // wait_sel 组合形：eval 探测加 time 睡步进（糖皮回收，ADR-0011）
             let found = false;
             for _ in 0..30 {
@@ -2791,11 +2792,19 @@ async fn rune_orchestration_roundtrip() {
             let fields = cdp::eval(r#"(() => { const r = document.querySelector('#b').getBoundingClientRect(); const o = {x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2), button: "left", clickCount: 1}; return JSON.stringify(o).slice(1, -1); })()"#).await?;
             cdp::raw("Input.dispatchMouseEvent", "{\"type\":\"mousePressed\"," + fields + "}").await?;
             cdp::raw("Input.dispatchMouseEvent", "{\"type\":\"mouseReleased\"," + fields + "}").await?;
+            // type_text 组合形（评审 G-5 自检纪律）：eval 先验命中再加
+            // focus，raw insertText——未验命中会把文本插进当前焦点元素
+            if cdp::eval("!!document.querySelector('#t')").await? != true {
+                return Err(cdp::CdpError { op: "eval", message: "#t 未现" });
+            }
+            cdp::eval("document.querySelector('#t').focus()").await?;
+            cdp::raw("Input.insertText", "{\"text\": \"hi-rn\"}").await?;
+            let filled = cdp::eval("document.querySelector('#t').value").await?;
             let out = cdp::eval("document.getElementById('out').textContent").await?;
             let h = cdp::eval_handle("document.body").await?;
             let tag = cdp::call(clone(h), "function() { return this.tagName }").await?;
             cdp::release(h).await?;
-            Ok(#{"title": cdp::eval("document.title").await?, "out": out, "body": tag})
+            Ok(#{"title": cdp::eval("document.title").await?, "out": out, "filled": filled, "body": tag})
         }
     "##;
     let receipt = browse_rune::run(
@@ -2812,6 +2821,7 @@ async fn rune_orchestration_roundtrip() {
             "ok": {
                 "title": "rune-e2e",
                 "out": "clicked",
+                "filled": "hi-rn",
                 "body": "BODY",
             }
         }),

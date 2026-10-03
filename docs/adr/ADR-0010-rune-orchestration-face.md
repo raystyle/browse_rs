@@ -35,6 +35,10 @@ superseded_by: null
 总台指令链定谳（同日）：「结合事件驱动、主动条件停止和超时机制集成 CTA」＋「不自封装，原生 CDP 能实现就行」。**停止三道**：`POST /rune/stop`/`browse rune stop`（请求停）、引擎失联联动（两次连续探测断连即停，检测驱动主动停止的 daemon 侧实例）、脚本侧原生自停（select/分支加 Err 返回；曾按「现成 rn 原语」实现 `cdp::stop_self` 后依「不自封装」令回撤）；三道与超时同构丢弃执行 future，stopped 面带 op/elapsed_ms/cause。**事件等待**：`cdp::wait_event(method, ms)` 是自有 cdp crate `Session::wait_for` 的直出面（方言 session.waitFor 同源，零新语义），脚本 match 即条件分支。**r# 裸串（browse 侧语言扩展）**：Rune 上游无 r#"…"# 形（rune-rs #537 自 2023-05 在册零动作），browse 在编译前把 r# 裸串重写为转义普通串（词法边界五点案见战役台回执；模板道先抽后渲再回填，r# 区免渲染与 {% raw %} 各管一层）；**上游对齐条款**：上游将来采纳同形语法（# + N×# + " 对）则预处理幂等空转、无缝退役；browse-rs 单实现（CLI 渲染道与 daemon 入口共用），发版后去 #537 贴实战需求与薄词法重写参考。#67 G7 收口注记（0.30.2）：`__describe` 的降形判定用 `!s.contains("object at")` 嗅探：脚本自造错误型的 Debug 输出若恰好含该子串会被误判「不可序列化」回落 Debug 全文（仅影响载荷形，不影响成败语义）；上游 FromValue 面不开就无法根除，属已知边界。
 #69 stdin 读上界与 #70 披露口径随批（REQ-017）。
 
+## 增补（2026-10-03，通用通道与糖皮回收）
+
+函数面清单由 ADR-0011 部分替代：本文 Decision 段「cdp_module 八函数」中的 click/type_text/wait_sel 三件（与后续批补的 cookies/set_cookie 两件）已回收，cdp::raw 通用命令通道加 eval/js 组合形覆盖，回收判据与保留件理由见 ADR-0011。本 ADR 其余决定（自有 cdp 栈、双限额、结果桥形、隔离世界与主世界双世界机制）继续有效。
+
 ## Alternatives
 
 - chromiumoxide（方案原文）：被否。自有 cdp crate 协议完整（652 方法）、生产验证、域策略守卫在 `Session::call` 层；引第二套 CDP 栈重复且守卫面要重建

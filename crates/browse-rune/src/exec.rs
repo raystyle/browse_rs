@@ -21,7 +21,7 @@ use serde_json::{Value, json};
 use crate::module::{ModuleCtx, cdp_module};
 
 /// 双限额（方案条款：执行时套两层；原生函数自己尊重预算——本模块的
-/// 长动作都有界：goto 等 15s、wait_sel 按参）。
+/// 长动作都有界：goto 等 15s、wait_event 按参）。
 #[derive(Debug, Clone, Copy)]
 pub struct Caps {
     /// VM 指令预算（`rune::runtime::budget`）。

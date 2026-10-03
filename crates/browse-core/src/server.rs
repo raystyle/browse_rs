@@ -595,7 +595,7 @@ fn rune_timeout_response(op: Value, bound: Duration) -> (axum::http::StatusCode,
         Json(json!({
             "ok": false,
             "error": format!(
-                "browse: rune 执行超时（{} 秒；BROWSE_RUNE_TIMEOUT 可调，daemon 级上界实例内全部 rune 执行同界）；下一步：看 timeout.op 定位在飞调用面，核对长等待段（goto 等加载、js awaitPromise、wait_sel 轮询）或调大 BROWSE_RUNE_TIMEOUT 重试（长爬拆专用命名实例）",
+                "browse: rune 执行超时（{} 秒；BROWSE_RUNE_TIMEOUT 可调，daemon 级上界实例内全部 rune 执行同界）；下一步：看 timeout.op 定位在飞调用面，核对长等待段（goto 等加载、js awaitPromise、wait_event 事件窗、raw 裸调用的 30 秒界）或调大 BROWSE_RUNE_TIMEOUT 重试（长爬拆专用命名实例）",
                 bound.as_secs()
             ),
             "timeout": {

@@ -10,7 +10,7 @@
     {
       "path": "browse_rune::exec::Caps",
       "kind": "struct",
-      "docs": "双限额（方案条款：执行时套两层；原生函数自己尊重预算——本模块的\n长动作都有界：goto 等 15s、wait_sel 按参）。"
+      "docs": "双限额（方案条款：执行时套两层；原生函数自己尊重预算——本模块的\n长动作都有界：goto 等 15s、wait_event 按参）。"
     },
     {
       "path": "browse_rune::exec::DEFAULT_CAPS",
