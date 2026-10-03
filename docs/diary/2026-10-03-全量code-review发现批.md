@@ -4,7 +4,7 @@
 
 v0.30.7 发版后总台令全量 code review(herdr-review 任务协议:委派即产物、收件人模式)。codex 评审格三分钟产出发现清单(/tmp/browse-full-review/findings.md,基线 389560d):高 1、中 3、低 5,另已核无发现面七节 CONFIRM。
 
-## 发现与处置(逐条核实再修)
+## 发现与处置,逐条核实再修
 
 - H1(高,必修):fetch 的 strip_html 与标题抽取用 to_lowercase 后共用字节下标,U+0130(İ)/U+1E9E(ẞ) 等小写化变长字符使下标落字符中间直接 panic(İstanbul 页等价复现 rc=101)。修:html 本体 ASCII 不敏感扫描(HTML 标记名恒 ASCII),回归锁两件
 - M1:cdp::dialect 导航/换靶族(goto/reload/goBack/goForward/newTab/switchTab/closeTab)经桥真执行不废 rune 隔离世界(后续 eval 撞死 context 或静默落旧 tab)。修:七名族成功后 world 置零(与 raw G-6 同律)
