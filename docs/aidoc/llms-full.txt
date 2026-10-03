@@ -1,5 +1,5 @@
 <!-- browse_cli/index.md -->
-# browse-cli 0.30.5
+# browse-cli 0.30.6
 
 browse CLI 的可测半边：daemon 客户端（HTTP 调用 + 自动拉起）。
 
@@ -128,7 +128,7 @@ ledger.ohmygh.com（替代 issues.ohmygh.com 客户端面；旧服务只读保�
 
 
 <!-- browse_core/index.md -->
-# browse-core 0.30.5
+# browse-core 0.30.6
 
 browse CLI 的核心库：方言宿主、引擎策略、daemon HTTP API。
 
@@ -191,8 +191,9 @@ assert_eq!(render(&stmts), "const tabs = await listPageTargets()");
 内嵌 Chromium 版本管理器（ADR-0007）：各版本 clean-chrome 在本仓应用
 数据目录下版本化管理（安装、pin、升级、体检）。
 
-布局：`<state>/chromium/<version>/`（每版本一目录，旧版保留可回退），
-登记 `<state>/chromium/manifest.json`（已装版本 + pin 指向）。
+布局：`<默认 state 根>/chromium/<version>/`（每版本一目录，旧版保留
+可回退；根机器级共享、不随 `BROWSE_NAME` 实例名走，见 [`chromium_root`]），
+登记 `<默认 state 根>/chromium/manifest.json`（已装版本 + pin 指向）。
 引擎 user-data 不在版本目录（engine-profile 跨版本持久，升级零迁移）。
 
 安装源两形（ADR-0007）：本地目录导入（SxS 部署形态，`chromium-<ver>/`
@@ -612,7 +613,7 @@ list/site/page）。git 维护走 shell-out `git`（不引 git crate）：instal
 
 
 <!-- browse_rune/index.md -->
-# browse-rune 0.30.5
+# browse-rune 0.30.6
 
 Rune 编排面（账本 #67，ADR-0010）：`browse rune` 的 VM 构建、自注册
 `cdp` 模块与执行器。
@@ -758,7 +759,7 @@ r# 裸串预处理（战役台裸串研究单定谳 2026-10-02，批次二落地
 
 
 <!-- cdp/index.md -->
-# cdp 0.30.5
+# cdp 0.30.6
 
 Chrome DevTools Protocol（CDP）连接层：一条常驻 browser-level WebSocket 会话。
 

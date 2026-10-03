@@ -28,6 +28,7 @@
 | REQ-022 | implemented | must | 模板定界缺省 ERB（v0.30.3，总台令） | 单测双引擎加全族 ERB 迁移加实弹四证；评审快核 CONFIRM |
 | REQ-023 | implemented | should | 余量清扫批：js_lib 值守卫、G-A6/A9、bh 94 站迁移（v0.30.4，总台令） | 守卫三单测加 surface 重生成锁加 goto 实弹命中；评审 CONFIRM |
 | REQ-024 | implemented | must | rn 面通用 CDP 命令通道与糖皮回收（v0.30.5，总台令升级案） | vm_face 三件加 module 四件加 e2e 9/9 加 CLI 实弹；评审两轮终审放行 |
+| REQ-025 | implemented | should | 余账清扫批：#74 修复与 #71 考古收口（v0.30.6，总台令） | 单测锁加命名实例实弹加三态账行号核；评审一轮放行 |
 
 ## Roadmap（issue 台账批次规划）
 

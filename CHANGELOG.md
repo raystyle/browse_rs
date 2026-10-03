@@ -2,6 +2,14 @@
 
 版本级里程碑；逐批过程见 docs/diary。semver 判据在册 docs/requirements/REQ-004。
 
+## 0.30.6 - 2026-10-03
+
+- **余账清扫批（总台令「开工 review 态后封 v0.30.6」）**：
+- #74 命名实例解析不到托管 pinned chromium：`chromium_root()` 恒指默认 state 根（`state_dir_for(&None)`），托管部署是机器级共享资产不随 `BROWSE_NAME` 走子目录；命名实例的 pinned 解析不再恒 miss，`browse chrome install/use` 托管语义对命名实例恢复；单测 `chromium_root_ignores_instance_name` 锁，实弹命名实例无 `BROWSE_CHROME` 直起引擎过（此前必报「找不到 chrome」）
+- #71 三缺口考古收口（零代码缺口，三态账落 diary）：对话框阻塞处置路径在且 e2e 锁（dialogStatus 本地态直读加 dialogAccept/Dismiss 清障，alert/beforeunload 自动接受）；页签目标错位处置路径在（listPageTargets/currentTab 加 switchTab 显式切活动路由）；提交后尾等悬挂引擎面已修（全部 CDP 调用 30 秒上界，丢响应快错不永挂）；验收达成（各有一条可复现处置路径或引擎面修复）
+- 卫生清：验收残留目录与命名 daemon（rawsmoke 系、issue74live）、`dist/` 旧 v0.30.4 六件本地中转件
+- semver 判据结论（0.30.6 裁定）：缺陷修复与考古收口取 patch，判据一致（REQ-004；REQ-025 在册）
+
 ## 0.30.5 - 2026-10-03
 
 - **Rune 面通用 CDP 命令通道（账本 #73，用户裁定方案升级 2026-10-03；ADR-0011）**：

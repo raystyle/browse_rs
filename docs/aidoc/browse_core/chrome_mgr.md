@@ -3,8 +3,9 @@
 内嵌 Chromium 版本管理器（ADR-0007）：各版本 clean-chrome 在本仓应用
 数据目录下版本化管理（安装、pin、升级、体检）。
 
-布局：`<state>/chromium/<version>/`（每版本一目录，旧版保留可回退），
-登记 `<state>/chromium/manifest.json`（已装版本 + pin 指向）。
+布局：`<默认 state 根>/chromium/<version>/`（每版本一目录，旧版保留
+可回退；根机器级共享、不随 `BROWSE_NAME` 实例名走，见 [`chromium_root`]），
+登记 `<默认 state 根>/chromium/manifest.json`（已装版本 + pin 指向）。
 引擎 user-data 不在版本目录（engine-profile 跨版本持久，升级零迁移）。
 
 安装源两形（ADR-0007）：本地目录导入（SxS 部署形态，`chromium-<ver>/`
