@@ -22,7 +22,7 @@ superseded_by: null
 ## Consequences
 
 - 好：rn 面获得全协议面（652 方法一道通道），策略逻辑（如 resourceType 分流断流）归脚本层自由表达；函数面收缩（脚本可见件 18 收到 14：删五加一）手册与 --llms 行减负；rn 面与方言面仍是并列消费面（raw 走同一 Session 守卫，不另造第二实现）
-- 坏：存量 rn 脚本破（click/type_text/wait_sel/cookies/set_cookie 五件用法编译红；pentest_rs 战役件用量 9 处由总台自行迁 raw 组合形）；常见操作样板变长（click 由一件变 eval 量点加两发 raw）；旧 set_cookie/type_text 的内建自检（success 报错、未命中报错）不再内建，脚本须自检；rune format! 无字面大括号转义，params 拼接要走字符串相加（e2e 实测记档）
+- 坏：存量 rn 脚本破（click/type_text/wait_sel/cookies/set_cookie 五件用法编译红；pentest_rs 战役件用量由总台对齐轮迁 raw 组合形，2026-10-03 毕）；常见操作样板变长（click 由一件变 eval 量点加两发 raw）；旧 set_cookie/type_text 的内建自检（success 报错、未命中报错）不再内建，脚本须自检；rune format! 无字面大括号转义，params 拼接要走字符串相加（e2e 实测记档）；外部桥接值的子项 Debug 取形报 Missing runtime information for type hash（战役实证 0.30.6，判值走 json::from_string 字面等值比较）
 - 缓解：组合形三例（拟人鼠标、断流分流、cookie 面）进 --llms 行描述与 e2e 用例；迁移样板见 crates/browse-rune/examples/pillars.rn
 
 ## Alternatives

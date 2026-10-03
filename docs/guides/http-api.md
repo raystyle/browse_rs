@@ -56,7 +56,7 @@
 | `snapshot(opts)` | `-> Result<Value>` | ax 树快照（与方言 `snapshot()` 同源同参：ref/depth/pierce；返回 url/title/nodes） |
 | `request_detail(sel, opts)` | `-> Result<Value>` | 单请求详情（index 或 requestId；响应头含 Set-Cookie 可取） |
 
-回收件（click/type_text/wait_sel/cookies/set_cookie）的 raw 组合形，自检纪律是脚本侧责任：点击＝`eval` 量中心点加 `raw` 两发 `Input.dispatchMouseEvent`（mousePressed/mouseReleased）；填值＝`eval` 先验选择器命中再加 focus 加 `raw` `Input.insertText`（未验命中会把文本插进当前焦点元素）；等选择器＝`eval` 探测加 `time::sleep` 步进循环；cookie＝`raw` `Network.setCookie`/`getAllCookies`（setCookie 响应的 `success:false` 由脚本自检报错）。
+回收件（click/type_text/wait_sel/cookies/set_cookie）的 raw 组合形，自检纪律是脚本侧责任：点击＝`eval` 量中心点加 `raw` 两发 `Input.dispatchMouseEvent`（mousePressed/mouseReleased）；填值＝`eval` 先验选择器命中再加 focus 加 `raw` `Input.insertText`（未验命中会把文本插进当前焦点元素）；等选择器＝`eval` 探测加 `time::sleep` 步进循环；cookie＝`raw` `Network.setCookie`/`getAllCookies`（setCookie 响应的 `success:false` 由脚本自检报错）。判值纪律（战役实证 0.30.6）：对外部桥接值的子项做 Debug 取形（`format!("{:?}", v[键])`）报 Missing runtime information for type hash，判值改 `json::from_string` 字面等值比较，或经 js 侧 `JSON.stringify` 回传原语。
 
 边界：函数都在主 frame（iframe 内不可编排，frame 形后续批）；执行器会自动追加 `__browse_rune_wrap__` 包装函数（用户脚本请勿用同名）。输入三通道：`browse rune <script|@名>`（文件/实参道）、`cat plan.rn | browse rune`（管道即源码）、`browse rune @名 < data`（管道即参数，脚本内 `cdp::stdin()` 读）。请求体可选字段 `root`（js_lib 的片段库根，旗标 > env > 内置）与 `stdin`。快错面（修复批）：全部 CDP 调用 30 秒上界、同源宿主腿 60 秒上界、WS 握手 15 秒上界；引擎忙（另一请求持执行槽）排队 10 秒过界即报错不无界等。单请求理论最坏 ≈ 引擎就绪 + 10 秒队列 + min(300 秒总超时, N×30 秒调用)；外部判挂建议 ≥60 秒，长编排调 `BROWSE_RUNE_TIMEOUT`（rune 面专属）。
 
