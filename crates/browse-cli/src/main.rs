@@ -439,6 +439,20 @@ async fn main() -> Result<()> {
                     match a.as_str() {
                         "--vars" => vars.push(args.next("--vars")),
                         "--root" => snippets_root_flag = Some(args.next("--root")),
+                        // 统一兜底硬界（REQ-027 评审 F-2）：rune 内环代收，
+                        // 尾置与前置同效（与 --vars/--root 同律，覆盖已收的
+                        // 前置值）
+                        "--timeout" => {
+                            let raw: u64 = args.next("--timeout").parse().unwrap_or_else(|_| {
+                                eprintln!("browse: --timeout 要整秒数（退出 2）");
+                                std::process::exit(2)
+                            });
+                            let (ms, warn) = browse_core::js_host::secs_to_ms(raw);
+                            if let Some(w) = warn {
+                                eprintln!("browse: --timeout {w}");
+                            }
+                            cli_timeout_s = Some(ms / 1000);
+                        }
                         other if other.starts_with('-') => bail_flag_in_subcommand(other),
                         other if script.is_none() => script = Some(other.to_string()),
                         other => {

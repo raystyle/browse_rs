@@ -1716,7 +1716,7 @@ pub fn render_manual() -> String {
 pub const COMPANION_FLAGS: &[(&str, &str)] = &[
     (
         "--timeout <s>",
-        "执行兜底硬界秒（rune 与 --js/方言求值道；default: 60，请求级覆写 BROWSE_RUNE_TIMEOUT/BROWSE_EVAL_TIMEOUT 缺省；>=1000 按毫秒误写换算并告警；到期即结构化退出带卡点 CTA；与 wait 族等待窗正交——等待窗自命中即返）",
+        "执行兜底硬界秒（rune 与 --js/方言求值道，rune 内环代收尾置同效；default: 60，请求级覆写 BROWSE_RUNE_TIMEOUT/BROWSE_EVAL_TIMEOUT 缺省；>=1000 按毫秒误写换算并告警；到期即结构化退出带卡点 CTA；与 wait 族等待窗正交——等待窗自命中即返；fetch 道不适用，其 --timeout 走子命令位）",
     ),
     (
         "--bind <host:port>",

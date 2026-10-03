@@ -150,7 +150,9 @@ pub struct JsHost {
     /// 在飞方言调用面探针（统一兜底超时批，REQ-027）：`call_global` 入口
     /// 置名、正常退出清空、执行 future 被兜底超时臂丢弃时保留——/eval 的
     /// 结构化超时回执读它报「卡在哪个方言函数」（rn 面 OpProbe 同律；值
-    /// 形 String 因方言片段名非 'static）。
+    /// 形 String 因方言片段名非 'static）。单槽安全以方言道串行为前提
+    ///（eval 解释器全程 await 串行、无并发件；评审 G-3，若方言道将来出
+    /// 并发件需对齐 rn 面多槽形）。
     current_op: Arc<std::sync::Mutex<Option<String>>>,
     /// 网络拦截规则（routeBlock/routeMock 管理，watcher 应答 requestPaused）。
     routes: Arc<Mutex<Vec<RouteRule>>>,

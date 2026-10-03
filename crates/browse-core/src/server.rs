@@ -228,7 +228,21 @@ fn env_timeout_secs(var: &str, default_s: u64) -> Duration {
         Some(v) => {
             let (ms, warn) = crate::js_host::secs_to_ms(v);
             if let Some(w) = warn {
-                eprintln!("[browse] {var}={v} {w}（按换算值生效）");
+                // 每旋钮每进程只警示一次（评审 G-1）：本函数在请求路径逐
+                // 次调（rune 超时臂还会复算），裸打会每请求刷行
+                static WARNED: std::sync::OnceLock<std::sync::Mutex<Vec<String>>> =
+                    std::sync::OnceLock::new();
+                let seen = WARNED.get_or_init(Default::default);
+                let fresh = seen
+                    .lock()
+                    .map(|g| !g.iter().any(|x| x == var))
+                    .unwrap_or(false);
+                if fresh {
+                    if let Ok(mut g) = seen.lock() {
+                        g.push(var.to_string());
+                    }
+                    eprintln!("[browse] {var}={v} {w}（按换算值生效）");
+                }
             }
             Duration::from_millis(ms)
         }

@@ -39,6 +39,10 @@ superseded_by: null
 
 函数面清单由 ADR-0011 部分替代：本文 Decision 段「cdp_module 八函数」中的 click/type_text/wait_sel 三件（与后续批补的 cookies/set_cookie 两件）已回收，cdp::raw 通用命令通道加 eval/js 组合形覆盖，回收判据与保留件理由见 ADR-0011。本 ADR 其余决定（自有 cdp 栈、双限额、结果桥形、隔离世界与主世界双世界机制）继续有效。
 
+## 增补（2026-10-03，超时口径由 ADR-0012 修订）
+
+本文增补段的旋钮终裁（`BROWSE_RUNE_TIMEOUT` 默认 45、`/eval` 300 秒契约零动、daemon 级实例内同界）由 ADR-0012 统一兜底超时修订：两道统一缺省 60 秒、请求级 `--timeout`/`timeout_s` 逐次覆写、env 为实例内缺省。本文其余决定继续有效。
+
 ## Alternatives
 
 - chromiumoxide（方案原文）：被否。自有 cdp crate 协议完整（652 方法）、生产验证、域策略守卫在 `Session::call` 层；引第二套 CDP 栈重复且守卫面要重建

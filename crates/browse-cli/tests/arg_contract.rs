@@ -538,7 +538,6 @@ fn roster_flags_all_recognized_in_rune_tail_position() {
         "--ws",
         "--port",
         "--chrome",
-        "--timeout",
         "--profile",
         "--headless",
         "--pipe",
@@ -560,8 +559,8 @@ fn roster_flags_all_recognized_in_rune_tail_position() {
         "-V",
         "--version",
     ] {
-        // 注：--vars/--root 在 rune 环内是合法子旗标（消费值），不属尾
-        // 置 CTA 面，不入本守卫名单
+        // 注：--vars/--root/--timeout 在 rune 环内是合法子旗标（消费值，
+        // REQ-027 评审 F-2 内环代收），不属尾置 CTA 面，不入本守卫名单
 
         let (code, _, err) = run(&["rune", "x.rn", f], &[]);
         assert_eq!(code, 2, "旗标 {f}：{err}");

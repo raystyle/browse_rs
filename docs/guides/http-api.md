@@ -136,7 +136,7 @@ curl -s localhost:9880/rune -H 'Content-Type: application/json' \
 ## 语义要点
 
 - **单飞槽**：daemon 同一时刻只跑一段求值（eval_lock），并发 POST 按到达序排队执行、不拒。`BROWSE_EVAL_TIMEOUT` 只管自己的求值段（拿到槽之后才起算），排队等待另计：第 N 个并发请求的总时延约等于前 N-1 个耗时之和加自己的求值，排队期间不会超时。客户端要按最坏 N 乘 timeout 设自己的 HTTP 超时，别把排队误判成 daemon 挂了。
-- **超时**：单次求值上限 `BROWSE_EVAL_TIMEOUT`（秒，缺省 300），超时回错误形（`eval 超时（N 秒；BROWSE_EVAL_TIMEOUT 可调）`）。
+- **超时（REQ-027 统一兜底硬界）**：单次求值上限统一缺省 **60 秒**（`BROWSE_EVAL_TIMEOUT` 可调，请求级 `timeout_s`/`--timeout` 覆写）；到期回 `ok:false` 加结构化 `timeout` 对象（`op` 在飞方言函数面、`elapsed_ms`、`bound_s`）与 `/rune` 同形，错误文案带卡点 CTA。`op` 为 null 时是执行间隙或 `--js`/`session.*` 直调面（不经方言函数派发，无函数名可点）。
 - **懒引擎**：引擎未连且片段不含 connect 时自动拉起（懒拉起），冷启动首求值包含 spawn 时延。
 - **状态跨请求保留**：`const` 变量与引用表在 daemon 生命期跨片段持久（多段工作流直接分段 POST）。
 - **daemon 发现**：端口 `BROWSE_PORT`（缺省 9880）；命名实例 `BROWSE_NAME` 派生端口 9900-9999。客户端直接 POST 即可：没有 daemon 时 CLI 会自动拉起，但纯 HTTP 客户端需先 `browse up`（或自起 `browse --serve`）。
