@@ -28,6 +28,11 @@ const BARRIER_WAIT_MS: u64 = 600;
 #[cfg(not(test))]
 const BARRIER_WAIT_MS: u64 = 5_000;
 
+/// pending 应答表形：调用 id ->（应答通道，登记时刻）。带登记时刻供
+/// [`Session::reap_pending_older_than`] 按龄回收——外层整体超时丢弃在飞
+/// 调用 future 时，内层清登记路径被一并丢弃，挂死页留下僵尸（评审 F-1）。
+type PendingMap = Arc<Mutex<HashMap<i64, (oneshot::Sender<Value>, std::time::Instant)>>>;
+
 /// 这些前缀的域走 browser 端点，调用时不附 `sessionId`。
 const BROWSER_METHODS: &[&str] = &[
     "Browser.",
@@ -77,7 +82,7 @@ const DEFAULT_CONNECT_TIMEOUT_MS: u64 = 5000;
 /// 常驻的 browser 级 CDP 会话；clone `Arc<Self>` 共享同一条连接。
 pub struct Session {
     outgoing: Mutex<Option<mpsc::UnboundedSender<Value>>>,
-    pending: Arc<Mutex<HashMap<i64, oneshot::Sender<Value>>>>,
+    pending: PendingMap,
     events: Arc<Mutex<VecDeque<Value>>>,
     next_id: AtomicI64,
     session_id: Mutex<Option<String>>,
@@ -379,7 +384,7 @@ impl Session {
             // 30 秒还占 eval 单飞槽
             if epoch_r.load(Ordering::Relaxed) == epoch {
                 flag.store(false, Ordering::Relaxed);
-                for (_, tx) in dead_pending.lock().await.drain() {
+                for (_, (tx, _)) in dead_pending.lock().await.drain() {
                     let _ = tx.send(json!({
                         "error": {"code": -32000, "message": "连接已断开（引擎死亡或重连清账）"}
                     }));
@@ -415,7 +420,7 @@ impl Session {
     /// pending 回 error 形响应（走 send_with 的 CDP 错误分支，错误串带
     /// 方法名与归因），比 drop sender 的「cdp dropped」更可诊断。
     async fn fail_pending(&self) {
-        for (_, tx) in self.pending.lock().await.drain() {
+        for (_, (tx, _)) in self.pending.lock().await.drain() {
             let _ = tx.send(json!({
                 "error": {"code": -32000, "message": "连接已断开（引擎死亡或重连清账）"}
             }));
@@ -519,7 +524,7 @@ impl Session {
             // （全量评审 F1，同 open_ws 臂）
             if epoch_r.load(Ordering::Relaxed) == epoch {
                 flag.store(false, Ordering::Relaxed);
-                for (_, tx) in dead_pending.lock().await.drain() {
+                for (_, (tx, _)) in dead_pending.lock().await.drain() {
                     let _ = tx.send(json!({
                         "error": {"code": -32000, "message": "连接已断开（引擎死亡或重连清账）"}
                     }));
@@ -745,6 +750,21 @@ impl Session {
         self.pending.lock().await.len()
     }
 
+    /// 清除登记超过 `older_than` 的 pending 应答表项（评审 F-1 配套），
+    /// 回清除条数。何时用：调用方整体超时**丢弃**了在飞调用 future 的场
+    /// 合——丢弃使 `call_with_deadline` 的内层清登记路径一并被丢，永不
+    /// 应答的调用（挂死页）留下 pending 僵尸；本方法按登记时刻把老项扫
+    /// 掉（正常快调用早已应答出表，扫的只有僵尸）。挂起的 oneshot 发送
+    /// 端被 drop 即接收侧静默结束，无副作用。
+    #[doc(hidden)]
+    pub async fn reap_pending_older_than(&self, older_than: std::time::Duration) -> usize {
+        let now = std::time::Instant::now();
+        let mut g = self.pending.lock().await;
+        let before = g.len();
+        g.retain(|_, (_, at)| now.duration_since(*at) < older_than);
+        before - g.len()
+    }
+
     async fn send(&self, method: &str, params: Value) -> Result<Value> {
         let sid = if is_browser_method(method) {
             None
@@ -797,7 +817,10 @@ impl Session {
         // 的在途项
         let out_lock = self.outgoing.lock().await;
         let (tx, rx) = oneshot::channel();
-        self.pending.lock().await.insert(id, tx);
+        self.pending
+            .lock()
+            .await
+            .insert(id, (tx, std::time::Instant::now()));
         let sent = out_lock
             .as_ref()
             .ok_or_else(|| anyhow!("CDP socket closed"))
@@ -1143,7 +1166,7 @@ impl Session {
 /// 事件路由的共享面（#60：子 session 记账把参数推到 8 个，收成一个结构体）。
 #[derive(Clone)]
 struct RouteShared {
-    pending: Arc<Mutex<HashMap<i64, oneshot::Sender<Value>>>>,
+    pending: PendingMap,
     events: Arc<Mutex<VecDeque<Value>>>,
     next_seq: Arc<AtomicI64>,
     dialog: Arc<Mutex<Option<Value>>>,
@@ -1154,7 +1177,7 @@ struct RouteShared {
 
 async fn route(mut v: Value, shared: &RouteShared) {
     if let Some(id) = v.get("id").and_then(|x| x.as_i64()) {
-        if let Some(tx) = shared.pending.lock().await.remove(&id) {
+        if let Some((tx, _)) = shared.pending.lock().await.remove(&id) {
             let _ = tx.send(v);
         }
     } else if v.get("method").is_some() {
@@ -1638,6 +1661,29 @@ mod tests {
             .expect("task 不应 panic");
         let msg = format!("{r:#?}");
         assert!(msg.contains("连接已断开"), "错误应归因断开而非超时: {msg}");
+    }
+
+    /// reap 时效语义（评审 F-1 配套）：按登记时刻扫老项，新鲜项保留。
+    /// e2e 挂死块不等 32 秒 reaper，此处锁时效判断本体。
+    #[tokio::test]
+    async fn reap_pending_removes_only_aged_entries() {
+        let s = Session::new();
+        let (tx_old, rx_old) = oneshot::channel::<Value>();
+        let (tx_new, _rx_new) = oneshot::channel::<Value>();
+        {
+            let mut g = s.pending.lock().await;
+            // 手造时间戳：老项 40 秒前、新项刚刚
+            g.insert(
+                1,
+                (tx_old, std::time::Instant::now() - Duration::from_secs(40)),
+            );
+            g.insert(2, (tx_new, std::time::Instant::now()));
+        }
+        let n = s.reap_pending_older_than(Duration::from_secs(30)).await;
+        assert_eq!(n, 1, "只扫掉超龄项");
+        assert_eq!(s.pending_len().await, 1, "新鲜项保留");
+        // 被扫项的接收端静默结束（sender 被 drop），无副作用
+        assert!(rx_old.await.is_err(), "老项 sender 应被 drop");
     }
 
     /// waitFor 活动过滤（批 6 遗留）：他 sid 的同 method 事件不被误领，

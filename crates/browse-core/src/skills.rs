@@ -464,10 +464,11 @@ pub(crate) async fn augment_goto(s: &std::sync::Arc<cdp::Session>, receipt: &mut
     }
     if page_skills_enabled() {
         // 特征判据 rn 脚本化（总台令 2026-10-03）：workspace
-        // `page-skills/_probe.rn` 隐式加载（多根序首优先）覆写内置缺省，
+        // `page-skills/scripts/probe.rn` 隐式加载（多根序首优先）覆写内置缺省，
         // 判据增改走 workspace 仓免 browse 发版；脚本经 rune VM 跑
-        // （cdp::eval 隔离世界探页，回 {framework, slugs} 对象），失败或
-        // 环境错静默降级零键；白名单仍在本仓（页面可控输出经
+        // （cdp::js 主世界探页——框架全局与元素 expando 只在页面世界
+        // 可见，回 {framework, slugs} 对象），失败、环境错或超 8 秒界
+        // 静默降级零键；白名单仍在本仓（页面可控输出经
         // FROZEN_PAGE_SLUGS 滤，信任模型不变）
         let probe = run_probe_rn(s).await;
         if let Some(p) = probe
@@ -484,16 +485,48 @@ pub(crate) async fn augment_goto(s: &std::sync::Arc<cdp::Session>, receipt: &mut
 /// （脚本缺失回缺省、编译/执行/环境错均静默降级——判据脚本属机制配方，
 /// 坏脚本不许让 goto 失败）。VM 双限额与 30 秒单调用界走 rune 面缺省。
 async fn run_probe_rn(s: &std::sync::Arc<cdp::Session>) -> Option<Value> {
-    let script = load_probe_rn();
-    let receipt = browse_rune::run(
-        std::sync::Arc::clone(s),
-        &script,
-        browse_rune::DEFAULT_CAPS,
-        browse_rune::RunOpts::default(),
+    // 8 秒外层界（评审 G-D，对齐旧探针界）：挂死页不再拖 goto 到 rune 面
+    // 30 秒单调用界
+    let probe = tokio::time::timeout(
+        std::time::Duration::from_secs(8),
+        browse_rune::run(
+            std::sync::Arc::clone(s),
+            &load_probe_rn(),
+            browse_rune::DEFAULT_CAPS,
+            browse_rune::RunOpts::default(),
+        ),
     )
-    .await
-    .ok()?;
-    receipt.get("ok").cloned()
+    .await;
+    match probe {
+        Ok(Ok(receipt)) => receipt.get("ok").cloned(),
+        Ok(Err(_e)) => {
+            // 编译/VM/环境错（评审 G-C）：坏 workspace 脚本首败留痕，之后
+            // 静默（判据脚本不许拖 goto，也不许刷日志）
+            static WARNED: std::sync::OnceLock<()> = std::sync::OnceLock::new();
+            if WARNED.set(()).is_ok() {
+                eprintln!(
+                    "[browse] page 判据脚本执行失败（后续静默降级零键；检查 workspace page-skills/scripts/probe.rn）"
+                );
+            }
+            None
+        }
+        Err(_) => {
+            // 外层界丢弃在飞调用 future：内层清登记路径被一并丢弃，挂死页
+            // 的 pending 登记成僵尸——32 秒后扫老项回收（评审 F-1 配套，
+            // 正常调用早已应答出表）
+            let ses = std::sync::Arc::clone(s);
+            tokio::spawn(async move {
+                tokio::time::sleep(std::time::Duration::from_secs(32)).await;
+                let n = ses
+                    .reap_pending_older_than(std::time::Duration::from_secs(30))
+                    .await;
+                if n > 0 {
+                    eprintln!("[browse] page 判据超时回收 pending 僵尸 {n} 条");
+                }
+            });
+            None
+        }
+    }
 }
 
 /// 特征判据脚本加载（隐式，总台令 2026-10-03 标准目录形）：workspace
@@ -518,13 +551,21 @@ fn load_probe_rn_multi(roots: &[std::path::PathBuf]) -> String {
 }
 
 /// 内置缺省判据脚本（rn 形，workspace 覆写位 page-skills/scripts/probe.rn）：
-/// 包一层 `pub async fn main`，体是
-/// [`PAGE_PROBE_JS`]（隔离世界求值，对象直桥）。
+/// 包一层 `pub async fn main`，体经 `cdp::js` 走**主世界**（评审 F-1：框架
+/// 检测依赖页面世界的 JS 全局 `__NUXT__`/`Vue` 与元素 expando
+/// `__reactFiber$`/`__svelte*`，隔离世界一律不可见会静默废掉框架与
+/// hydration 腿）。
 fn default_probe_rn() -> String {
+    // r# 嵌套安全断言（评审 G-E）：判据 JS 含 "# 会破 rn 裸串定界
+    debug_assert!(
+        !PAGE_PROBE_JS.contains("\"#"),
+        "判据 JS 含 \"# 会破 r# 定界"
+    );
     format!(
         r##"// browse 内置缺省特征判据（workspace page-skills/scripts/probe.rn 可覆写）
+// 体走主世界（cdp::js）：框架全局与元素 expando 只在页面世界可见
 pub async fn main() {{
-    let v = cdp::eval(r#"{PAGE_PROBE_JS}"#).await?;
+    let v = cdp::js(r#"return {PAGE_PROBE_JS}"#, #{{}}).await?;
     Ok(v)
 }}"##
     )
@@ -600,10 +641,10 @@ mod tests {
             load_probe_rn_multi(&[hit.clone(), miss.clone()]),
             "// 自定义判据"
         );
-        // 全根未命中:内置缺省(判据同体,含 pub async fn main 与 cdp::eval 包裹)
+        // 全根未命中:内置缺省(判据同体,含 pub async fn main 与 cdp::js 包裹)
         let d = load_probe_rn_multi(std::slice::from_ref(&miss));
         assert!(d.contains("pub async fn main"), "{d}");
-        assert!(d.contains("cdp::eval"), "{d}");
+        assert!(d.contains("cdp::js"), "{d}");
         let _ = std::fs::remove_dir_all(&dir);
     }
 

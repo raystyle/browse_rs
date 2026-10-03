@@ -3,7 +3,7 @@ id: REQ-029
 title: 页面特征判据 rn 脚本化（workspace scripts 目录隐式加载）与 workspace 收窄两层
 status: implemented
 priority: must
-trace: skills 单测（probe_rn_load_override_and_default 加 frozen_slugs_match_probe 既有锁）＋e2e 既有特征页断言过 rn 路径（部署态 workspace probe.rn 实跑）；workspace 仓 81cbf14（scripts 目录加去 intent-skills）
+trace: skills 单测（probe_rn_load_override_and_default 加 frozen_slugs_match_probe 既有锁）＋cdp 单测 reap_pending_removes_only_aged_entries＋e2e 挂死块（8 秒界墙钟加 pending<=1）与既有特征页断言过 rn 路径（部署态 workspace probe.rn 实跑）；workspace 仓 81cbf14 加 4849251/5b32d5b（probe.rn 主世界化加 README）
 ---
 
 # REQ-029：特征判据 rn 脚本化与 workspace 收窄
@@ -15,7 +15,7 @@ trace: skills 单测（probe_rn_load_override_and_default 加 frozen_slugs_match
 ## Criteria
 
 - [x] 判据脚本：workspace `page-skills/scripts/probe.rn`（标准 scripts 目录），browse 隐式加载（goto 回执 page-skill 附着时），多根序首命中覆写、全根未命中回内置缺省（与历史 PROBE 同判据，离线行为稳定）
-- [x] 执行道：browse_rune::run 跑脚本（rune VM 双限额与 30 秒单调用界缺省；cdp::eval 隔离世界探页，对象直桥）；失败/环境错/坏脚本静默降级零键（不让 goto 失败）
+- [x] 执行道：browse_rune::run 跑脚本（rune VM 双限额与 30 秒单调用界缺省；**cdp::js 主世界探页**（评审 F-1 裁定：框架全局 __NUXT__/__NEXT_DATA__/window.Vue 与元素 expando __reactFiber$/__svelte* 隔离世界一律不可见，eval 形会静默废掉框架与 hydration 腿；对象直桥）；外层 8 秒界（超时静默降级零键，在飞调用留 pending 僵尸由 32 秒后 reap_pending_older_than 回收）；失败/环境错/坏脚本静默降级零键且首败 daemon.log 留痕一次（G-C）
 - [x] 信任模型不变：FROZEN_PAGE_SLUGS 白名单与 confidence 枚举校验留本仓 page_fields（页面可伪造判据回执，滤在本仓不在脚本）
 - [x] workspace 收窄：intent-skills 层删除，README 定位收窄两层（domain-skills 域名触发加 page-skills 页面触发含 scripts 判据）
 - [x] semantic::goto 收 &Arc<Session>（rune VM 要 Arc 克隆；两调用点均 Arc 态零ripple）
@@ -24,4 +24,5 @@ trace: skills 单测（probe_rn_load_override_and_default 加 frozen_slugs_match
 
 - parse_probe(字符串解析腿)随对象直桥移除;page_fields doctest 改 serde_json 直构
 - e2e 特征页断言（skill trigger 层）实跑部署态 workspace 的 probe.rn:隐式加载路径有真实覆盖；判据改动后跑该 e2e 即验
-- 旧 8 秒 deadline 注记(#52)随 call_with_deadline 直调腿退役;rune 面自带 30 秒单调用界与 /eval 兜底界
+- 旧 8 秒 deadline 注记(#52)随 call_with_deadline 直调腿退役;run_probe_rn 外层 8 秒界接棒（挂死页兜底）,rune 面自带 30 秒单调用界与 /eval 兜底界;外层界丢弃在飞 future 会丢内层清登记路径,pending 表带登记时刻（Instant）,reap_pending_older_than 按时刻扫老项（e2e 挂死块断言 pending<=1,reap 时效由 cdp 单测 reap_pending_removes_only_aged_entries 锁）
+- G-E:default_probe_rn 判据 JS 内嵌 r# 裸串,debug_assert 锁不含 "# 定界;G-F:workspace README 点明 probe.rn 无模板道

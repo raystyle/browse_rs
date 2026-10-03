@@ -33,7 +33,19 @@ pub async fn fetch(url: &str, dom_html: bool, markdown: bool, timeout_s: u64) ->
     // 渲染 DOM 形（--html）：渲染后的 HTML 需要 JS 执行，恒走引擎腿直取
     // documentElement.outerHTML（不经 HTTP 先试——raw body 不是渲染面）
     if dom_html {
-        return fetch_engine_leg(url, "dom-html", true, markdown, None, timeout_s, &client).await;
+        return fetch_engine_leg(
+            url,
+            "dom-html",
+            LegShape {
+                need_html: true,
+                include_html: true,
+                markdown,
+            },
+            None,
+            timeout_s,
+            &client,
+        )
+        .await;
     }
     let http = client.get(url).send().await;
     let (status, html) = match http {
@@ -70,11 +82,16 @@ pub async fn fetch(url: &str, dom_html: bool, markdown: bool, timeout_s: u64) ->
             Ok(r)
         }
         Some(why) => {
+            // G-B 解耦：抽取要 html 供转换（need_html=markdown），但 html
+            // 字段只在显式 --html 入册（include_html=false），与全局腿同律
             return fetch_engine_leg(
                 url,
                 why,
-                markdown,
-                markdown,
+                LegShape {
+                    need_html: markdown,
+                    include_html: false,
+                    markdown,
+                },
                 Some(status),
                 timeout_s,
                 &client,
@@ -84,21 +101,34 @@ pub async fn fetch(url: &str, dom_html: bool, markdown: bool, timeout_s: u64) ->
     }
 }
 
+/// 引擎腿的输出形三旗标（G-B 解耦后语义各自独立）。
+#[derive(Clone, Copy)]
+struct LegShape {
+    /// 抽取连 `documentElement.outerHTML` 一起带回（markdown 转换要源
+    /// html 时置位）。
+    need_html: bool,
+    /// `html` 字段入册（显式 `--html` 或 dom-html 直取形）。
+    include_html: bool,
+    /// `markdown` 字段入册（`--markdown`，对抽取带回的 html 做 mdka 转换）。
+    markdown: bool,
+}
+
 /// 引擎腿（统一实现：三条件升级与 --html 渲染形同源）：goto 后页内抽取
 /// 标题/正文，`need_html` 时连 `documentElement.outerHTML`（渲染后的 DOM
-/// HTML）一起取；`markdown` 置位时对该 html 做 mdka 转换回 `markdown`
-/// 字段。`reason` 是引擎腿成因（三条件升级名或 `dom-html`），`http_status`
+/// HTML）一起取；`include_html` 置位才把 html 字段入册（显式 `--html`
+/// 或直取形），`markdown` 置位时对抽取带回的 html 做 mdka 转换回
+/// `markdown` 字段——两者解耦（`--markdown` 单置不连带 html 入册）。
+/// `reason` 是引擎腿成因（三条件升级名或 `dom-html`），`http_status`
 /// 是 HTTP 先试腿的状态（直取渲染形没有先试，None）。
 async fn fetch_engine_leg(
     url: &str,
     reason: &str,
-    need_html: bool,
-    markdown: bool,
+    shape: LegShape,
     http_status: Option<u16>,
     timeout_s: u64,
     client: &reqwest::Client,
 ) -> Result<Value> {
-    let extract = fetch_core::extract_js(need_html);
+    let extract = fetch_core::extract_js(shape.need_html);
     let code = format!(
         "await goto({url}, {{timeout: 20}}); return (await session.Runtime.evaluate({{expression: {expr}, returnByValue: true}})).result.value",
         url = serde_json::to_string(url)?,
@@ -151,17 +181,18 @@ async fn fetch_engine_leg(
     if let Some(st) = http_status {
         r["httpStatus"] = json!(st);
     }
-    if need_html {
-        r["html"] = inner.get("html").cloned().unwrap_or(Value::Null);
-    }
-    if markdown {
-        let html_src = inner
+    // 可选字段单源（fetch_core）：html 入册只在 include_html（显式
+    // --html 或 dom-html 直取形），markdown 从抽取带回的 html 转换——
+    // 两者解耦（G-B：--markdown 单置不再连带 html 字段入册）
+    let html_src = if shape.include_html || shape.markdown {
+        inner
             .get("html")
             .and_then(Value::as_str)
             .map(str::to_string)
-            .unwrap_or_default();
-        r["markdown"] = json!(fetch_core::to_markdown(&html_src));
-    }
+    } else {
+        None
+    };
+    fetch_core::attach_optional_fields(&mut r, html_src.as_deref(), shape.markdown);
     add_domain_skills(url, &mut r);
     Ok(r)
 }

@@ -2401,15 +2401,16 @@ return await responseBody(evs[0].params.requestId)"#,
         .await
         .expect("清仿真");
 
-    // ---- 判据 rn 化后的挂死免疫（REQ-029 改 #52 语义）----
+    // ---- 判据主世界化的挂死界（REQ-029 评审 F-1 后回 #52 语义）----
     // （评审 G1 移位：本块楔死一个 tab 并留尾不收，放在 closeTab/守卫段
     // 之前的最后位置，tabs 段的 t1 挑选不再有按序落进楔死 tab 的风险；
     // 后续 closeTab 与守卫段全是 browser 级调用，对楔死免疫）
-    // 旧 #52 面：页面世界 cookie getter 死循环让主世界探针永挂（8 秒
-    // 内层 deadline 清 pending）。判据 rn 化后探针走隔离世界，页面世界
-    // 的属性覆写（expando/defineProperty）对探针不可见——挂死免疫是
-    // 行为改进；真挂死面（隔离世界自身求值永挂）由 rune 面 30 秒单调用
-    // 界清 pending 兜底（同 call_with_deadline 清登记机制）
+    // #52 面：页面世界 cookie getter 死循环让主世界探针永挂。判据走
+    // cdp::js 主世界（F-1：框架全局与 expando 只在页面世界可见）后该
+    // 面回归：探针挂死由 run_probe_rn 的 8 秒外层界兜住——goto 在界后
+    // 返回零 page 键；在飞 Runtime.evaluate 被外层超时丢弃，pending 留
+    // 1 条僵尸，由 32 秒后的 reap_pending_older_than 回收（此处不等
+    // 32 秒，reap 时效语义由 cdp 单测锁）
     host.eval_snippet(
         r#"await routeMock("http://hung.test/*", "<title>hung</title><script>Object.defineProperty(document, 'cookie', {get: function(){ while(true){} }});</script><h1>h</h1>", {contentType: "text/html"})"#,
     )
@@ -2423,15 +2424,15 @@ return await responseBody(evs[0].params.requestId)"#,
     let wall = t_hung.elapsed().as_secs_f64();
     assert!(
         hung.get("page_skills").is_none() && hung.get("framework").is_none(),
-        "无特征页零 page 键: {hung}"
+        "探针超时静默降级零 page 键: {hung}"
     );
     assert!(
-        wall < 8.0,
-        "页面世界的属性覆写不拖探针（隔离世界免疫，实测 {wall:.1}s 应快回）"
+        (7.0..=25.0).contains(&wall),
+        "8 秒外层界应兜住挂死探针（实测 {wall:.1}s；上界放宽到 #52 时代窗，双引擎并行跑时前置导航段受负载拉长，界本体语义由零 page 键与 pending 断言承重）"
     );
     assert!(
-        engine.session().pending_len().await == 0,
-        "pending 表归零（探针正常收尾零积尸）"
+        engine.session().pending_len().await <= 1,
+        "探针僵尸至多 1 条（reaper 32 秒后回收，其余在途不应积尸）"
     );
     // 会话仍健：browser 级调用（Target.getTargets 面）不受页内挂死影响
     let healthy = host
