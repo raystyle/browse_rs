@@ -705,9 +705,9 @@ fn eval_timeout_response(
     op: Option<String>,
     bound: Duration,
 ) -> (axum::http::StatusCode, Json<Value>) {
-    let op_desc = op
-        .clone()
-        .unwrap_or_else(|| "执行间隙（两函数之间）".into());
+    let op_desc = op.clone().unwrap_or_else(|| {
+        "执行间隙（两函数之间；--js 与 session.* 直调面同此形，无函数名可点）".into()
+    });
     (
         axum::http::StatusCode::INTERNAL_SERVER_ERROR,
         Json(json!({
