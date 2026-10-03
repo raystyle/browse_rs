@@ -33,6 +33,7 @@
 | REQ-027 | implemented | must | 统一兜底超时：--timeout 旗标、60 秒缺省、卡点回执同形（v0.30.7） | 探针与回执单测加名册守卫加 fetch 收编；ADR-0012 |
 | REQ-028 | implemented | must | fetch 渲染 DOM HTML 与 mdka markdown，方言全局化（rn 经桥直达） | fetch_core 单测加 e2e 双件加 CLI 实弹；mdka 3.2 |
 | REQ-029 | implemented | must | 页面特征判据 rn 脚本化（workspace scripts 隐式加载）与 workspace 收窄两层 | 加载器单测加 e2e 特征页过 rn 路径；workspace 81cbf14 |
+| REQ-030 | implemented | must | 封版 v0.30.8（fetch 渲染 DOM 与判据 rn 脚本化两批，总台令 patch 从令留痕） | 判据偏差同 REQ-024 先例形；release.ps1 发布道 |
 
 ## Roadmap（issue 台账批次规划）
 
