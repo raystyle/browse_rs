@@ -35,7 +35,7 @@
 { "code": "pub async fn main() { cdp::goto(\"data:text/html,<title>t</title>\").await?; Ok(cdp::eval(\"document.title\").await?) }" }
 ```
 
-脚本在 daemon 侧独立 VM 执行（Rune 语言，入口恒 `pub async fn main()` 且返回 `Result`；`?` 传播 `cdp::CdpError`）。宿主只装 json/time/cdp 三模块；cdp 模块是通用通道形（ADR-0011）：探针五件 `goto`/`eval`/`eval_handle`/`call`/`release` 走自有 CDP 会话的隔离世界（worldName `browse-rune`）`Runtime.evaluate`，事件件 `wait_event` 与命令件 `raw` 对偶开放任意 method 名，js 族四件走主世界，三支柱三件与方言同源。双限额（指令一千万、分配 16MB）；对象组执行收尾整组释放。
+脚本在 daemon 侧独立 VM 执行（Rune 语言，入口恒 `pub async fn main()` 且返回 `Result`；`?` 传播 `cdp::CdpError`）。宿主只装 json/time/cdp 三模块；cdp 模块是通用通道形（ADR-0011）：探针五件 `goto`/`eval`/`eval_handle`/`call`/`release` 走自有 CDP 会话的隔离世界（worldName `browse-rune`）`Runtime.evaluate`，事件件 `wait_event` 与命令件 `raw` 对偶开放任意 method 名，js/js_lib 走主世界，render 是运行时 Jinja、stdin 读管道参数道，三支柱三件与方言同源。双限额（指令一千万、分配 16MB）；对象组执行收尾整组释放。
 
 函数签名（`Result` 的 `E` 恒 `cdp::CdpError`）：
 
