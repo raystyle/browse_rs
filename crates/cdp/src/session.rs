@@ -803,6 +803,11 @@ impl Session {
             .ok_or_else(|| anyhow!("CDP socket closed"))
             .and_then(|o| o.send(msg).map_err(|_| anyhow!("CDP socket closed")));
         drop(out_lock);
+        if sent.is_err() {
+            // 发送失败清登记（全量审 L1）：连接刚死的竞态窗里 insert 已入
+            // 表，不清则 pending 积尸到下次 reset/close 才消（pending_len 虚高）
+            self.pending.lock().await.remove(&id);
+        }
         sent?;
 
         let resp = match timeout(deadline, rx).await {

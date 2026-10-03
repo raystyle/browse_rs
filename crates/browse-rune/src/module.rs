@@ -734,6 +734,21 @@ pub fn cdp_module(ctx: ModuleCtx) -> Result<(Module, Cleanup), rune::ContextErro
                     let out = f(payload)
                         .await
                         .map_err(|e| cdp_err("dialect", format!("{fn_name}: {e}")))?;
+                    // 导航/换靶族经桥真执行即废世界或换活动 tab（全量审 M1，
+                    // 与 raw 的 G-6 同律）：世界置空待重建，否则后续 eval 撞
+                    // 死 context 或静默落旧 tab
+                    if matches!(
+                        fn_name.as_str(),
+                        "goto"
+                            | "reload"
+                            | "goBack"
+                            | "goForward"
+                            | "newTab"
+                            | "switchTab"
+                            | "closeTab"
+                    ) {
+                        st.world.lock().await.context_id = 0;
+                    }
                     serde_json::from_value::<RuneValue>(out)
                         .map_err(|e| cdp_err("dialect", format!("结果过桥失败：{e}")))
                 }

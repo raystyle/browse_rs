@@ -41,17 +41,36 @@ pub fn needs_upgrade(body_text: &str) -> Option<&'static str> {
 }
 
 /// HTML 粗抽正文文本（HTTP 腿的降级面）：剥 script/style 与标签，压空白。
+///
+/// 标记匹配对 `html` 本体做 ASCII 不敏感比较（全量审 H1 修）：不构造
+/// 整串 `to_lowercase` 再共用字节下标——U+0130（İ）/U+1E9E（ẞ）等小写化
+/// 改变字节长度的字符会让下标在 lower 里落进字符中间直接 panic（土耳其
+/// 语页实测崩）。HTML 标记名恒 ASCII，ASCII 等值即足。
 fn strip_html(html: &str) -> String {
+    fn starts_with_tag(s: &str, tag: &str) -> bool {
+        let b = s.as_bytes();
+        let t = tag.as_bytes();
+        b.len() >= t.len() && b.iter().zip(t).all(|(x, y)| x.to_ascii_lowercase() == *y)
+    }
+    fn find_ascii(haystack: &str, needle: &str) -> Option<usize> {
+        let hb = haystack.as_bytes();
+        let nb = needle.as_bytes();
+        (0..=hb.len().saturating_sub(nb.len())).find(|&i| {
+            hb[i..i + nb.len()]
+                .iter()
+                .zip(nb)
+                .all(|(x, y)| x.to_ascii_lowercase() == *y)
+        })
+    }
     let mut out = String::with_capacity(html.len() / 2);
     let mut in_tag = false;
     let mut skip_until: Option<&str> = None;
-    let lower = html.to_lowercase();
     let bytes = html.as_bytes();
     let mut i = 0usize;
     while i < bytes.len() {
-        let rest = &lower[i..];
+        let rest = &html[i..];
         if let Some(end) = skip_until {
-            if let Some(pos) = rest.find(end) {
+            if let Some(pos) = find_ascii(rest, end) {
                 i += pos + end.len();
                 skip_until = None;
                 in_tag = false;
@@ -59,22 +78,22 @@ fn strip_html(html: &str) -> String {
             }
             break;
         }
-        if !in_tag && lower[i..].starts_with("<script") {
+        if !in_tag && starts_with_tag(rest, "<script") {
             skip_until = Some("</script>");
             i += 7;
             continue;
         }
-        if !in_tag && lower[i..].starts_with("<style") {
+        if !in_tag && starts_with_tag(rest, "<style") {
             skip_until = Some("</style>");
             i += 6;
             continue;
         }
-        if !in_tag && lower[i..].starts_with("<title") {
+        if !in_tag && starts_with_tag(rest, "<title") {
             skip_until = Some("</title>");
             i += 6;
             continue;
         }
-        let ch = html[i..].chars().next().unwrap_or(' ');
+        let ch = rest.chars().next().unwrap_or(' ');
         if ch == '<' {
             in_tag = true;
         } else if ch == '>' {
@@ -109,13 +128,25 @@ pub async fn fetch(url: &str, _markdown: bool, timeout_s: u64) -> Result<Value> 
         }
         Err(_) => (0, String::new()),
     };
-    let title = html
-        .to_lowercase()
-        .find("<title")
-        .and_then(|p| html[p..].find('>').map(|q| p + q + 1))
-        .and_then(|start| html[start..].find("</title>").map(|e| (start, e)))
-        .map(|(s, e)| html[s..s + e].trim().to_string())
-        .unwrap_or_default();
+    // 标题抽取同 H1 修：ASCII 不敏感查找在 html 本体（不再构造 lower 共用
+    // 下标）
+    let title = {
+        fn find_ascii(haystack: &str, needle: &str) -> Option<usize> {
+            let hb = haystack.as_bytes();
+            let nb = needle.as_bytes();
+            (0..=hb.len().saturating_sub(nb.len())).find(|&i| {
+                hb[i..i + nb.len()]
+                    .iter()
+                    .zip(nb)
+                    .all(|(x, y)| x.to_ascii_lowercase() == *y)
+            })
+        }
+        find_ascii(&html, "<title")
+            .and_then(|p| html[p..].find('>').map(|q| p + q + 1))
+            .and_then(|start| html[start..].find("</title>").map(|e| (start, e)))
+            .map(|(s, e)| html[s..s + e].trim().to_string())
+            .unwrap_or_default()
+    };
     let text = strip_html(&html);
     let reason = if status == 0 {
         Some("http-error")
@@ -300,5 +331,24 @@ mod tests {
             }
         }
         let _ = std::fs::remove_dir_all(&ws);
+    }
+
+    /// 全量审 H1 回归锁：小写化变长字符（U+0130 变长、U+1E9E 变短）的
+    /// 页面不 panic（旧实现 to_lowercase 共用字节下标，İstanbul 实测崩）。
+    #[test]
+    fn strip_html_unicode_case_changers_no_panic() {
+        let a = strip_html("\u{0130}stanbul <b>page</b> <script>x</script> tail");
+        assert!(a.contains("page") && a.contains("tail"), "{a}");
+        let b = strip_html("\u{1e9e}\u{1e9e}\u{1e9e} <TITLE>T</TITLE> body");
+        assert!(b.contains("body"), "{b}");
+        assert_eq!(strip_html(""), "");
+    }
+
+    /// 标记 ASCII 不敏感仍生效（大写 SCRIPT/TITLE 剥除），ASCII 等值与
+    /// 旧行为一致。
+    #[test]
+    fn strip_html_ascii_case_insensitive_tags() {
+        assert_eq!(strip_html("a <SCRIPT>hidden</SCRIPT> b"), "a b");
+        assert_eq!(strip_html("<TITLE>x</TITLE>only"), "only");
     }
 }

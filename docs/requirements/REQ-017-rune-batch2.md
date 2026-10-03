@@ -6,6 +6,9 @@ priority: should
 trace: 单测（server 超时/停止回执面、engine_lost_watch、rawstr 词法十件、vm_face r# 端到端、stdin 读界集成双件）；e2e 四件（timeout 探针保留、r# 真引擎、wait_event 双臂、既有 rune 回归族）；CLI 实弹三证据（stop 回执/victim stderr 一行 JSON/daemon 日志行）；评审三轮 CONFIRM 后发版 v0.28.0
 ---
 
+> 口径修订注记（2026-10-03）：本文的 45/300 秒数值与 daemon 级同界口径由 REQ-027/ADR-0012 统一兜底超时修订（统一缺省 60 秒、--timeout 请求级覆写）。历史记录冻结。
+
+
 # REQ-017：rune 面批次二
 
 ## Scenario

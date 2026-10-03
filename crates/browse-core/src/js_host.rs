@@ -818,6 +818,17 @@ impl JsHost {
                 if o.get("__host").and_then(|v| v.as_str()) == Some("session") {
                     if let Some(domain) = o.get("__domain").and_then(|v| v.as_str()) {
                         let method = format!("{domain}.{prop}");
+                        // Fetch 域互抢守卫（全量审 M2）：routeBlock/routeMock 在
+                        // 跑时手动 Fetch.enable 会覆盖 watcher 的 pattern 集
+                        //（路由失效）且 watcher 仍会吞放行 requestPaused——
+                        // 先清路由再开手动域
+                        if method == "Fetch.enable"
+                            && self.fetch_by_us.load(std::sync::atomic::Ordering::Relaxed)
+                        {
+                            bail!(
+                                "Fetch.enable 与 routeBlock/routeMock 拦截互抢（手动开域会覆盖路由 pattern 集，watcher 还会代答放行你的 requestPaused）；下一步：先 await routeClear() 再开手动 Fetch 域（或反之，同会话不混用）"
+                            );
+                        }
                         let params = argv.first().cloned().unwrap_or(json!({}));
                         return self.session.call(&method, params).await;
                     }

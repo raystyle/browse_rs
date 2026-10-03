@@ -615,18 +615,40 @@ async fn eval_handler(
     }
     // 分流（#22）：js 旗标走全量 JS 旁路，缺省走方言
     let bound = eval_timeout_for(req.timeout_s);
+    let eval_started = Instant::now();
     let outcome = tokio::time::timeout(bound, run_eval_code(&d.host, &req.code, req.js)).await;
     let value = match outcome {
         Ok(Ok(v)) => v,
         Ok(Err(e)) => {
-            // 撞上「还没连」的片段：兜底拉引擎重试一次
+            // 撞上「还没连」的片段：兜底拉引擎重试一次；重试腿同受兜底
+            // 硬界约束（全量审 M3：按剩余时间包一层，不再脱界裸跑占槽）
             if format!("{e:#}").contains("Not connected") {
+                let remaining = bound.saturating_sub(eval_started.elapsed());
                 let spec = d.spec.lock().unwrap_or_else(|e| e.into_inner()).clone();
                 match d.engine.ensure(&spec).await {
-                    Ok(_) => match run_eval_code(&d.host, &req.code, req.js).await {
-                        Ok(v) => v,
-                        Err(e2) => return err_response(e2),
-                    },
+                    Ok(_) => {
+                        match tokio::time::timeout(
+                            remaining,
+                            run_eval_code(&d.host, &req.code, req.js),
+                        )
+                        .await
+                        {
+                            Ok(Ok(v)) => v,
+                            Ok(Err(e2)) => return err_response(e2),
+                            Err(_) => {
+                                let op = d.host.current_op_snapshot();
+                                eprintln!(
+                                    "{}",
+                                    json!({ "evalTimeout": {
+                                        "op": op,
+                                        "elapsedMs": bound.as_millis() as u64,
+                                        "boundS": bound.as_secs(),
+                                    }})
+                                );
+                                return eval_timeout_response(op, bound);
+                            }
+                        }
+                    }
                     Err(e2) => return err_response(e2),
                 }
             } else {
@@ -699,7 +721,8 @@ fn rune_timeout_response(op: Value, bound: Duration) -> (axum::http::StatusCode,
 
 /// /eval 兜底硬界到期的结构化回执（REQ-027 统一兜底超时）：形状与
 /// [`rune_timeout_response`] 同构——`op` 是在飞方言函数面（JsHost 探针；
-/// null 即执行间隙）、`elapsed_ms` 已等待毫秒、`bound_s` 上界秒；CTA 带
+/// null 即执行间隙或 `--js`/`session.*` 直调面，无函数名可点）、
+/// `elapsed_ms` 已等待毫秒、`bound_s` 上界秒；CTA 带
 /// 卡点定位法（等待类函数收窗参 vs 页面执行慢）。
 fn eval_timeout_response(
     op: Option<String>,

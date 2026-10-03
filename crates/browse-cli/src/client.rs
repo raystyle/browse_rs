@@ -191,12 +191,15 @@ pub fn skills_passthrough_env() -> Vec<(&'static str, String)> {
 /// HTTP 失败或 daemon 求值失败（语法错、CDP 错、守卫拦截、超时）。
 pub async fn eval(code: &str, new_tab: bool, js: bool, timeout_s: Option<u64>) -> Result<Value> {
     let c = client();
-    let resp = c
+    let mut rq = c
         .post(format!("{}/eval", http()))
-        .json(&json!({ "code": code, "new_tab": new_tab, "js": js, "timeout_s": timeout_s }))
-        .send()
-        .await
-        .context("POST /eval")?;
+        .json(&json!({ "code": code, "new_tab": new_tab, "js": js, "timeout_s": timeout_s }));
+    // HTTP 客户端超时随兜底界联动（全量审 L2）：界 + 60 秒余量，防 reqwest
+    // 缺省 600 秒先到丢掉 daemon 的结构化 timeout 回执
+    if let Some(s) = timeout_s {
+        rq = rq.timeout(std::time::Duration::from_secs(s + 60));
+    }
+    let resp = rq.send().await.context("POST /eval")?;
     let body: Value = resp.json().await.context("解析 /eval 响应")?;
     if body.get("ok").and_then(Value::as_bool) == Some(true) {
         // #60 操作时刻引擎上下文：正常态安静；异常（指纹变化、跨宿主）
@@ -232,12 +235,14 @@ pub async fn rune(
     timeout_s: Option<u64>,
 ) -> Result<Value> {
     let c = client();
-    let resp = c
+    let mut rq = c
         .post(format!("{}/rune", http()))
-        .json(&json!({ "code": code, "root": root, "stdin": stdin, "vars_syntax": vars_syntax.name(), "timeout_s": timeout_s }))
-        .send()
-        .await
-        .context("POST /rune")?;
+        .json(&json!({ "code": code, "root": root, "stdin": stdin, "vars_syntax": vars_syntax.name(), "timeout_s": timeout_s }));
+    // 同 L2：HTTP 超时随兜底界联动
+    if let Some(s) = timeout_s {
+        rq = rq.timeout(std::time::Duration::from_secs(s + 60));
+    }
+    let resp = rq.send().await.context("POST /rune")?;
     let body: Value = resp.json().await.context("解析 /rune 响应")?;
     if body.get("ok").and_then(Value::as_bool) == Some(true) {
         if let Some(ctx) = body.get("engineContext") {

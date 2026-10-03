@@ -6,6 +6,9 @@ priority: should
 trace: 单测三件（server 超时回执结构面、browse-rune 探针快错清空、client 侧行为经实弹 CLI 冒烟）；e2e rune_timeout_probe_retains_inflight_op（真引擎，悬挂 js 的 awaitPromise 腿上外层 3 秒界超时后探针保留 op=js）；战役台沟通单三轮定形（字段集/45 秒裁定/最小批先行）与 #68 验收环境同源
 ---
 
+> 口径修订注记（2026-10-03）：本文的 45/300 秒数值与 daemon 级同界口径由 REQ-027/ADR-0012 统一兜底超时修订（统一缺省 60 秒、--timeout 请求级覆写）。历史记录冻结。
+
+
 # REQ-016：rune 整体超时回执结构化（最小 CTA）
 
 ## Scenario
