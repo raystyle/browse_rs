@@ -597,9 +597,15 @@ fn roster_matches_global_parse_arms_bidirectionally() {
     let loop_start = src
         .find("while let Some(a) = args.next_opt()")
         .expect("全局循环在位");
-    // 定长窗口（6000 字符 ≈ 现段 2.4 倍）：全局臂段增长推过窗口时反向检
-    // 查静默漏扫——依赖「fmt 稳定缩进＋新增全局旗标时名册守卫先红」双保
-    let seg = &src[loop_start..loop_start + 6000];
+    // 定长窗口（16000 字符 ≈ 现段 3 倍，REQ-027/028 批从 6000 扩）：全局
+    // 臂段增长推过窗口时反向检查静默漏扫——依赖「fmt 稳定缩进＋新增全局
+    // 旗标时名册守卫先红」双保。截断点回退到字符边界（多字节中文注释在
+    // 窗口尾时裸切会 panic，本批实弹踩过）
+    let mut seg_end = (loop_start + 16_000).min(src.len());
+    while !src.is_char_boundary(seg_end) {
+        seg_end -= 1;
+    }
+    let seg = &src[loop_start..seg_end];
     // 顶层臂按缩进判（12 空格 + 引号开头；子命令内环臂更深缩进不入）：
     // 常量提取用 fmt 的稳定缩进
     let mut arms: Vec<String> = Vec::new();

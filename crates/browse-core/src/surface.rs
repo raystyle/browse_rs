@@ -283,18 +283,24 @@ pub const COMMANDS: &[CmdSpec] = &[
     CmdSpec {
         name: "fetch",
         kind: CmdKind::Cli,
-        signature: "browse fetch <url> [--markdown|-m] [--timeout <s>]",
+        signature: "browse fetch <url> [--html] [--markdown|-m] [--timeout <s>]",
         args: &[
             arg!("url", "string", true),
             arg!(
                 "markdown",
                 "boolean",
                 false,
-                "false（v1 同 text，启发式抽取非 Readability）"
+                "false（mdka 真转换：渲染 DOM 或 raw body 转 markdown 字段）"
+            ),
+            arg!(
+                "html",
+                "boolean",
+                false,
+                "false（渲染后 DOM HTML：引擎腿直取 outerHTML 回 html 字段）"
             ),
             arg!("timeout", "number", false, "15"),
         ],
-        description: "一次性只读抓取：HTTP 直取零浏览器成本；三条件升级引擎（正文空、墙词、少于 20 词）走 goto 加页内抽取（懒拉起）；回 {via, title, text, upgradedFrom}；两腿都按 URL 做 goto 同口径的 workspace 站点知识点名（命中附 domain_skills 与 hint，不依赖引擎）。对照 waitForResponse：这是无会话一次性抓取。",
+        description: "一次性只读抓取：HTTP 直取零浏览器成本；三条件升级引擎（正文空、墙词、少于 20 词）走 goto 加页内抽取（懒拉起）；回 {via, title, text, markdown?, html?, upgradedFrom?}；--html 恒走引擎腿回渲染后 DOM HTML（documentElement.outerHTML，JS 执行后的面）；--markdown 经 mdka 把本腿 html（渲染形为渲染 DOM、HTTP 直通为 raw body）转 markdown 字段（v1 同 text 的 no-op 已升真转换）；两腿都按 URL 做 goto 同口径的 workspace 站点知识点名（命中附 domain_skills 与 hint，不依赖引擎）。对照 waitForResponse：这是无会话一次性抓取。",
         example: "browse fetch https://example.com",
     },
     CmdSpec {
@@ -1196,6 +1202,22 @@ pub const COMMANDS: &[CmdSpec] = &[
         args: &[],
         description: "拒绝当前对话框。alert/beforeunload 会被自动接受，无需手动。",
         example: "await dialogDismiss()",
+    },
+    CmdSpec {
+        name: "fetch",
+        kind: CmdKind::Global,
+        signature: "fetch(url, opts?)",
+        args: &[
+            arg!("url", "string", true),
+            arg!(
+                "opts",
+                "object",
+                false,
+                "{html: false, markdown: false, timeout: 15}"
+            ),
+        ],
+        description: "一次性只读抓取（方言全局；rn 经 cdp::dialect 桥直达）：HTTP 直取零浏览器成本，三条件升级（正文空、墙词、少于 20 词）走 goto 加页内抽取；html:true 恒走引擎腿回渲染后 DOM HTML（html 字段），markdown:true 经 mdka 转本腿 html 回 markdown 字段；回 {via, title, text, html?, markdown?, status?}；与 CLI browse fetch 同语义（纯函数单源，腿编排双轨）。",
+        example: r#"return await fetch("https://example.com", {markdown: true})"#,
     },
     CmdSpec {
         name: "routeBlock",

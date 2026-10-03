@@ -39,6 +39,7 @@
 pub mod chrome_mgr;
 pub mod cookie_clone;
 pub mod engine;
+pub mod fetch_core;
 pub mod js_host;
 pub mod parser;
 pub mod paths;

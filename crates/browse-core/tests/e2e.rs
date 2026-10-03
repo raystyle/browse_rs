@@ -3477,6 +3477,77 @@ async fn rune_raw_fetch_interception() {
     clean_profile().await;
 }
 
+/// 方言全局 fetch（REQ-028）：HTTP 直取腿加引擎腿实弹——本地源页 JS 注入
+/// 节点，`html: true` 回渲染后 DOM（含注入节点）、`markdown: true` 回 mdka
+/// 转换；rn 经 dialect 桥同源直达。
+#[tokio::test]
+async fn fetch_global_face() {
+    if !gated() {
+        eprintln!("skip: BROWSE_E2E 未设 1");
+        return;
+    }
+    let _seq = SEQ.lock().await;
+    clean_profile().await;
+    // 本地源：raw body 无 JS 注入节点，JS 执行后才有（渲染证明的判据）
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let port = listener.local_addr().unwrap().port();
+    let origin = tokio::spawn(async move {
+        use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
+        loop {
+            let Ok((mut sock, _)) = listener.accept().await else {
+                break;
+            };
+            tokio::spawn(async move {
+                let mut buf = [0u8; 4096];
+                let _ = sock.read(&mut buf).await;
+                let body = "<html><head><title>fg</title></head><body><h1>Static Head</h1><script>document.body.appendChild(Object.assign(document.createElement('p'), {textContent: 'js-injected-node'}))</script></body></html>";
+                let head = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                    body.len()
+                );
+                let _ = sock.write_all(head.as_bytes()).await;
+                let _ = sock.write_all(body.as_bytes()).await;
+            });
+        }
+    });
+    let session = cdp::Session::new();
+    let engine = Engine::new(session.clone());
+    engine
+        .ensure(&EngineSpec::Auto {
+            chrome: None,
+            headless: true,
+            pipe: false,
+            profile: None,
+            proxy: None,
+            proxy_bypass: None,
+            isolated: false,
+            engine_args: Vec::new(),
+        })
+        .await
+        .expect("fetch 全局验收引擎起不来");
+    let host = browse_core::JsHost::new(session.clone());
+    // 方言全局：渲染形(html+markdown)——raw body 无 js-injected-node,渲染后才有
+    let r = host
+        .eval_snippet(&format!(
+            "return await fetch(\"http://127.0.0.1:{port}/\", {{html: true, markdown: true, timeout: 5}})"
+        ))
+        .await
+        .expect("fetch 全局渲染形");
+    assert_eq!(r["via"], json!("engine"), "渲染形恒走引擎腿：{r}");
+    let html = r["html"].as_str().unwrap_or_default();
+    assert!(
+        html.contains("js-injected-node"),
+        "渲染 DOM 应含 JS 注入节点：{}…",
+        &html[..html.len().min(200)]
+    );
+    let md = r["markdown"].as_str().unwrap_or_default();
+    assert!(md.contains("# Static Head"), "mdka 转换含标题：{md}");
+    assert_eq!(r["title"], json!("fg"), "{r}");
+    origin.abort();
+    engine.shutdown().await.expect("shutdown");
+    clean_profile().await;
+}
+
 /// 方言全量桥（issue #75）：`cdp::dialect(fn, args_json)` 名参直达方言
 /// 全局函数（与方言面同一实现）。三形实弹：零参（currentTab）、数字参
 /// （waitLoad）、对象参（requests 与三支柱同源对账计数一致）。
@@ -3559,7 +3630,14 @@ async fn rune_dialect_bridge() {
         // 对象参形加同源对账：桥腿与三支柱腿同一实现，计数必一致
         let via_bridge = cdp::dialect("requests", "[{\"filter\": \"dialect\"}]").await?;
         let via_pillar = cdp::requests(#{"filter": "dialect"}).await?;
-        Ok(#{"url": tab["url"], "loaded": loaded, "bridge_count": via_bridge["count"], "pillar_count": via_pillar["count"]})
+        // 对象参形加同源对账：桥腿与三支柱腿同一实现，计数必一致
+        let via_bridge = cdp::dialect("requests", "[{\"filter\": \"dialect\"}]").await?;
+        let via_pillar = cdp::requests(#{"filter": "dialect"}).await?;
+        // fetch 全局经桥直达（REQ-028）：data: URL 的 HTTP 腿必败，升级引擎
+        // 腿回渲染 DOM
+        let f = cdp::dialect("fetch", "[\"data:text/html,<h1>rn-fetch</h1>\", {\"html\": true}]").await?;
+        let f_html = f["html"];
+        Ok(#{"url": tab["url"], "loaded": loaded, "bridge_count": via_bridge["count"], "pillar_count": via_pillar["count"], "fetch_via": f["via"], "fetch_html_has_h1": f_html})
     }"##;
     let r = browse_rune::run(
         session,
@@ -3588,6 +3666,16 @@ async fn rune_dialect_bridge() {
         .and_then(|v| v.as_str())
         .unwrap_or_default();
     assert!(url.starts_with("data:"), "currentTab url 形：{r}");
+    assert_eq!(
+        r.pointer("/ok/fetch_via"),
+        Some(&json!("engine")),
+        "fetch 经桥升级引擎腿：{r}"
+    );
+    let fh = r
+        .pointer("/ok/fetch_html_has_h1")
+        .and_then(|v| v.as_str())
+        .unwrap_or_default();
+    assert!(fh.contains("rn-fetch"), "渲染 DOM 经桥回传：{r}");
     assert!(r.pointer("/ok/loaded").is_some(), "waitLoad 有回值：{r}");
     engine.shutdown().await.expect("shutdown");
     clean_profile().await;

@@ -877,6 +877,104 @@ impl JsHost {
         self.call_global(name, argv).await
     }
 
+    /// 方言全局 `fetch(url, opts?)`（REQ-028）：一次性只读抓取的 daemon 侧
+    /// 编排——HTTP 直取腿（reqwest）加三条件升级引擎腿（直调本进程
+    /// session 的 goto 与主世界求值，不经 /eval 自环）；`html: true` 恒走
+    /// 引擎腿回渲染后 DOM HTML，`markdown: true` 对本腿 html 做 mdka 转换；
+    /// 域名知识点名与 goto 同口径。腿逻辑与 CLI `browse fetch` 双轨
+    /// （ADR-0009 注记形，纯函数单源在 [`crate::fetch_core`]）。
+    async fn fetch_global(&self, url: &str, opts: &Value) -> Result<Value> {
+        let dom_html = opts.get("html").and_then(Value::as_bool).unwrap_or(false);
+        let markdown = opts
+            .get("markdown")
+            .and_then(Value::as_bool)
+            .unwrap_or(false);
+        let (timeout_s, warn) = match opts.get("timeout") {
+            None | Some(Value::Null) => (15u64, None),
+            Some(v) => v.as_u64().map(secs_to_ms).ok_or_else(|| anyhow!(
+                "fetch 的 timeout 应是整秒数（当前：{}）；下一步：秒口径直写如 fetch(url, {{timeout: 15}})",
+                preview(v)
+            ))?,
+        };
+        if let Some(w) = &warn {
+            eprintln!("[browse] fetch {w}");
+        }
+        let timeout_ms = timeout_s * 1000;
+        // 渲染 DOM 形恒走引擎腿（渲染需要 JS）
+        if !dom_html {
+            let client = reqwest::Client::builder()
+                .timeout(std::time::Duration::from_millis(timeout_ms))
+                .user_agent(concat!("browse/", env!("CARGO_PKG_VERSION")))
+                .build()?;
+            let (status, html) = match client.get(url).send().await {
+                Ok(r) => {
+                    let st = r.status().as_u16();
+                    match r.text().await {
+                        Ok(t) => (st, t),
+                        Err(_) => (st, String::new()),
+                    }
+                }
+                Err(_) => (0, String::new()),
+            };
+            let text = crate::fetch_core::strip_html(&html);
+            let reason = if status == 0 {
+                Some("http-error")
+            } else {
+                crate::fetch_core::needs_upgrade(&text)
+            };
+            if reason.is_none() {
+                let mut r = json!({
+                    "url": url, "via": "http", "status": status,
+                    "title": crate::fetch_core::title_of(&html),
+                    "text": text,
+                    "bytes": html.len(),
+                });
+                if markdown {
+                    r["markdown"] = json!(crate::fetch_core::to_markdown(&html));
+                }
+                self.attach_fetch_skills(url, &mut r);
+                return Ok(attach_warning(r, warn));
+            }
+        }
+        // 引擎腿：goto 直调（不经 call_global，防探针翻转）加主世界抽取
+        crate::semantic::goto(&self.session, url, 20_000, None).await?;
+        let expr = crate::fetch_core::extract_js(true);
+        let ev = self
+            .session
+            .call(
+                "Runtime.evaluate",
+                json!({ "expression": expr, "returnByValue": true, "awaitPromise": true }),
+            )
+            .await?;
+        let inner = ev
+            .pointer("/result/value")
+            .and_then(Value::as_str)
+            .and_then(|s| serde_json::from_str::<Value>(s).ok())
+            .unwrap_or(json!({}));
+        let mut r = json!({
+            "url": url, "via": "engine",
+            "title": inner.get("title"),
+            "text": inner.get("text"),
+        });
+        let html_src = inner
+            .get("html")
+            .and_then(Value::as_str)
+            .map(str::to_string);
+        crate::fetch_core::attach_optional_fields(&mut r, html_src.as_deref(), markdown);
+        self.attach_fetch_skills(url, &mut r);
+        Ok(attach_warning(r, warn))
+    }
+
+    /// fetch 回执的域名知识点名（与 goto 同口径）。
+    fn attach_fetch_skills(&self, url: &str, r: &mut Value) {
+        let roots = crate::paths::workspace_roots();
+        for (k, v) in crate::skills::url_domain_fields_multi(&roots, url) {
+            if let Some(obj) = r.as_object_mut() {
+                obj.insert(k.to_string(), v);
+            }
+        }
+    }
+
     /// 在飞方言调用面快照（统一兜底超时批）：`None` 即执行间隙（两函数
     /// 之间）；超时臂读到的值就是卡点函数名。
     pub fn current_op_snapshot(&self) -> Option<String> {
@@ -2713,6 +2811,15 @@ impl JsHost {
                 self.session.clear_pending_dialog().await;
                 Ok(json!(true))
             }
+            // ---- 一次性抓取（REQ-028 方言全局；CLI browse fetch 同语义
+            // 双轨、rn 经 dialect 桥直达）----
+            "fetch" => {
+                let url = argv.first().and_then(Value::as_str).ok_or_else(|| anyhow!(
+                    "fetch 缺 url；下一步：fetch(\"https://example.com\", {{html: true, markdown: true, timeout: 15}})"
+                ))?;
+                let opts = argv.get(1).cloned().unwrap_or(json!({}));
+                self.fetch_global(url, &opts).await
+            }
             // ---- 网络拦截（Fetch 域，watcher 应答 requestPaused）----
             "routeBlock" => {
                 let pattern = argv.first().and_then(Value::as_str).ok_or_else(|| anyhow!(
@@ -3836,7 +3943,7 @@ const PREVIEW_HEAD_ITEMS: usize = 8;
 /// 全局函数 CTA 清单（#33 G6 单一真相）：「未知函数」提示由此派生，
 /// `global_cta_covers_catalog` 测试把它与 surface 目录的 Global 条目绑死；
 /// 增删全局必须同步这里（value-methods 是方法面族条目，不在此列）。
-const GLOBALS_CTA: &str = "listPageTargets()/resolveWsUrl()/detectBrowsers()/cdpMethods(domain?)/hostFunctions()/snapshot(opts?)/findRefs(q,opts?)/console(opts?)/jsErrors(since?)/requests(opts?)/requestDetail(idxOrId,opts?)/detect()/cookies(domain?)/cookieGet(name)/cookieSet(name,value,opts?)/cookieDelete(name,domain?)/cookiesClear()/localGet(k)/localSet(k,v)/localDelete(k)/localClear()/sessionGet(k)/sessionSet(k,v)/sessionDelete(k)/sessionClear()/mouseMove(x,y)/mouseDown(button?)/mouseUp(button?)/mouseWheel(dx,dy)/hoverAt(x,y)/dropFiles(ref,paths)/highlight(ref,opts?)/highlightClear()/annotate(refs)/downloads(since?)/downloadPath(guid,s?)/emulateMedia(opts?)/emulateMediaClear()/screenshot(path?, full?)/pdf(path?)/newTab(url?)/switchTab(id)/currentTab()/closeTab(id?)/goto(url,opts?)/goBack(delta?)/goForward(delta?)/reload(opts?)/clickAt(x,y,opts?)/fillInput(sel,text,submit?)/clickRef(ref,opts?)/checkRef(ref)/uncheckRef(ref)/fillRef(ref,text,submit?)/selectOption(ref,value)/pressKey(key)/dialogStatus()/dialogAccept(text?)/dialogDismiss()/routeBlock(pattern)/routeMock(pattern,body,opts?)/routeClear()/waitLoad(s?)/waitIdle(s?)/waitForResponse(pattern,s?)/responseBody(requestId)/pageEval(js)/hoverRef(ref)/hoverAt(x,y)/dblclickRef(ref)/dragRef(src,dst)/keydown(key)/keyup(key)/typeRef(ref,text)/emulate(opts)/setInitScript(code)/exportStorageState()/importStorageState(state)/JSON.parse(string)/JSON.stringify(value,indent?)/semanticSnapshot(opts?)/subscribeChanges(opts?)/unsubscribeChanges(sub)/engineWaitForResponse(pat)/engineCancelWait(waitId)/screenshotDiff(opts?)/grantPermissions(perms,origin?)/cloneCookies(domains)/recordStart(opts?)/recordChapter(title)/recordStop()/chromeInstall(opts?)/chromeList()/chromeUse(version)/chromeUpdate()/chromeRemove(version)/chromeDoctor()/print(x)";
+const GLOBALS_CTA: &str = "listPageTargets()/resolveWsUrl()/detectBrowsers()/fetch(url,opts?)/cdpMethods(domain?)/hostFunctions()/snapshot(opts?)/findRefs(q,opts?)/console(opts?)/jsErrors(since?)/requests(opts?)/requestDetail(idxOrId,opts?)/detect()/cookies(domain?)/cookieGet(name)/cookieSet(name,value,opts?)/cookieDelete(name,domain?)/cookiesClear()/localGet(k)/localSet(k,v)/localDelete(k)/localClear()/sessionGet(k)/sessionSet(k,v)/sessionDelete(k)/sessionClear()/mouseMove(x,y)/mouseDown(button?)/mouseUp(button?)/mouseWheel(dx,dy)/hoverAt(x,y)/dropFiles(ref,paths)/highlight(ref,opts?)/highlightClear()/annotate(refs)/downloads(since?)/downloadPath(guid,s?)/emulateMedia(opts?)/emulateMediaClear()/screenshot(path?, full?)/pdf(path?)/newTab(url?)/switchTab(id)/currentTab()/closeTab(id?)/goto(url,opts?)/goBack(delta?)/goForward(delta?)/reload(opts?)/clickAt(x,y,opts?)/fillInput(sel,text,submit?)/clickRef(ref,opts?)/checkRef(ref)/uncheckRef(ref)/fillRef(ref,text,submit?)/selectOption(ref,value)/pressKey(key)/dialogStatus()/dialogAccept(text?)/dialogDismiss()/routeBlock(pattern)/routeMock(pattern,body,opts?)/routeClear()/waitLoad(s?)/waitIdle(s?)/waitForResponse(pattern,s?)/responseBody(requestId)/pageEval(js)/hoverRef(ref)/hoverAt(x,y)/dblclickRef(ref)/dragRef(src,dst)/keydown(key)/keyup(key)/typeRef(ref,text)/emulate(opts)/setInitScript(code)/exportStorageState()/importStorageState(state)/JSON.parse(string)/JSON.stringify(value,indent?)/semanticSnapshot(opts?)/subscribeChanges(opts?)/unsubscribeChanges(sub)/engineWaitForResponse(pat)/engineCancelWait(waitId)/screenshotDiff(opts?)/grantPermissions(perms,origin?)/cloneCookies(domains)/recordStart(opts?)/recordChapter(title)/recordStop()/chromeInstall(opts?)/chromeList()/chromeUse(version)/chromeUpdate()/chromeRemove(version)/chromeDoctor()/print(x)";
 
 /// 容器预览：头部 JSON 截断（留尾注位），超帽尾注总项数；小容器输出
 /// 与全量形一致。不与 [`trunc_preview`] 叠用（双省略号）。

@@ -4,6 +4,11 @@
 //!   墙词、正文少于 20 词。
 //! - 引擎腿：经 daemon POST /eval 走 goto 加页内抽取（启发式标题加段落，
 //!   非 Readability；v1 口径已在 surface 披露）。
+//! - 单源纪律（REQ-028）：纯函数（粗抽/升级判定/标题/markdown 转换）在
+//!   `browse_core::fetch_core`，与方言全局 `fetch(url, opts?)`（rn 经
+//!   dialect 桥直达）共用；本文件的腿编排（CLI 进程内 reqwest + /eval
+//!   引擎腿）与全局的 daemon 侧编排双轨（ADR-0009 注记形，零 daemon 快
+//!   路径是 CLI 既有契约）。
 //! - 域名层点名（#56）：两腿回执都按 URL 做 goto 同口径匹配，命中
 //!   workspace 站点知识附 domain_skills 与 hint；不依赖引擎（引擎腿
 //!   daemon 侧 goto 的点名回执被抽取串替换，CLI 侧补点）。
@@ -12,105 +17,7 @@ use anyhow::{Result, anyhow, bail};
 use serde_json::Value;
 use serde_json::json;
 
-/// 升级判定的三条件（#50）：正文空、墙词、少于 20 词。
-/// 纯函数供单测锁。
-pub fn needs_upgrade(body_text: &str) -> Option<&'static str> {
-    let t = body_text.trim();
-    if t.is_empty() {
-        return Some("empty");
-    }
-    const WALLS: [&str; 8] = [
-        "just a moment",
-        "attention required",
-        "checking your browser",
-        "verify you are human",
-        "enable javascript",
-        "access denied",
-        "unusual traffic",
-        "captcha",
-    ];
-    let low = t.to_lowercase();
-    if WALLS.iter().any(|w| low.contains(w)) {
-        return Some("wall-word");
-    }
-    let words = low.split_whitespace().count();
-    if words < 20 {
-        return Some("thin-content");
-    }
-    None
-}
-
-/// HTML 粗抽正文文本（HTTP 腿的降级面）：剥 script/style 与标签，压空白。
-///
-/// 标记匹配对 `html` 本体做 ASCII 不敏感比较（全量审 H1 修）：不构造
-/// 整串 `to_lowercase` 再共用字节下标——U+0130（İ）/U+1E9E（ẞ）等小写化
-/// 改变字节长度的字符会让下标在 lower 里落进字符中间直接 panic（土耳其
-/// 语页实测崩）。HTML 标记名恒 ASCII，ASCII 等值即足。
-fn strip_html(html: &str) -> String {
-    fn starts_with_tag(s: &str, tag: &str) -> bool {
-        let b = s.as_bytes();
-        let t = tag.as_bytes();
-        b.len() >= t.len() && b.iter().zip(t).all(|(x, y)| x.to_ascii_lowercase() == *y)
-    }
-    fn find_ascii(haystack: &str, needle: &str) -> Option<usize> {
-        let hb = haystack.as_bytes();
-        let nb = needle.as_bytes();
-        // 短串守卫（二轮 F-1）：haystack 短于 needle 时旧实现 find 安全返
-        // None，本扫描器的饱和下标会退化 0..=0 后切片越界 panic（空 html
-        // 的标题抽取实测崩）
-        if hb.len() < nb.len() {
-            return None;
-        }
-        (0..=hb.len() - nb.len()).find(|&i| {
-            hb[i..i + nb.len()]
-                .iter()
-                .zip(nb)
-                .all(|(x, y)| x.to_ascii_lowercase() == *y)
-        })
-    }
-    let mut out = String::with_capacity(html.len() / 2);
-    let mut in_tag = false;
-    let mut skip_until: Option<&str> = None;
-    let bytes = html.as_bytes();
-    let mut i = 0usize;
-    while i < bytes.len() {
-        let rest = &html[i..];
-        if let Some(end) = skip_until {
-            if let Some(pos) = find_ascii(rest, end) {
-                i += pos + end.len();
-                skip_until = None;
-                in_tag = false;
-                continue;
-            }
-            break;
-        }
-        if !in_tag && starts_with_tag(rest, "<script") {
-            skip_until = Some("</script>");
-            i += 7;
-            continue;
-        }
-        if !in_tag && starts_with_tag(rest, "<style") {
-            skip_until = Some("</style>");
-            i += 6;
-            continue;
-        }
-        if !in_tag && starts_with_tag(rest, "<title") {
-            skip_until = Some("</title>");
-            i += 6;
-            continue;
-        }
-        let ch = rest.chars().next().unwrap_or(' ');
-        if ch == '<' {
-            in_tag = true;
-        } else if ch == '>' {
-            in_tag = false;
-        } else if !in_tag {
-            out.push(ch);
-        }
-        i += ch.len_utf8();
-    }
-    out.split_whitespace().collect::<Vec<_>>().join(" ")
-}
+use browse_core::fetch_core;
 
 /// 抓取入口：HTTP 优先，命中升级条件转引擎腿。
 ///
@@ -118,11 +25,16 @@ fn strip_html(html: &str) -> String {
 ///
 /// 两腿全失败（HTTP 网络错且引擎腿也失败）；引擎腿的 goto/抽取错误原样
 /// 上抛。
-pub async fn fetch(url: &str, _markdown: bool, timeout_s: u64) -> Result<Value> {
+pub async fn fetch(url: &str, dom_html: bool, markdown: bool, timeout_s: u64) -> Result<Value> {
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(timeout_s))
         .user_agent(concat!("browse/", env!("CARGO_PKG_VERSION")))
         .build()?;
+    // 渲染 DOM 形（--html）：渲染后的 HTML 需要 JS 执行，恒走引擎腿直取
+    // documentElement.outerHTML（不经 HTTP 先试——raw body 不是渲染面）
+    if dom_html {
+        return fetch_engine_leg(url, "dom-html", true, markdown, None, timeout_s, &client).await;
+    }
     let http = client.get(url).send().await;
     let (status, html) = match http {
         Ok(r) => {
@@ -134,35 +46,12 @@ pub async fn fetch(url: &str, _markdown: bool, timeout_s: u64) -> Result<Value> 
         }
         Err(_) => (0, String::new()),
     };
-    // 标题抽取同 H1 修：ASCII 不敏感查找在 html 本体（不再构造 lower 共用
-    // 下标）
-    let title = {
-        fn find_ascii(haystack: &str, needle: &str) -> Option<usize> {
-            let hb = haystack.as_bytes();
-            let nb = needle.as_bytes();
-            // 短串守卫（二轮 F-1，与 strip_html 内同款）：空 html 的标题
-            // 抽取实测越界 panic
-            if hb.len() < nb.len() {
-                return None;
-            }
-            (0..=hb.len() - nb.len()).find(|&i| {
-                hb[i..i + nb.len()]
-                    .iter()
-                    .zip(nb)
-                    .all(|(x, y)| x.to_ascii_lowercase() == *y)
-            })
-        }
-        find_ascii(&html, "<title")
-            .and_then(|p| html[p..].find('>').map(|q| p + q + 1))
-            .and_then(|start| html[start..].find("</title>").map(|e| (start, e)))
-            .map(|(s, e)| html[s..s + e].trim().to_string())
-            .unwrap_or_default()
-    };
-    let text = strip_html(&html);
+    let title = fetch_core::title_of(&html);
+    let text = fetch_core::strip_html(&html);
     let reason = if status == 0 {
         Some("http-error")
     } else {
-        needs_upgrade(&text)
+        fetch_core::needs_upgrade(&text)
     };
     match reason {
         None => {
@@ -172,61 +61,109 @@ pub async fn fetch(url: &str, _markdown: bool, timeout_s: u64) -> Result<Value> 
                 "text": text,
                 "bytes": html.len(),
             });
+            // markdown 形（--markdown，mdka 真转换）：转的是本腿手上的 html
+            //（HTTP 直通腿是 raw body；升级腿是渲染后的 DOM）
+            if markdown {
+                r["markdown"] = json!(fetch_core::to_markdown(&html));
+            }
             add_domain_skills(url, &mut r);
             Ok(r)
         }
         Some(why) => {
-            // 引擎腿：经 daemon 求值（懒拉起口径同 CLI 求值面）
-            let extract = r#"JSON.stringify({title: document.title, text: (document.body ? document.body.innerText : '').trim()})"#;
-            let code = format!(
-                "await goto({url}, {{timeout: 20}}); return (await session.Runtime.evaluate({{expression: {expr}, returnByValue: true}})).result.value",
-                url = serde_json::to_string(url)?,
-                expr = serde_json::to_string(extract)?,
-            );
-            // G1：复用 CLI 求值面的 daemon 发现（含 BROWSE_NAME 派生端口），
-            // 不只认 BROWSE_PORT 缺省；懒拉起同构（#49）：daemon 不在则
-            // 自动拉起，冷启动 fetch 不再要求先手工 browse up
-            crate::client::ensure_daemon_with_env(&crate::client::skills_passthrough_env()).await?;
-            let bind = crate::client::daemon_bind();
-            let resp = client
-                .post(format!("http://{bind}/eval"))
-                .json(&serde_json::json!({ "code": code }))
-                .timeout(std::time::Duration::from_secs(timeout_s + 60))
-                .send()
-                .await
-                .map_err(|e| {
-                    // CTA 指日志（#49 评审随记下批项）：daemon 在跑却不可达
-                    // 多为重启窗口或端口不符，日志比「browse up」更对症
-                    anyhow!(
-                        "引擎腿 daemon 不可达（{e}）；下一步：看日志 {}（tail）或 browse status 对端口",
-                        crate::client::state_dir().join("daemon.log").display()
-                    )
-                })?;
-            let v: Value = resp.json().await?;
-            // #60：引擎腿信封的引擎上下文告警（与 eval 道同款渲染）
-            if let Some(ctx) = v.get("engineContext") {
-                crate::client::render_engine_context(ctx);
-            }
-            if v.get("ok") != Some(&json!(true)) {
-                bail!(
-                    "引擎腿失败：{}",
-                    v.get("error").and_then(Value::as_str).unwrap_or("?")
-                );
-            }
-            let inner = v
-                .get("value")
-                .and_then(Value::as_str)
-                .and_then(|s| serde_json::from_str::<Value>(s).ok())
-                .unwrap_or(json!({}));
-            let mut r = json!({
-                "url": url, "via": "engine", "upgradedFrom": why, "httpStatus": status,
-                "title": inner.get("title"),
-                "text": inner.get("text"),
-            });
-            add_domain_skills(url, &mut r);
-            Ok(r)
+            return fetch_engine_leg(
+                url,
+                why,
+                markdown,
+                markdown,
+                Some(status),
+                timeout_s,
+                &client,
+            )
+            .await;
         }
     }
+}
+
+/// 引擎腿（统一实现：三条件升级与 --html 渲染形同源）：goto 后页内抽取
+/// 标题/正文，`need_html` 时连 `documentElement.outerHTML`（渲染后的 DOM
+/// HTML）一起取；`markdown` 置位时对该 html 做 mdka 转换回 `markdown`
+/// 字段。`reason` 是引擎腿成因（三条件升级名或 `dom-html`），`http_status`
+/// 是 HTTP 先试腿的状态（直取渲染形没有先试，None）。
+async fn fetch_engine_leg(
+    url: &str,
+    reason: &str,
+    need_html: bool,
+    markdown: bool,
+    http_status: Option<u16>,
+    timeout_s: u64,
+    client: &reqwest::Client,
+) -> Result<Value> {
+    let extract = fetch_core::extract_js(need_html);
+    let code = format!(
+        "await goto({url}, {{timeout: 20}}); return (await session.Runtime.evaluate({{expression: {expr}, returnByValue: true}})).result.value",
+        url = serde_json::to_string(url)?,
+        expr = serde_json::to_string(extract)?,
+    );
+    // G1：复用 CLI 求值面的 daemon 发现（含 BROWSE_NAME 派生端口），
+    // 不只认 BROWSE_PORT 缺省；懒拉起同构（#49）：daemon 不在则
+    // 自动拉起，冷启动 fetch 不再要求先手工 browse up
+    crate::client::ensure_daemon_with_env(&crate::client::skills_passthrough_env()).await?;
+    let bind = crate::client::daemon_bind();
+    let resp = client
+        .post(format!("http://{bind}/eval"))
+        .json(&serde_json::json!({ "code": code }))
+        .timeout(std::time::Duration::from_secs(timeout_s + 60))
+        .send()
+        .await
+        .map_err(|e| {
+            // CTA 指日志（#49 评审随记下批项）：daemon 在跑却不可达
+            // 多为重启窗口或端口不符，日志比「browse up」更对症
+            anyhow!(
+                "引擎腿 daemon 不可达（{e}）；下一步：看日志 {}（tail）或 browse status 对端口",
+                crate::client::state_dir().join("daemon.log").display()
+            )
+        })?;
+    let v: Value = resp.json().await?;
+    // #60：引擎腿信封的引擎上下文告警（与 eval 道同款渲染）
+    if let Some(ctx) = v.get("engineContext") {
+        crate::client::render_engine_context(ctx);
+    }
+    if v.get("ok") != Some(&json!(true)) {
+        bail!(
+            "引擎腿失败：{}",
+            v.get("error").and_then(Value::as_str).unwrap_or("?")
+        );
+    }
+    let inner = v
+        .get("value")
+        .and_then(Value::as_str)
+        .and_then(|s| serde_json::from_str::<Value>(s).ok())
+        .unwrap_or(json!({}));
+    let mut r = json!({
+        "url": url, "via": "engine",
+        "title": inner.get("title"),
+        "text": inner.get("text"),
+    });
+    // 腿成因与 HTTP 先试状态只在该信息存在时入册（--html 直取形没有）
+    if reason != "dom-html" {
+        r["upgradedFrom"] = json!(reason);
+    }
+    if let Some(st) = http_status {
+        r["httpStatus"] = json!(st);
+    }
+    if need_html {
+        r["html"] = inner.get("html").cloned().unwrap_or(Value::Null);
+    }
+    if markdown {
+        let html_src = inner
+            .get("html")
+            .and_then(Value::as_str)
+            .map(str::to_string)
+            .unwrap_or_default();
+        r["markdown"] = json!(fetch_core::to_markdown(&html_src));
+    }
+    add_domain_skills(url, &mut r);
+    Ok(r)
 }
 
 /// 域名层点名（#56，两腿共用缝）：URL 与 workspace 目录取
@@ -244,35 +181,6 @@ fn add_domain_skills(url: &str, r: &mut Value) {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    /// #50 三条件分类器：空、墙词、薄内容各自命中；健康正文不升级。
-    #[test]
-    fn upgrade_conditions() {
-        assert_eq!(needs_upgrade(""), Some("empty"));
-        assert_eq!(needs_upgrade("   "), Some("empty"));
-        assert_eq!(
-            needs_upgrade("Please wait while we are checking your browser"),
-            Some("wall-word")
-        );
-        assert_eq!(
-            needs_upgrade("Access Denied. You are blocked."),
-            Some("wall-word")
-        );
-        // 少于 20 词
-        assert_eq!(needs_upgrade("short page"), Some("thin-content"));
-        // 健康正文（20 词以上、无墙词）不升级
-        let healthy = "word ".repeat(25);
-        assert_eq!(needs_upgrade(&healthy), None);
-    }
-
-    /// HTML 粗抽：剥 script/style 与标签、压空白、保留正文词序。
-    #[test]
-    fn strip_html_basic() {
-        let html = "<html><head><title>T</title><style>.a{}</style></head>\
-                    <body><script>var x=1;</script><h1>Head</h1><p>Body text here</p></body></html>";
-        let t = strip_html(html);
-        assert_eq!(t, "HeadBody text here");
-    }
 
     /// #56 域名点名两腿接线：命中时两腿回执形都附 domain_skills 与
     /// hint；未命中（data: URL 无域名段）键集与现状逐字节一致（G4 钉
@@ -342,62 +250,5 @@ mod tests {
             }
         }
         let _ = std::fs::remove_dir_all(&ws);
-    }
-
-    /// 全量审 H1 回归锁：小写化变长字符（U+0130 变长、U+1E9E 变短）的
-    /// 页面不 panic（旧实现 to_lowercase 共用字节下标，İstanbul 实测崩）。
-    #[test]
-    fn strip_html_unicode_case_changers_no_panic() {
-        let a = strip_html("\u{0130}stanbul <b>page</b> <script>x</script> tail");
-        assert!(a.contains("page") && a.contains("tail"), "{a}");
-        let b = strip_html("\u{1e9e}\u{1e9e}\u{1e9e} <TITLE>T</TITLE> body");
-        assert!(b.contains("body"), "{b}");
-        assert_eq!(strip_html(""), "");
-    }
-
-    /// 标记 ASCII 不敏感仍生效（大写 SCRIPT/TITLE 剥除），ASCII 等值与
-    /// 旧行为一致。
-    #[test]
-    fn strip_html_ascii_case_insensitive_tags() {
-        assert_eq!(strip_html("a <SCRIPT>hidden</SCRIPT> b"), "a b");
-        assert_eq!(strip_html("<TITLE>x</TITLE>only"), "only");
-    }
-
-    /// 二轮 F-1 回归锁：短串与未闭合标记不越界 panic（空 html 的标题抽
-    /// 取、未闭合 script/style/title 的正文抽取，旧扫描器饱和下标实测崩）。
-    #[test]
-    fn strip_html_short_and_unclosed_inputs_no_panic() {
-        assert_eq!(strip_html(""), "");
-        assert_eq!(strip_html("abc"), "abc");
-        assert_eq!(strip_html("<script>"), "");
-        assert_eq!(strip_html("<title>"), "");
-        assert_eq!(strip_html("<script src=x"), "");
-        assert_eq!(strip_html("<style>"), "");
-        // 等价标题抽取面：空串与短串不 panic、无标题得空串
-        fn title_of(html: &str) -> String {
-            fn find_ascii(haystack: &str, needle: &str) -> Option<usize> {
-                let hb = haystack.as_bytes();
-                let nb = needle.as_bytes();
-                if hb.len() < nb.len() {
-                    return None;
-                }
-                (0..=hb.len() - nb.len()).find(|&i| {
-                    hb[i..i + nb.len()]
-                        .iter()
-                        .zip(nb)
-                        .all(|(x, y)| x.to_ascii_lowercase() == *y)
-                })
-            }
-            find_ascii(html, "<title")
-                .and_then(|p| html[p..].find('>').map(|q| p + q + 1))
-                .and_then(|start| html[start..].find("</title>").map(|e| (start, e)))
-                .map(|(s, e)| html[s..s + e].trim().to_string())
-                .unwrap_or_default()
-        }
-        assert_eq!(title_of(""), "");
-        assert_eq!(title_of("abc"), "");
-        // 开标记 ASCII 不敏感命中；闭标记查找本大小写敏感（原行为保持）
-        assert_eq!(title_of("<TITLE>t</title>"), "t");
-        assert_eq!(title_of("<TITLE>T</TITLE>"), "");
     }
 }

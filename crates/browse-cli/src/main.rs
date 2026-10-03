@@ -81,8 +81,13 @@ enum Mode {
     WorkspaceAdd(String),
     /// `browse workspace remove <path>`：移除登记的自定义仓（#63）。
     WorkspaceRemove(String),
-    /// `browse fetch <url> [--markdown] [--timeout <s>]`：一次性只读抓取（#50）。
-    Fetch { url: String, timeout_s: u64 },
+    /// `browse fetch <url> [--html] [--markdown|-m] [--timeout <s>]`：一次性只读抓取（#50；渲染 DOM 与 markdown 形 REQ-028）。
+    Fetch {
+        url: String,
+        dom_html: bool,
+        markdown: bool,
+        timeout_s: u64,
+    },
     /// `browse issue close` 面已移除（总台修正令 2026-09-20 收口：关闭与删除唯一道 = omc 工位经 herdr 委托）。
     /// `browse artifact publish --name <n> --kind <k> --digest <d>`：产物共享库发布（REQ-063；--dep 可重复记依赖出处；--summary/--outcome/--git-sha 结构化字段网页详情直出，参数面随 ledger-client v0.1.3）。
     ArtifactPublish {
@@ -267,11 +272,15 @@ async fn main() -> Result<()> {
             }
             "fetch" if snippets.is_empty() && mode_is_eval(&mode) => {
                 let url = args.next("fetch <url>");
-                let mut _markdown = false; // v1 同 text（#50），旗标受理向后兼容
+                // REQ-028：--html 渲染 DOM 形（引擎腿直取 outerHTML）；
+                // --markdown 从 v1 的 no-op 升 mdka 真转换
+                let mut dom_html = false;
+                let mut markdown = false;
                 let mut timeout_s = 15u64;
                 while let Some(f) = args.next_opt() {
                     match f.as_str() {
-                        "--markdown" | "-m" => _markdown = true,
+                        "--markdown" | "-m" => markdown = true,
+                        "--html" => dom_html = true,
                         "--timeout" => {
                             // 统一守卫（REQ-027）：>=1000 按毫秒误写换算
                             // 并告警（与全局 --timeout 同一口径；换算回毫秒
@@ -289,7 +298,12 @@ async fn main() -> Result<()> {
                         other2 => bail_arg(other2),
                     }
                 }
-                mode = Mode::Fetch { url, timeout_s };
+                mode = Mode::Fetch {
+                    url,
+                    dom_html,
+                    markdown,
+                    timeout_s,
+                };
             }
             "artifact" if snippets.is_empty() && mode_is_eval(&mode) => {
                 match args.next("artifact").as_str() {
@@ -1098,8 +1112,13 @@ async fn main() -> Result<()> {
             );
             Ok(())
         }
-        Mode::Fetch { url, timeout_s } => {
-            let r = browse_cli::fetch::fetch(&url, true, timeout_s).await?;
+        Mode::Fetch {
+            url,
+            dom_html,
+            markdown,
+            timeout_s,
+        } => {
+            let r = browse_cli::fetch::fetch(&url, dom_html, markdown, timeout_s).await?;
             println!("{}", serde_json::to_string_pretty(&r)?);
             Ok(())
         }

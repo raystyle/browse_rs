@@ -253,6 +253,7 @@ fn help_lists_every_cli_flag() {
         "--limit",
         "--before",
         "--dry-run",
+        "--html",
         "--markdown",
         "-m",
         "--kind",

@@ -2,6 +2,14 @@
 
 版本级里程碑；逐批过程见 docs/diary。semver 判据在册 docs/requirements/REQ-004。
 
+## Unreleased
+
+- **fetch 渲染 DOM 与 markdown 面（REQ-028，总台令两连 2026-10-03；mdka-rs 指定选型）**：
+- CLI `--html`：恒走引擎腿回渲染后 DOM HTML（`documentElement.outerHTML`，JS 执行后的面），响应加 `html` 字段；`--markdown/-m` 从 v1 no-op 升 mdka 真转换（mdka 3.2，Apache-2.0，关 default 免 rayon），回 `markdown` 字段
+- 方言全局 `fetch(url, opts?)`：完整两腿（HTTP 直取加三条件升级引擎腿），**rn 脚本经 `cdp::dialect("fetch", ...)` 直达零新绑定**（dialect 桥的首次实战）；域名知识点名与 goto 同口径
+- 纯函数单源 `browse_core::fetch_core`（粗抽/升级判定/标题/抽取/markdown），CLI 与全局两道编排共用；CLI 零 daemon HTTP 快路径不变（腿编排双轨注记，ADR-0009 形）
+- e2e：本地源 JS 注入节点的渲染证明（html 字段含 raw body 没有的节点、markdown 含标题）；rn 经桥 fetch 断言（data: URL 升级引擎腿）
+
 ## 0.30.7 - 2026-10-03
 
 - **方言全量桥（账本 #75，总台令「提 实现全量桥 封v0.30.7」；ADR-0011 增补）**：

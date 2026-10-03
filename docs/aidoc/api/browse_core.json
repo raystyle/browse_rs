@@ -163,6 +163,41 @@
       "docs": "#59 引擎来源与所有权语义面（纯函数）：[`EngineSource`] 语义化为\n`{origin, hostContext, spawnedBy, spawnedAt}` 四字段。何时用：status\n与 /health 的 `engineProvenance` 键；#60 操作回执告警面同源消费同一\n结构（两处展示一份事实）。边界：spawned 态引擎与 daemon 同宿主，\nhostContext 是权威标注（daemon 的 os/hostname）；attached 态只能取\nws_url 的 host 字面（loopback 经隧道转发时真实宿主不可辨，显式降级\n标注不冒充确定）；未连接态四字段在但 origin 为 `none`。\n\n# Examples\n\n```\n# use browse_core::engine::{EngineSource, provenance};\nlet s = EngineSource::Spawned {\n    ws_url: None, pid: 42, profile_dir: \"/p\".into(), chrome: \"/c\".into(),\n    headless: true, channel: \"port\", spawned_at: 1700000000000,\n};\nlet p = provenance(&s, false, \"linux\", \"nuc-a\");\nassert_eq!(p[\"origin\"], \"managed-spawn\");\nassert_eq!(p[\"hostContext\"], \"linux/nuc-a\");\nassert_eq!(p[\"spawnedAt\"], 1_700_000_000_000u64);\nlet a = EngineSource::Attached { ws_url: \"ws://127.0.0.1:9222/x\".into() };\nlet p = provenance(&a, false, \"windows\", \"host-pc\");\nassert_eq!(p[\"origin\"], \"attached\");\nassert!(p[\"hostContext\"].as_str().unwrap().contains(\"loopback\"));\n```"
     },
     {
+      "path": "browse_core::fetch_core",
+      "kind": "module",
+      "docs": "fetch 的纯函数面（REQ-028 单源）：HTTP 腿的正文粗抽与升级判定、页内\n抽取 JS 构造、markdown 转换。何处分流：CLI `browse fetch`（零 daemon\n快路径）与方言全局 `fetch(url, opts?)`（daemon 侧，rn 经 dialect 桥\n直达）两道编排共用本面；两道编排各自持腿逻辑（HTTP 客户端与引擎腿\n拼装不同：CLI 引擎腿走 /eval、全局直调本进程 session），属库内双轨\n（ADR-0009 同款注记，漂移由各自测试锁）。"
+    },
+    {
+      "path": "browse_core::fetch_core::attach_optional_fields",
+      "kind": "function",
+      "docs": "fetch 回执的可选字段拼装（两道编排共用）：html 字段（渲染形）与\nmarkdown 字段（对本腿 html 转换）。"
+    },
+    {
+      "path": "browse_core::fetch_core::extract_js",
+      "kind": "function",
+      "docs": "引擎腿的页内抽取 JS（主世界 returnByValue 求值体）：标题、正文\ninnerText，`need_html` 时连渲染后的 `documentElement.outerHTML`。"
+    },
+    {
+      "path": "browse_core::fetch_core::needs_upgrade",
+      "kind": "function",
+      "docs": "升级判定的三条件（#50）：正文空、墙词、少于 20 词。\n纯函数供单测锁。"
+    },
+    {
+      "path": "browse_core::fetch_core::strip_html",
+      "kind": "function",
+      "docs": "HTML 粗抽正文文本（HTTP 腿的降级面）：剥 script/style 与标签，压空白。\n\n标记匹配对 `html` 本体做 ASCII 不敏感比较（全量审 H1 修）：不构造\n整串 `to_lowercase` 再共用字节下标——U+0130（İ）/U+1E9E（ẞ）等小写化\n改变字节长度的字符会让下标在 lower 里落进字符中间直接 panic（土耳其\n语页实测崩）。HTML 标记名恒 ASCII，ASCII 等值即足。"
+    },
+    {
+      "path": "browse_core::fetch_core::title_of",
+      "kind": "function",
+      "docs": "标题抽取（HTTP 腿）：开标记 ASCII 不敏感、闭标记大小写敏感（原行为），\n全程在 `html` 本体做（同 H1/F-1 纪律）。"
+    },
+    {
+      "path": "browse_core::fetch_core::to_markdown",
+      "kind": "function",
+      "docs": "markdown 转换（REQ-028，mdka）：字符串转换不可失败，空串安全。"
+    },
+    {
       "path": "browse_core::js_host",
       "kind": "module",
       "docs": "方言求值器：把 [`crate::parser`] 的语句树跑在宿主侧。\n\n移植自 browser-harness-rs `src/js_host.rs` 的求值半边：\n\n- `session.<Domain>.<method>(params)` 直接转发 CDP 字符串调用（无 652 个\n  typed wrapper，新 Chrome 方法不用 codegen）。\n- 宿主全局：`listPageTargets()`、`resolveWsUrl(opts?)`、`print(x)`。\n- `session.connect / use / waitFor / call / isConnected / getActiveSession`。\n- `vars` 在 daemon 内跨片段持久（`const tabs = ...` 之后的片段还能用 `tabs`）。"

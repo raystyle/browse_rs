@@ -64,6 +64,11 @@ daemon 客户端：本地 HTTP 调用 + 首次使用自动拉起 detached daemon
   墙词、正文少于 20 词。
 - 引擎腿：经 daemon POST /eval 走 goto 加页内抽取（启发式标题加段落，
   非 Readability；v1 口径已在 surface 披露）。
+- 单源纪律（REQ-028）：纯函数（粗抽/升级判定/标题/markdown 转换）在
+  `browse_core::fetch_core`，与方言全局 `fetch(url, opts?)`（rn 经
+  dialect 桥直达）共用；本文件的腿编排（CLI 进程内 reqwest + /eval
+  引擎腿）与全局的 daemon 侧编排双轨（ADR-0009 注记形，零 daemon 快
+  路径是 CLI 既有契约）。
 - 域名层点名（#56）：两腿回执都按 URL 做 goto 同口径匹配，命中
   workspace 站点知识附 domain_skills 与 hint；不依赖引擎（引擎腿
   daemon 侧 goto 的点名回执被抽取串替换，CLI 侧补点）。
@@ -71,7 +76,6 @@ daemon 客户端：本地 HTTP 调用 + 首次使用自动拉起 detached daemon
 ## Functions
 
 - `fetch` — 抓取入口：HTTP 优先，命中升级条件转引擎腿。
-- `needs_upgrade` — 升级判定的三条件（#50）：正文空、墙词、少于 20 词。
 
 
 <!-- browse_cli/ledger.md -->
@@ -173,6 +177,7 @@ assert_eq!(render(&stmts), "const tabs = await listPageTargets()");
 - [`chrome_mgr`](chrome_mgr.md): 内嵌 Chromium 版本管理器（ADR-0007）：各版本 clean-chrome 在本仓应用
 - [`cookie_clone`](cookie_clone.md): 无头引擎登录态按域克隆（#48）：从附着浏览器热迁指定域 cookie 到
 - [`engine`](engine.md): 引擎策略：附着优先，缺则自起（ADR-0003）。
+- [`fetch_core`](fetch_core.md): fetch 的纯函数面（REQ-028 单源）：HTTP 腿的正文粗抽与升级判定、页内
 - [`js_host`](js_host.md): 方言求值器：把 [`crate::parser`] 的语句树跑在宿主侧。
 - [`parser`](parser.md): browser-harness-js 片段方言的语法分析器（纯函数）。
 - [`paths`](paths.md): 实例命名空间（多实例，ADR-0006）：`BROWSE_NAME` 一个名字同时决定
@@ -275,6 +280,26 @@ clean-chrome 专为自动化而生（`--auto-allow-devtools-connections` 免确�
 - `Engine` — 引擎状态机：确保连接、报告来源、只终结自己 spawn 的。
 - `EngineSource` — 引擎现状的可序列化快照，`/health` 面直接用。
 - `EngineSpec` — 引擎指令意图，由 CLI 旗标或环境变量解析而来。
+
+
+<!-- browse_core/fetch_core.md -->
+# browse-core::fetch_core
+
+fetch 的纯函数面（REQ-028 单源）：HTTP 腿的正文粗抽与升级判定、页内
+抽取 JS 构造、markdown 转换。何处分流：CLI `browse fetch`（零 daemon
+快路径）与方言全局 `fetch(url, opts?)`（daemon 侧，rn 经 dialect 桥
+直达）两道编排共用本面；两道编排各自持腿逻辑（HTTP 客户端与引擎腿
+拼装不同：CLI 引擎腿走 /eval、全局直调本进程 session），属库内双轨
+（ADR-0009 同款注记，漂移由各自测试锁）。
+
+## Functions
+
+- `attach_optional_fields` — fetch 回执的可选字段拼装（两道编排共用）：html 字段（渲染形）与
+- `extract_js` — 引擎腿的页内抽取 JS（主世界 returnByValue 求值体）：标题、正文
+- `needs_upgrade` — 升级判定的三条件（#50）：正文空、墙词、少于 20 词。
+- `strip_html` — HTML 粗抽正文文本（HTTP 腿的降级面）：剥 script/style 与标签，压空白。
+- `title_of` — 标题抽取（HTTP 腿）：开标记 ASCII 不敏感、闭标记大小写敏感（原行为），
+- `to_markdown` — markdown 转换（REQ-028，mdka）：字符串转换不可失败，空串安全。
 
 
 <!-- browse_core/js_host.md -->

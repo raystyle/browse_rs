@@ -43,6 +43,7 @@ assert_eq!(render(&stmts), "const tabs = await listPageTargets()");
 - [`chrome_mgr`](chrome_mgr.md): 内嵌 Chromium 版本管理器（ADR-0007）：各版本 clean-chrome 在本仓应用
 - [`cookie_clone`](cookie_clone.md): 无头引擎登录态按域克隆（#48）：从附着浏览器热迁指定域 cookie 到
 - [`engine`](engine.md): 引擎策略：附着优先，缺则自起（ADR-0003）。
+- [`fetch_core`](fetch_core.md): fetch 的纯函数面（REQ-028 单源）：HTTP 腿的正文粗抽与升级判定、页内
 - [`js_host`](js_host.md): 方言求值器：把 [`crate::parser`] 的语句树跑在宿主侧。
 - [`parser`](parser.md): browser-harness-js 片段方言的语法分析器（纯函数）。
 - [`paths`](paths.md): 实例命名空间（多实例，ADR-0006）：`BROWSE_NAME` 一个名字同时决定
