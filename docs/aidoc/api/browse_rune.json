@@ -75,7 +75,7 @@
     {
       "path": "browse_rune::module::cdp_module",
       "kind": "function",
-      "docs": "注册 `cdp` 模块（通用通道形，ADR-0011）：`goto`/`eval`/`eval_handle`/\n`call`/`release`/`wait_event`/`raw` 加 `js`/`js_lib`/`render`/`stdin`\n与三支柱 `requests`/`snapshot`/`request_detail`，全部返回 `Result`\n（`render`/`stdin` 不可失败面直接返值）。\n\n# Errors\n\n模块注册失败（函数签名或类型登记冲突）。"
+      "docs": "注册 `cdp` 模块（通用通道形，ADR-0011）：`goto`/`eval`/`eval_handle`/\n`call`/`release`/`wait_event`/`raw`/`dialect` 加 `js`/`js_lib`/\n`render`/`stdin` 与三支柱 `requests`/`snapshot`/`request_detail`，\n全部返回 `Result`（`render`/`stdin` 不可失败面直接返值）。\n\n# Errors\n\n模块注册失败（函数签名或类型登记冲突）。"
     },
     {
       "path": "browse_rune::rawstr",

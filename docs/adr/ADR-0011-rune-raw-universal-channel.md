@@ -25,6 +25,10 @@ superseded_by: null
 - 坏：存量 rn 脚本破（click/type_text/wait_sel/cookies/set_cookie 五件用法编译红；pentest_rs 战役件用量由总台对齐轮迁 raw 组合形，2026-10-03 毕）；常见操作样板变长（click 由一件变 eval 量点加两发 raw）；旧 set_cookie/type_text 的内建自检（success 报错、未命中报错）不再内建，脚本须自检；rune format! 无字面大括号转义，params 拼接要走字符串相加（e2e 实测记档）；外部桥接值的子项 Debug 取形报 Missing runtime information for type hash（战役实证 0.30.6，判值走 json::from_string 字面等值比较）
 - 缓解：组合形三例（拟人鼠标、断流分流、cookie 面）进 --llms 行描述与 e2e 用例；迁移样板见 crates/browse-rune/examples/pillars.rn
 
+## 增补（2026-10-03，方言全量桥：issue #75）
+
+rn 面再开通用通道第二件 `cdp::dialect(fn, args_json)`：方言全局函数按名直达 js_host `global_json` 派发面（与方言面同一实现同一守卫），args 取 JSON 数组串（位置参序，与 raw 的对象串形对称）。动机：方言面的有态聚合件（waitForResponse 的界内等体、waitIdle 的窗口语义）与既有战役片段逻辑在 rn 侧原要手组等价物或 CLI 层混合编排；桥后一条通道直达。边界判据：桥的是方言层既有实现，不在 rn 面新造糖皮（薄封装件经桥可达不等于 rn 面内建，调用形自带 dialect 前缀，契约面仍是 raw/dialect 两通道）；三支柱独立件保留（高频直用 + opts 对象形更顺手）。实现：HostFns 加通用腿（载荷 `{name, args}` 由 daemon 闭包解包），进程内测试态报未注入。
+
 ## Alternatives
 
 - 逐件绑定（#73 原案）：被否。面随协议方法数增长不可收敛，且每件都要重复接线与文档维护

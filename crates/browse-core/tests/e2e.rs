@@ -3013,6 +3013,7 @@ async fn rune_68_acceptance_and_pillars() {
         snapshot: Some(wrap("snapshot")),
         requests: Some(wrap("requests")),
         request_detail: Some(wrap("requestDetail")),
+        dialect: None,
     };
     let pillars = r##"pub async fn main() {
         cdp::goto("data:text/html,<title>pl</title><a href='#x'>go</a>").await?;
@@ -3364,6 +3365,7 @@ async fn rune_raw_fetch_interception() {
     let host_fns = browse_rune::HostFns {
         snapshot: Some(wrap("snapshot")),
         requests: Some(wrap("requests")),
+        dialect: None,
         request_detail: Some(wrap("requestDetail")),
     };
     // 三类子资源批注入器：b1 基线批 await 全落定（对账前收干净）；
@@ -3471,6 +3473,122 @@ async fn rune_raw_fetch_interception() {
         "脚本放行：{r}"
     );
     origin.abort();
+    engine.shutdown().await.expect("shutdown");
+    clean_profile().await;
+}
+
+/// 方言全量桥（issue #75）：`cdp::dialect(fn, args_json)` 名参直达方言
+/// 全局函数（与方言面同一实现）。三形实弹：零参（currentTab）、数字参
+/// （waitLoad）、对象参（requests 与三支柱同源对账计数一致）。
+#[tokio::test]
+async fn rune_dialect_bridge() {
+    if !gated() {
+        eprintln!("skip: BROWSE_E2E 未设 1");
+        return;
+    }
+    let _seq = SEQ.lock().await;
+    clean_profile().await;
+    let session = cdp::Session::new();
+    let engine = Engine::new(session.clone());
+    engine
+        .ensure(&EngineSpec::Auto {
+            chrome: None,
+            headless: true,
+            pipe: false,
+            profile: None,
+            proxy: None,
+            proxy_bypass: None,
+            isolated: false,
+            engine_args: Vec::new(),
+        })
+        .await
+        .expect("dialect 桥验收引擎起不来");
+    // 宿主函数束内联构造（与 server host_fns 同模式，含通用方言腿）
+    let host = browse_core::JsHost::new(session.clone());
+    let wrap = |name: &'static str| -> browse_rune::HostFn {
+        let h = host.clone();
+        std::sync::Arc::new(move |args: serde_json::Value| {
+            let h = std::sync::Arc::clone(&h);
+            Box::pin(async move {
+                let argv: Vec<serde_json::Value> = args.as_array().cloned().unwrap_or_default();
+                h.global_json(name, &argv)
+                    .await
+                    .map_err(|e| format!("{e:#}"))
+            })
+                as std::pin::Pin<
+                    Box<dyn std::future::Future<Output = Result<serde_json::Value, String>> + Send>,
+                >
+        })
+    };
+    let dialect_leg = {
+        let h = host.clone();
+        std::sync::Arc::new(move |v: serde_json::Value| {
+            let h = std::sync::Arc::clone(&h);
+            Box::pin(async move {
+                let name = v
+                    .get("name")
+                    .and_then(serde_json::Value::as_str)
+                    .ok_or_else(|| "dialect 载荷缺 name".to_string())?
+                    .to_string();
+                let argv: Vec<serde_json::Value> = v
+                    .get("args")
+                    .and_then(serde_json::Value::as_array)
+                    .cloned()
+                    .unwrap_or_default();
+                h.global_json(&name, &argv)
+                    .await
+                    .map_err(|e| format!("{e:#}"))
+            })
+                as std::pin::Pin<
+                    Box<dyn std::future::Future<Output = Result<serde_json::Value, String>> + Send>,
+                >
+        })
+    };
+    let host_fns = browse_rune::HostFns {
+        snapshot: Some(wrap("snapshot")),
+        requests: Some(wrap("requests")),
+        request_detail: Some(wrap("requestDetail")),
+        dialect: Some(dialect_leg),
+    };
+    let script = r##"pub async fn main() {
+        cdp::goto("data:text/html,<title>dialect</title><a href='#x'>go</a>").await?;
+        // 零参形：方言全局 currentTab
+        let tab = cdp::dialect("currentTab", "").await?;
+        // 数字参形：waitLoad（已加载立即返回）
+        let loaded = cdp::dialect("waitLoad", "[5]").await?;
+        // 对象参形加同源对账：桥腿与三支柱腿同一实现，计数必一致
+        let via_bridge = cdp::dialect("requests", "[{\"filter\": \"dialect\"}]").await?;
+        let via_pillar = cdp::requests(#{"filter": "dialect"}).await?;
+        Ok(#{"url": tab["url"], "loaded": loaded, "bridge_count": via_bridge["count"], "pillar_count": via_pillar["count"]})
+    }"##;
+    let r = browse_rune::run(
+        session,
+        script,
+        browse_rune::DEFAULT_CAPS,
+        browse_rune::RunOpts {
+            host_fns,
+            ..Default::default()
+        },
+    )
+    .await
+    .expect("dialect 桥脚本执行失败");
+    eprintln!("dialect 桥回执：{r}");
+    assert_eq!(
+        r.pointer("/ok/pillar_count"),
+        Some(&json!(1)),
+        "三支柱腿计数：{r}"
+    );
+    assert_eq!(
+        r.pointer("/ok/bridge_count"),
+        Some(&json!(1)),
+        "桥腿同源计数一致：{r}"
+    );
+    let url = r
+        .pointer("/ok/url")
+        .and_then(|v| v.as_str())
+        .unwrap_or_default();
+    assert!(url.starts_with("data:"), "currentTab url 形：{r}");
+    assert!(r.pointer("/ok/loaded").is_some(), "waitLoad 有回值：{r}");
     engine.shutdown().await.expect("shutdown");
     clean_profile().await;
 }

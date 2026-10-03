@@ -106,6 +106,10 @@ pub struct HostFns {
     pub requests: Option<HostFn>,
     /// `requestDetail(index_or_id, opts)` 同源腿。
     pub request_detail: Option<HostFn>,
+    /// 方言全量桥通用腿（issue #75）：载荷形 `{"name": 函数名, "args":
+    /// [位置参]}`，daemon 侧闭包解包转 js_host `global_json` 按名派发——
+    /// 一条通道直达方言面全部全局函数（与方言同一实现同一守卫）。
+    pub dialect: Option<HostFn>,
 }
 
 /// 在飞调用面探针（v0.26.1 超时 CTA；0.30.2 多槽化）：cdp 函数入口置
@@ -161,6 +165,38 @@ fn parse_raw_params(params_json: &str) -> Result<Value, CdpError> {
             "raw",
             format!(
                 "params 必须是 JSON 对象，得到 {v}；下一步：外层用 {{…}}（CDP 参数恒为对象形）"
+            ),
+        ));
+    }
+    Ok(v)
+}
+
+/// dialect 的参数串预检（issue #75）：空串（含纯空白）等价空数组，其余
+/// 必须是合法 JSON 且为数组形（方言函数的位置参序）。何时用：
+/// `cdp::dialect` 发调前——与 [`parse_raw_params`] 同构（raw 要对象、
+/// dialect 要数组），坏串进程内即拦。边界：不校验参型与函数名的匹配
+/// （那是方言派发面的事，未知函数由 js_host 报「未知函数」带 CTA）。
+///
+/// # Errors
+///
+/// 串非合法 JSON 或不是数组形时，返 op=`dialect` 的 [`CdpError`]。
+fn parse_dialect_args(args_json: &str) -> Result<Value, CdpError> {
+    if args_json.trim().is_empty() {
+        return Ok(json!([]));
+    }
+    let v: Value = serde_json::from_str(args_json).map_err(|e| {
+        cdp_err(
+            "dialect",
+            format!(
+                "args 不是合法 JSON：{e}；下一步：位置参按数组串给（如 [\"q\", 10]；空串等价空数组）"
+            ),
+        )
+    })?;
+    if !v.is_array() {
+        return Err(cdp_err(
+            "dialect",
+            format!(
+                "args 必须是 JSON 数组（位置参序），得到 {v}；下一步：外层用 […]（零参给空串）"
             ),
         ));
     }
@@ -393,9 +429,9 @@ fn js_wrapper(src: &str, args_json: &str) -> String {
 }
 
 /// 注册 `cdp` 模块（通用通道形，ADR-0011）：`goto`/`eval`/`eval_handle`/
-/// `call`/`release`/`wait_event`/`raw` 加 `js`/`js_lib`/`render`/`stdin`
-/// 与三支柱 `requests`/`snapshot`/`request_detail`，全部返回 `Result`
-/// （`render`/`stdin` 不可失败面直接返值）。
+/// `call`/`release`/`wait_event`/`raw`/`dialect` 加 `js`/`js_lib`/
+/// `render`/`stdin` 与三支柱 `requests`/`snapshot`/`request_detail`，
+/// 全部返回 `Result`（`render`/`stdin` 不可失败面直接返值）。
 ///
 /// # Errors
 ///
@@ -662,6 +698,45 @@ pub fn cdp_module(ctx: ModuleCtx) -> Result<(Module, Cleanup), rune::ContextErro
                 }
                 .await;
                 st.clear_op("raw");
+                out
+            }
+        })
+        .build()?;
+    }
+    // ---- 方言全量桥（issue #75，ADR-0011 增补）：方言层通用通道 ----
+    // dialect(fn, args_json) 把方言全局函数按名调到方言面同一实现
+    // （js_host global_json 派发：currentTab/waitLoad/waitForResponse/
+    // clickRef/routeBlock 等 100+ 件，含三支柱）。args_json 是 JSON 数组
+    // 串（位置参序，空串等价空数组，非数组形预检拦），返回值整体过桥。
+    // 何时用：方言面的有态聚合件（waitForResponse 的界内等体、waitIdle
+    // 的窗口语义）与既有战役片段逻辑复用——rn 侧不再手组等价物。边界：
+    // 与 raw 对偶（raw=CDP 层通道，dialect=方言层通道），同为单通道替代
+    // 逐件绑定；薄封装件经桥可达不等于 rn 面内建（调用形自带 dialect
+    // 前缀）；守卫在 Session 层照拦（域策略对导航类同拦）；未注入（进程
+    // 内测试态）报 CdpError 点名；未知函数由方言派发面报「未知函数」CTA。
+    {
+        let st = state.clone();
+        m.function("dialect", move |fn_name: String, args_json: String| {
+            let st = st.clone();
+            async move {
+                st.set_op("dialect");
+                let out = async {
+                    let args = parse_dialect_args(&args_json)?;
+                    let f = st.host_fns.dialect.clone().ok_or_else(|| {
+                        cdp_err(
+                            "dialect",
+                            "同源宿主面未注入（进程内测试态无 daemon；真用走 browse rune）",
+                        )
+                    })?;
+                    let payload = json!({ "name": fn_name, "args": args });
+                    let out = f(payload)
+                        .await
+                        .map_err(|e| cdp_err("dialect", format!("{fn_name}: {e}")))?;
+                    serde_json::from_value::<RuneValue>(out)
+                        .map_err(|e| cdp_err("dialect", format!("结果过桥失败：{e}")))
+                }
+                .await;
+                st.clear_op("dialect");
                 out
             }
         })
@@ -987,6 +1062,36 @@ mod raw_params_tests {
         for bad in [r#"[1, 2]"#, "42", "\"x\"", "true", "null", "{oops"] {
             let e = parse_raw_params(bad).unwrap_err();
             assert_eq!(e.op, "raw", "{bad}");
+            assert!(!e.message.is_empty(), "{bad}");
+        }
+    }
+}
+
+#[cfg(test)]
+mod dialect_args_tests {
+    use super::parse_dialect_args;
+    use serde_json::json;
+
+    /// 空串（含纯空白）等价空数组——零参方言函数（currentTab 等）的写法。
+    #[test]
+    fn empty_string_is_empty_array() {
+        assert_eq!(parse_dialect_args("").unwrap(), json!([]));
+        assert_eq!(parse_dialect_args("   ").unwrap(), json!([]));
+    }
+
+    /// 数组串原样过：位置参序（字符串、数字、对象混排）。
+    #[test]
+    fn array_string_roundtrips() {
+        let v = parse_dialect_args(r#"["portswigger", 10, {"depth": 2}]"#).expect("合法数组串应过");
+        assert_eq!(v, json!(["portswigger", 10, {"depth": 2}]));
+    }
+
+    /// 坏 JSON 与非数组形（对象、字符串、数字、null）都拦，op 恒 dialect。
+    #[test]
+    fn non_array_and_bad_json_error() {
+        for bad in [r#"{"filter": "x"}"#, "\"q\"", "42", "null", "[oops"] {
+            let e = parse_dialect_args(bad).unwrap_err();
+            assert_eq!(e.op, "dialect", "{bad}");
             assert!(!e.message.is_empty(), "{bad}");
         }
     }

@@ -276,6 +276,47 @@ async fn raw_params_preflight() -> anyhow::Result<()> {
     Ok(())
 }
 
+/// 方言全量桥（issue #75）：无注入态两臂——零参合法载荷走到「未注入」
+/// 快错面（证明注册可达）；非数组形在预检拦（先于注入检查）。
+#[tokio::test]
+async fn dialect_uninjected_and_args_preflight() -> anyhow::Result<()> {
+    let session = cdp::Session::new();
+    let out = run(
+        session.clone(),
+        r#"pub async fn main() { cdp::dialect("currentTab", "").await?; Ok(()) }"#,
+        DEFAULT_CAPS,
+        browse_rune::RunOpts::default(),
+    )
+    .await?;
+    let op = out
+        .pointer("/error/op")
+        .and_then(|o| o.as_str())
+        .unwrap_or("");
+    let msg = out
+        .pointer("/error/message")
+        .and_then(|m| m.as_str())
+        .unwrap_or("");
+    assert_eq!(op, "dialect", "未注入应走 CdpError(op=dialect)：{out}");
+    assert!(msg.contains("未注入"), "快错面是注入缺失：{out}");
+
+    let out = run(
+        session,
+        r#"pub async fn main() { cdp::dialect("waitLoad", "{\"s\": 5}").await?; Ok(()) }"#,
+        DEFAULT_CAPS,
+        browse_rune::RunOpts::default(),
+    )
+    .await?;
+    let msg = out
+        .pointer("/error/message")
+        .and_then(|m| m.as_str())
+        .unwrap_or("");
+    assert!(
+        msg.contains("数组") && !msg.contains("未注入"),
+        "非数组形应在预检拦而非注入面：{out}"
+    );
+    Ok(())
+}
+
 /// 设计注记实测锚（raw 的 params 取 JSON 串形而非 rune 对象）：对象形
 /// 本身可行——嵌套对象/数组/标量与 null（经 `()` 单位值）都过桥；选串形
 /// 是协议文档参数形原样粘贴（r# 免转义，与 wait_event 任意 method 名对

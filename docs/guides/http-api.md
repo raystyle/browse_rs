@@ -52,6 +52,7 @@
 | `stdin()` | `-> String` | 管道参数道捕获串（CLI 有实参时管道串经请求体 stdin 字段递入；无管道空串） |
 | `wait_event(method, ms)` | `-> Result<Value>` | 事件驱动等待（原生 `Session::wait_for` 直出：活动 tab 与 browser 级事件，取出即移除，含缓冲内历史；超时 `Err(CdpError)`，脚本 `match` 即条件分支）；回的是事件 params 层 |
 | `raw(method, params_json)` | `-> Result<Value>` | 任意 CDP 命令直发到当前页面会话（params_json 是 JSON 对象串，空串等价空对象，非对象形预检拦；响应整体过桥）。与内置函数同一道守卫与 30 秒上界（域策略对 Page.navigate/Target.createTarget 照拦）；Page.navigate/Page.reload 成功后与 goto 同款废隔离世界；Target.createTarget 不登记 own（closeTarget 会被守卫拦，新页走 goto）；开 Fetch.enable 后 requestPaused 由脚本自己应答。rune 的 `format!` 无字面大括号转义，params 拼接用字符串相加 |
+| `dialect(fn, args_json)` | `-> Result<Value>` | 方言全量桥：方言全局函数按名调到方言面同一实现（js_host 按名派发：waitLoad/waitIdle/waitForResponse/clickRef/routeBlock/currentTab 等 100+ 件，含三支柱同源）。args_json 是 JSON 数组串（位置参序，空串等价空数组，非数组形预检拦），返回值整体过桥。与 raw 对偶（raw=CDP 层通道，dialect=方言层通道）；守卫在 Session 层照拦；60 秒界与同源腿同律；未知函数由方言面报「未知函数」带 CTA；daemon 注入态才有（进程内测试态报未注入） |
 | `requests(opts)` | `-> Result<Value>` | 交互请求对账（与方言 `requests()` 同源同参：since/filter；Network 事件环形 1000 条） |
 | `snapshot(opts)` | `-> Result<Value>` | ax 树快照（与方言 `snapshot()` 同源同参：ref/depth/pierce；返回 url/title/nodes） |
 | `request_detail(sel, opts)` | `-> Result<Value>` | 单请求详情（index 或 requestId；响应头含 Set-Cookie 可取） |

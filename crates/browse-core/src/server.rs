@@ -353,6 +353,37 @@ fn host_fns(host: &std::sync::Arc<JsHost>) -> browse_rune::HostFns {
         snapshot: Some(wrap("snapshot")),
         requests: Some(wrap("requests")),
         request_detail: Some(wrap("requestDetail")),
+        // 方言全量桥通用腿（issue #75）：载荷 {name, args} 解包转
+        // global_json 按名派发——方言面全部全局函数一条通道；60 秒界
+        // 与三支柱同律
+        dialect: Some({
+            let h = std::sync::Arc::clone(host);
+            std::sync::Arc::new(move |v: Value| {
+                let h = std::sync::Arc::clone(&h);
+                Box::pin(async move {
+                    let name = v
+                        .get("name")
+                        .and_then(Value::as_str)
+                        .ok_or_else(|| "dialect 载荷缺 name".to_string())?
+                        .to_string();
+                    let argv: Vec<Value> = v
+                        .get("args")
+                        .and_then(Value::as_array)
+                        .cloned()
+                        .unwrap_or_default();
+                    tokio::time::timeout(Duration::from_secs(60), h.global_json(&name, &argv))
+                        .await
+                        .map_err(|_| {
+                            "dialect 同源调用超时（60 秒上界）；下一步：browse status 看引擎态"
+                                .to_string()
+                        })?
+                        .map_err(|e| format!("{e:#}"))
+                })
+                    as std::pin::Pin<
+                        Box<dyn std::future::Future<Output = Result<Value, String>> + Send>,
+                    >
+            })
+        }),
     }
 }
 
