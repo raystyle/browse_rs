@@ -1,5 +1,6 @@
-//! 自注册 `cdp` 模块（账本 #67）：八个效果函数全走自有 [`cdp::Session`]
-//! 的 `call`，Chrome 只经隔离世界 `Runtime.evaluate` 碰页面。
+//! 自注册 `cdp` 模块（账本 #67）：效果函数全走自有 [`cdp::Session`] 的
+//! `call`/`call_with_deadline`，Chrome 只经隔离世界 `Runtime.evaluate` 碰
+//! 页面（js 族走主世界全量）。
 //!
 //! 纪律：参数经 `serde_json::to_string` 做成 JS 字面量再传入（禁止把
 //! 选择器拼进 JS 字符串）；小结果走 JSON 过桥（`() ↔ null`、`#{ } ↔
@@ -19,7 +20,7 @@ use serde_json::{Value, json};
 #[derive(Debug, Clone, Any)]
 #[rune(item = ::cdp)]
 pub struct CdpError {
-    /// 失败操作名（如 `"goto"`、`"eval"`、`"click"`）。
+    /// 失败操作名（如 `"goto"`、`"eval"`、`"raw"`）。
     #[rune(get)]
     pub op: String,
     /// 失败细节（页面异常文本、协议错误、选择器未命中等）。
@@ -133,6 +134,37 @@ fn json_contains_placeholder(v: &serde_json::Value) -> bool {
         serde_json::Value::Object(o) => o.values().any(json_contains_placeholder),
         _ => false,
     }
+}
+
+/// raw 的参数串预检：空串（含纯空白）等价空对象，其余必须是合法 JSON 且
+/// 为对象形（CDP 参数恒为对象）。何时用：`cdp::raw` 发命令前——预检先
+/// 于连接检查，坏串在进程内即拦（无引擎也报得出）。边界：不校验参数键
+/// 与方法名的匹配（那是 Chrome 侧协议校验面）。
+///
+/// # Errors
+///
+/// 串非合法 JSON 或不是对象形时，返 op=`raw` 的 [`CdpError`]（带 CTA）。
+fn parse_raw_params(params_json: &str) -> Result<Value, CdpError> {
+    if params_json.trim().is_empty() {
+        return Ok(json!({}));
+    }
+    let v: Value = serde_json::from_str(params_json).map_err(|e| {
+        cdp_err(
+            "raw",
+            format!(
+                "params 不是合法 JSON：{e}；下一步：对照协议文档参数形（对象串，如 {{\"x\": 1}}；空串等价空对象，r# 裸串免转义）"
+            ),
+        )
+    })?;
+    if !v.is_object() {
+        return Err(cdp_err(
+            "raw",
+            format!(
+                "params 必须是 JSON 对象，得到 {v}；下一步：外层用 {{…}}（CDP 参数恒为对象形）"
+            ),
+        ));
+    }
+    Ok(v)
 }
 
 impl CdpState {
@@ -360,10 +392,10 @@ fn js_wrapper(src: &str, args_json: &str) -> String {
     format!("(async (args) => {{\n{src}\n}})({args_json})")
 }
 
-/// 注册 `cdp` 模块（方案八函数面 + 三形态批四函数）：`goto`/`eval`/
-/// `eval_handle`/`call`/`release`/`click`/`type_text`/`wait_sel` 加
-/// `js`/`js_lib`/`render`/`stdin`，全部返回 `Result`（`render`/`stdin`
-/// 不可失败面直接返值）。
+/// 注册 `cdp` 模块（通用通道形，ADR-0011）：`goto`/`eval`/`eval_handle`/
+/// `call`/`release`/`wait_event`/`raw` 加 `js`/`js_lib`/`render`/`stdin`
+/// 与三支柱 `requests`/`snapshot`/`request_detail`，全部返回 `Result`
+/// （`render`/`stdin` 不可失败面直接返值）。
 ///
 /// # Errors
 ///
@@ -550,110 +582,6 @@ pub fn cdp_module(ctx: ModuleCtx) -> Result<(Module, Cleanup), rune::ContextErro
         })
         .build()?;
     }
-    {
-        let st = state.clone();
-        m.function("click", move |sel: String| {
-            let st = st.clone();
-            async move {
-                st.set_op("click");
-                let out = async {
-                    // 选择器经 serde_json 字面量注入（禁止拼进 JS 字符串）；
-                    // 隔离世界取中心点，Input 域发真实点击
-                    let sel_lit = serde_json::to_string(&sel).unwrap_or_default();
-                    let expr = format!(
-                        "((el) => el ? (() => {{ const r = el.getBoundingClientRect(); return [r.x + r.width / 2, r.y + r.height / 2]; }})() : null)(document.querySelector({sel_lit}))"
-                    );
-                    let r = st.eval_in_world(&expr, false).await?;
-                    let point = r
-                        .pointer("/result/value")
-                        .cloned()
-                        .unwrap_or(Value::Null);
-                    let [x, y] = serde_json::from_value::<[f64; 2]>(point)
-                        .map_err(|_| cdp_err("click", format!("选择器未命中：{sel}")))?;
-                    for ty in ["mousePressed", "mouseReleased"] {
-                        st.session
-                            .call_with_deadline("Input.dispatchMouseEvent",
-                                json!({ "type": ty, "x": x, "y": y, "button": "left", "clickCount": 1 }),
-                            CALL_DEADLINE,
-                            )
-                            .await
-                            .map_err(|e| cdp_err("click", format!("Input.{ty}: {e:#}")))?;
-                    }
-                    Ok::<(), CdpError>(())
-                }
-                .await;
-                st.clear_op("click");
-                out
-            }
-        })
-        .build()?;
-    }
-    {
-        let st = state.clone();
-        m.function("type_text", move |sel: String, text: String| {
-            let st = st.clone();
-            async move {
-                st.set_op("type_text");
-                let out = async {
-                    let sel_lit = serde_json::to_string(&sel).unwrap_or_default();
-                    // 未命中守卫（评审 #67 一轮 G6）：与 click 同款报错，防文本
-                    // 静默插进当前焦点元素
-                    let found = st
-                        .eval_in_world(&format!("!!document.querySelector({sel_lit})"), false)
-                        .await
-                        .map_err(|e| cdp_err("type_text", format!("探测：{}", e.message)))?;
-                    if found.pointer("/result/value").and_then(Value::as_bool) != Some(true) {
-                        return Err(cdp_err("type_text", format!("选择器未命中：{sel}")));
-                    }
-                    st.eval_in_world(
-                        &format!("document.querySelector({sel_lit})?.focus()"),
-                        false,
-                    )
-                    .await
-                    .map_err(|e| cdp_err("type_text", format!("focus：{}", e.message)))?;
-                    st.session
-                        .call_with_deadline(
-                            "Input.insertText",
-                            json!({ "text": text }),
-                            CALL_DEADLINE,
-                        )
-                        .await
-                        .map_err(|e| cdp_err("type_text", format!("Input.insertText: {e:#}")))?;
-                    Ok::<(), CdpError>(())
-                }
-                .await;
-                st.clear_op("type_text");
-                out
-            }
-        })
-        .build()?;
-    }
-    {
-        let st = state.clone();
-        m.function("wait_sel", move |sel: String, ms: i64| {
-            let st = st.clone();
-            async move {
-                st.set_op("wait_sel");
-                let out = async {
-                    let sel_lit = serde_json::to_string(&sel).unwrap_or_default();
-                    let expr = format!("!!document.querySelector({sel_lit})");
-                    let steps = (ms.max(0) / 100) as u32;
-                    for _ in 0..=steps {
-                        let r = st.eval_in_world(&expr, false).await?;
-                        if r.pointer("/result/value").and_then(Value::as_bool) == Some(true) {
-                            return Ok::<bool, CdpError>(true);
-                        }
-                        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-                    }
-                    Ok::<bool, CdpError>(false)
-                }
-                .await;
-                st.clear_op("wait_sel");
-                out
-            }
-        })
-        .build()?;
-    }
     // ---- 批次二（总台指令）：事件驱动等待原语（CDP 事件面） ----
     {
         let st = state.clone();
@@ -685,6 +613,47 @@ pub fn cdp_module(ctx: ModuleCtx) -> Result<(Module, Cleanup), rune::ContextErro
                 }
                 .await;
                 st.clear_op("wait_event");
+                out
+            }
+        })
+        .build()?;
+    }
+    // ---- 通用命令通道（账本 #73，ADR-0011）：任意 CDP 命令直发 ----
+    // raw(method, params_json) 把任意 CDP 命令发到当前页面会话（活动 tab
+    // 的 session target；Browser.* 前缀走 browser 级端点），params_json 是
+    // JSON 对象串（空串等价空对象，非对象形报错——CDP 参数恒为对象形），
+    // 响应对象整体过桥回脚本。何时用：函数面没盖到的域与方法——
+    // Input.dispatchMouseEvent 序列组拟人鼠标（wiggle/拖拽/滚轮）、
+    // Fetch.enable 加 wait_event(Fetch.requestPaused) 循环加
+    // failRequest/continueRequest 组按 resourceType 断流放行、
+    // Network.setCookie/getAllCookies 组 cookie 面。边界：与内置函数同一
+    // 道 `Session::call_with_deadline` 守卫与 30 秒上界（域策略对
+    // Page.navigate/Target.createTarget 照拦）；开 Fetch.enable 后
+    // requestPaused 由脚本自己应答（本函数不代答）。params 取 JSON 串形而
+    // 非 rune 对象：对象形实测可行（嵌套组合与 null 经 `()` 都过桥，
+    // vm_face 探针在册），选串形是协议文档参数形原样粘贴（r# 免转义，
+    // 与 wait_event 的任意 method 名对偶）且避开外部类型的序列化错面
+    // （js 的「args 不可 JSON 化」先例）。
+    //
+    // click/type_text/wait_sel/cookies/set_cookie 五件纯透传糖皮已回收
+    // （ADR-0011）：raw 加 eval/js 组合全覆盖，组合形见 e2e 两组件验证。
+    {
+        let st = state.clone();
+        m.function("raw", move |method: String, params_json: String| {
+            let st = st.clone();
+            async move {
+                st.set_op("raw");
+                let out = async {
+                    let params = parse_raw_params(&params_json)?;
+                    let r = st
+                        .session
+                        .call_with_deadline(&method, params, CALL_DEADLINE)
+                        .await
+                        .map_err(|e| cdp_err("raw", format!("{method}: {e:#}")))?;
+                    CdpState::bridge_no_result_check(&r, "raw")
+                }
+                .await;
+                st.clear_op("raw");
                 out
             }
         })
@@ -839,7 +808,7 @@ pub fn cdp_module(ctx: ModuleCtx) -> Result<(Module, Cleanup), rune::ContextErro
         m.function("stdin", move || st.stdin.clone()).build()?;
     }
 
-    // ---- #68 修复批随行三薄封装：三支柱同源 + cookie 面 ----
+    // ---- #68 修复批随行三薄封装：三支柱同源（cookie 面已回收，ADR-0011）----
     {
         let st = state.clone();
         m.function("requests", move |opts: RuneValue| {
@@ -877,64 +846,6 @@ pub fn cdp_module(ctx: ModuleCtx) -> Result<(Module, Cleanup), rune::ContextErro
                 out
             }
         })
-        .build()?;
-    }
-    {
-        let st = state.clone();
-        m.function("cookies", move || {
-            let st = st.clone();
-            async move {
-                st.set_op("cookies");
-                let out = async {
-                    let r = st
-                        .session
-                        .call_with_deadline("Network.getCookies", json!({}), CALL_DEADLINE)
-                        .await
-                        .map_err(|e| cdp_err("cookies", format!("Network.getCookies: {e:#}")))?;
-                    CdpState::bridge_no_result_check(&r, "cookies")
-                }
-                .await;
-                st.clear_op("cookies");
-                out
-            }
-        })
-        .build()?;
-    }
-    {
-        let st = state.clone();
-        m.function(
-            "set_cookie",
-            move |name: String, value: String, domain: String| {
-                let st = st.clone();
-                async move {
-                    st.set_op("set_cookie");
-                    let out = async {
-                        let r = st
-                            .session
-                            .call_with_deadline(
-                                "Network.setCookie",
-                                json!({ "name": name, "value": value, "domain": domain, "path": "/" }),
-                                CALL_DEADLINE,
-                            )
-                            .await
-                            .map_err(|e| {
-                                cdp_err("set_cookie", format!("Network.setCookie: {e:#}"))
-                            })?;
-                        // setCookie 返回 {success: bool}
-                        if r.get("success").and_then(Value::as_bool) == Some(false) {
-                            return Err(cdp_err(
-                                "set_cookie",
-                                "浏览器拒设（检查 domain 与 httpOnly/secure 约束）",
-                            ));
-                        }
-                        Ok(RuneValue::from(()))
-                    }
-                    .await;
-                    st.clear_op("set_cookie");
-                    out
-                }
-            },
-        )
         .build()?;
     }
 
@@ -1037,6 +948,38 @@ impl Drop for Cleanup {
                 })
                 .await;
             });
+        }
+    }
+}
+
+#[cfg(test)]
+mod raw_params_tests {
+    use super::parse_raw_params;
+    use serde_json::json;
+
+    /// 空串（含纯空白）等价空对象——无参命令（Network.enable 等）的写法。
+    #[test]
+    fn empty_string_is_empty_object() {
+        assert_eq!(parse_raw_params("").unwrap(), json!({}));
+        assert_eq!(parse_raw_params("   ").unwrap(), json!({}));
+    }
+
+    /// 对象串原样过：嵌套数组与布尔保真（Input.dispatchMouseEvent 的
+    /// modifiers 位掩码、Fetch.enable 的 patterns 数组同类形）。
+    #[test]
+    fn object_string_roundtrips() {
+        let v = parse_raw_params(r#"{"x": 40, "mods": [1, 2], "o": {"k": true}}"#)
+            .expect("合法对象串应过");
+        assert_eq!(v, json!({"x": 40, "mods": [1, 2], "o": {"k": true}}));
+    }
+
+    /// 坏 JSON 与非对象形（数组、字符串、数字）都拦，op 恒 raw。
+    #[test]
+    fn non_object_and_bad_json_error() {
+        for bad in [r#"[1, 2]"#, "42", "\"x\"", "true", "{oops"] {
+            let e = parse_raw_params(bad).unwrap_err();
+            assert_eq!(e.op, "raw", "{bad}");
+            assert!(!e.message.is_empty(), "{bad}");
         }
     }
 }

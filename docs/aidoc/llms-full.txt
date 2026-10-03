@@ -636,7 +636,7 @@ Rune 编排面（账本 #67，ADR-0010）：`browse rune` 的 VM 构建、自注
 ## Modules
 
 - [`exec`](exec.md): Rune 执行器（账本 #67）：一套 `Context` 编译一次，VM 经
-- [`module`](module.md): 自注册 `cdp` 模块（账本 #67）：八个效果函数全走自有 [`cdp::Session`]
+- [`module`](module.md): 自注册 `cdp` 模块（账本 #67）：效果函数全走自有 [`cdp::Session`] 的
 - [`rawstr`](rawstr.md): r# 裸串预处理（战役台裸串研究单定谳 2026-10-02，批次二落地）：Rune
 - [`vars_syntax`](vars_syntax.md): 模板语法选择（总台令「{{ 与 jinja 不冲突」批）：四面（rune 源模板
 
@@ -677,8 +677,9 @@ Rune 执行器（账本 #67）：一套 `Context` 编译一次，VM 经
 <!-- browse_rune/module.md -->
 # browse-rune::module
 
-自注册 `cdp` 模块（账本 #67）：八个效果函数全走自有 [`cdp::Session`]
-的 `call`，Chrome 只经隔离世界 `Runtime.evaluate` 碰页面。
+自注册 `cdp` 模块（账本 #67）：效果函数全走自有 [`cdp::Session`] 的
+`call`/`call_with_deadline`，Chrome 只经隔离世界 `Runtime.evaluate` 碰
+页面（js 族走主世界全量）。
 
 纪律：参数经 `serde_json::to_string` 做成 JS 字面量再传入（禁止把
 选择器拼进 JS 字符串）；小结果走 JSON 过桥（`() ↔ null`、`#{ } ↔
@@ -688,7 +689,7 @@ object`、数组对数组），DOM 节点只留 [`ObjHandle`] 不透明句柄；
 
 ## Functions
 
-- `cdp_module` — 注册 `cdp` 模块（方案八函数面 + 三形态批四函数）：`goto`/`eval`/
+- `cdp_module` — 注册 `cdp` 模块（通用通道形，ADR-0011）：`goto`/`eval`/`eval_handle`/
 
 ## Types
 

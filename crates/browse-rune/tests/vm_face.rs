@@ -217,3 +217,104 @@ async fn render_and_js_wrapper_face() -> anyhow::Result<()> {
     assert_eq!(op, "render", "CdpError 降形保 op/message：{err}");
     Ok(())
 }
+
+/// 通用命令通道 raw（无连接进程内态）：空串等价空对象（预检过、走到
+/// 连接检查），快错面是 op=raw 的 CdpError——证明函数注册可达。
+#[tokio::test]
+async fn raw_reachable_and_empty_params() -> anyhow::Result<()> {
+    let session = cdp::Session::new();
+    let out = run(
+        session,
+        r#"pub async fn main() { cdp::raw("Network.enable", "").await?; Ok(()) }"#,
+        DEFAULT_CAPS,
+        browse_rune::RunOpts::default(),
+    )
+    .await?;
+    let op = out
+        .pointer("/error/op")
+        .and_then(|o| o.as_str())
+        .unwrap_or("");
+    let msg = out
+        .pointer("/error/message")
+        .and_then(|m| m.as_str())
+        .unwrap_or("");
+    assert_eq!(op, "raw", "无连接应走 CdpError(op=raw)：{out}");
+    assert!(msg.contains("Not connected"), "快错面是连接错：{out}");
+    Ok(())
+}
+
+/// raw 参数串预检：坏 JSON 与非对象形都在发命令前拦（与上一件的
+/// Not connected 面可区分——预检先于连接检查）。
+#[tokio::test]
+async fn raw_params_preflight() -> anyhow::Result<()> {
+    let session = cdp::Session::new();
+    for (bad, want) in [
+        ("{oops", "不是合法 JSON"),
+        ("[1, 2]", "对象"),
+        ("42", "对象"),
+    ] {
+        let src = format!(
+            "pub async fn main() {{ cdp::raw(\"X.y\", {:?}).await?; Ok(()) }}",
+            bad
+        );
+        let out = run(
+            session.clone(),
+            &src,
+            DEFAULT_CAPS,
+            browse_rune::RunOpts::default(),
+        )
+        .await?;
+        let msg = out
+            .pointer("/error/message")
+            .and_then(|m| m.as_str())
+            .unwrap_or("");
+        assert!(
+            msg.contains(want) && !msg.contains("Not connected"),
+            "params={bad} 应在预检拦「{want}」而非连接面：{out}"
+        );
+    }
+    Ok(())
+}
+
+/// 设计注记实测锚（raw 的 params 取 JSON 串形而非 rune 对象）：对象形
+/// 本身可行——嵌套对象/数组/标量与 null（经 `()` 单位值）都过桥；选串形
+/// 是协议文档参数形原样粘贴（r# 免转义，与 wait_event 任意 method 名对
+/// 偶）加避开外部类型的序列化错面，不是对象形坏了。
+#[tokio::test]
+async fn raw_string_params_rationale_probe() -> anyhow::Result<()> {
+    let session = cdp::Session::new();
+    let out = run(
+        session.clone(),
+        r#"pub async fn main() {
+        let v = #{"x": 1, "arr": [1, "a", true], "o": #{"k": 2}};
+        Ok(json::to_string(v)?)
+    }"#,
+        DEFAULT_CAPS,
+        browse_rune::RunOpts::default(),
+    )
+    .await?;
+    let s = out.pointer("/ok").and_then(|v| v.as_str()).unwrap_or("");
+    assert!(
+        s.contains("\"x\":1")
+            && s.contains("\"arr\":[1,\"a\",true]")
+            && s.contains("\"o\":{\"k\":2}"),
+        "嵌套组合对象字面量应可序列化：{out}"
+    );
+    // null 面：() 单位值过桥即 JSON null（对象形并非表达不了 null）
+    let out = run(
+        session,
+        r#"pub async fn main() {
+        let v = #{"v": ()};
+        Ok(format!("{:?}", json::to_string(v)))
+    }"#,
+        DEFAULT_CAPS,
+        browse_rune::RunOpts::default(),
+    )
+    .await?;
+    let s2 = out.pointer("/ok").and_then(|v| v.as_str()).unwrap_or("");
+    assert!(
+        s2.contains("\\\"v\\\":null"),
+        "() 应过桥为 null（设计注记的实测锚）：{out}"
+    );
+    Ok(())
+}

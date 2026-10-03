@@ -1,7 +1,8 @@
 # browse-rune::module
 
-自注册 `cdp` 模块（账本 #67）：八个效果函数全走自有 [`cdp::Session`]
-的 `call`，Chrome 只经隔离世界 `Runtime.evaluate` 碰页面。
+自注册 `cdp` 模块（账本 #67）：效果函数全走自有 [`cdp::Session`] 的
+`call`/`call_with_deadline`，Chrome 只经隔离世界 `Runtime.evaluate` 碰
+页面（js 族走主世界全量）。
 
 纪律：参数经 `serde_json::to_string` 做成 JS 字面量再传入（禁止把
 选择器拼进 JS 字符串）；小结果走 JSON 过桥（`() ↔ null`、`#{ } ↔
@@ -11,7 +12,7 @@ object`、数组对数组），DOM 节点只留 [`ObjHandle`] 不透明句柄；
 
 ## Functions
 
-- `cdp_module` — 注册 `cdp` 模块（方案八函数面 + 三形态批四函数）：`goto`/`eval`/
+- `cdp_module` — 注册 `cdp` 模块（通用通道形，ADR-0011）：`goto`/`eval`/`eval_handle`/
 
 ## Types
 

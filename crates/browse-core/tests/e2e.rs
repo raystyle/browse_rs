@@ -2744,8 +2744,10 @@ async fn no_display_headless_fallback_spawns() {
     }
 }
 
-/// #67 Rune 编排面真 chrome 端到端：隔离世界 goto/eval/click/handle 全链。
-/// 独立 spawn（SEQ 互斥），receipt 形 `{"ok": …}` 锁定。
+/// #67 Rune 编排面真 chrome 端到端：隔离世界 goto/eval/handle 全链。
+/// 糖皮回收批（ADR-0011）：wait_sel/click 改 raw 组合形（eval 探测加
+/// time 睡步进；隔离世界量中心点加 Input 域两发），本测试即组合回收的
+/// 天然用例。独立 spawn（SEQ 互斥），receipt 形 `{"ok": …}` 锁定。
 #[tokio::test]
 async fn rune_orchestration_roundtrip() {
     if !gated() {
@@ -2772,10 +2774,23 @@ async fn rune_orchestration_roundtrip() {
     let script = r##"
         pub async fn main() {
             cdp::goto("data:text/html,<title>rune-e2e</title><button id='b'>go</button><span id='out'></span><script>document.getElementById('b').onclick=()=>{document.getElementById('out').textContent='clicked'}</script>").await?;
-            if !cdp::wait_sel("#b", 3000).await? {
-                return Err(cdp::CdpError { op: "wait_sel", message: "#b 未现" });
+            // wait_sel 组合形：eval 探测加 time 睡步进（糖皮回收，ADR-0011）
+            let found = false;
+            for _ in 0..30 {
+                if cdp::eval("!!document.querySelector('#b')").await? == true {
+                    found = true;
+                    break;
+                }
+                time::sleep(time::Duration::from_millis(100)).await;
             }
-            cdp::click("#b").await?;
+            if !found {
+                return Err(cdp::CdpError { op: "eval", message: "#b 未现" });
+            }
+            // click 组合形：隔离世界量中心点（返回对象内字段串，便于拼
+            // params），Input 域 pressed/released 两发
+            let fields = cdp::eval(r#"(() => { const r = document.querySelector('#b').getBoundingClientRect(); const o = {x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2), button: "left", clickCount: 1}; return JSON.stringify(o).slice(1, -1); })()"#).await?;
+            cdp::raw("Input.dispatchMouseEvent", "{\"type\":\"mousePressed\"," + fields + "}").await?;
+            cdp::raw("Input.dispatchMouseEvent", "{\"type\":\"mouseReleased\"," + fields + "}").await?;
             let out = cdp::eval("document.getElementById('out').textContent").await?;
             let h = cdp::eval_handle("document.body").await?;
             let tag = cdp::call(clone(h), "function() { return this.tagName }").await?;
@@ -2966,7 +2981,8 @@ async fn rune_68_acceptance_and_pillars() {
         "递归形回执：{r}"
     );
     // 三支柱段（评审 G5 补）：同源闭包束内联构造（与 server host_fns 同
-    // 模式），requests/snapshot/request_detail/cookies/set_cookie 真跑
+    // 模式），requests/snapshot/request_detail 真跑；cookie 面（回收件）走
+    // raw 组合形（ADR-0011）
     let host = browse_core::JsHost::new(session.clone());
     let wrap = |name: &'static str| -> browse_rune::HostFn {
         let h = host.clone();
@@ -2993,7 +3009,8 @@ async fn rune_68_acceptance_and_pillars() {
         let reqs = cdp::requests(#{"filter": "pl"}).await?;
         let snap = cdp::snapshot(#{"depth": 2}).await?;
         let det = cdp::request_detail(0, #{}).await?;
-        cdp::set_cookie("camp", "1", "localhost").await?;
+        // set_cookie 组合形（糖皮回收，ADR-0011）：Network.setCookie 直发
+        cdp::raw("Network.setCookie", r#"{"name": "camp", "value": "1", "domain": "localhost", "path": "/"}"#).await?;
         Ok(#{"count": reqs["count"], "title": snap["title"], "detail_has_url": format!("{:?}", det).contains("url")})
     }"##;
     let r = browse_rune::run(
@@ -3168,6 +3185,282 @@ async fn rune_wait_event_face() {
         serde_json::json!({ "ok": "hit|miss" }),
         "wait_event 回执：{r}"
     );
+    engine.shutdown().await.expect("shutdown");
+    clean_profile().await;
+}
+
+/// 通用命令通道组合验证一（账本 #73 验收 a）：raw 串
+/// Input.dispatchMouseEvent 组拟人鼠标——wiggle（mouseMoved 序列）、拖拽
+/// （down-move-up）、滚轮（双发对冲导航后首发吞没），主世界录波器回读
+/// isTrusted 全 true。
+#[tokio::test]
+async fn rune_raw_mouse_composition() {
+    if !gated() {
+        eprintln!("skip: BROWSE_E2E 未设 1");
+        return;
+    }
+    let _seq = SEQ.lock().await;
+    clean_profile().await;
+    let session = cdp::Session::new();
+    let engine = Engine::new(session.clone());
+    engine
+        .ensure(&EngineSpec::Auto {
+            chrome: None,
+            headless: true,
+            pipe: false,
+            profile: None,
+            proxy: None,
+            proxy_bypass: None,
+            isolated: false,
+            engine_args: Vec::new(),
+        })
+        .await
+        .expect("raw mouse 验收引擎起不来");
+    let script = r##"pub async fn main() {
+        cdp::goto("data:text/html,<title>raw-mouse</title><div id='t' style='position:fixed;left:20px;top:20px;width:100px;height:100px'>T</div>").await?;
+        cdp::js(r#"
+            window.__ev = [];
+            const rec = (t) => (e) => window.__ev.push([t, e.isTrusted, e.clientX, e.clientY]);
+            addEventListener('mousemove', rec('mm'));
+            addEventListener('mousedown', rec('md'));
+            addEventListener('mouseup', rec('mu'));
+            addEventListener('wheel', rec('wh'));
+            return true;
+        "#, #{}).await?;
+        // wiggle：mouseMoved 序列（拟人微动）
+        cdp::raw("Input.dispatchMouseEvent", r#"{"type":"mouseMoved","x":30,"y":30}"#).await?;
+        cdp::raw("Input.dispatchMouseEvent", r#"{"type":"mouseMoved","x":35,"y":34}"#).await?;
+        cdp::raw("Input.dispatchMouseEvent", r#"{"type":"mouseMoved","x":41,"y":39}"#).await?;
+        cdp::raw("Input.dispatchMouseEvent", r#"{"type":"mouseMoved","x":48,"y":45}"#).await?;
+        // 拖拽形：down -> move -> up
+        cdp::raw("Input.dispatchMouseEvent", r#"{"type":"mousePressed","x":48,"y":45,"button":"left","clickCount":1}"#).await?;
+        cdp::raw("Input.dispatchMouseEvent", r#"{"type":"mouseMoved","x":60,"y":58,"button":"left"}"#).await?;
+        cdp::raw("Input.dispatchMouseEvent", r#"{"type":"mouseReleased","x":60,"y":58,"button":"left","clickCount":1}"#).await?;
+        // wheel：dispatchMouseEvent 首发吞没（semantic 层 #35 实测定谳），
+        // 自双发保至少一发触发
+        cdp::raw("Input.dispatchMouseEvent", r#"{"type":"mouseWheel","x":60,"y":58,"deltaX":0,"deltaY":120}"#).await?;
+        cdp::raw("Input.dispatchMouseEvent", r#"{"type":"mouseWheel","x":60,"y":58,"deltaX":0,"deltaY":120}"#).await?;
+        cdp::js("return window.__ev", #{}).await
+    }"##;
+    let r = browse_rune::run(
+        session,
+        script,
+        browse_rune::DEFAULT_CAPS,
+        browse_rune::RunOpts::default(),
+    )
+    .await
+    .expect("raw mouse 脚本执行失败");
+    eprintln!("raw mouse 回执：{r}");
+    let evs = r
+        .pointer("/ok")
+        .and_then(|v| v.as_array())
+        .cloned()
+        .unwrap_or_default();
+    let count = |t: &str| evs.iter().filter(|e| e.get(0) == Some(&json!(t))).count();
+    assert!(count("mm") >= 2, "wiggle+拖拽 move 序列应≥2：{r}");
+    assert!(count("md") >= 1 && count("mu") >= 1, "拖拽 down/up：{r}");
+    assert!(count("wh") >= 1, "wheel 双发至少一发到：{r}");
+    for e in &evs {
+        assert_eq!(e.get(1), Some(&json!(true)), "全部事件 isTrusted=true：{r}");
+    }
+    engine.shutdown().await.expect("shutdown");
+    clean_profile().await;
+}
+
+/// 测试页源头：127.0.0.1 一次性 HTTP 服务，媒体（video）/字体（woff2）/
+/// 脚本三类子资源各一路径（账本 #73 验收 b 的对账源头，零外网）。
+async fn spawn_test_origin() -> (std::net::SocketAddr, tokio::task::JoinHandle<()>) {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind");
+    let addr = listener.local_addr().expect("addr");
+    let handle = tokio::spawn(async move {
+        use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
+        loop {
+            let Ok((mut sock, _)) = listener.accept().await else {
+                break;
+            };
+            tokio::spawn(async move {
+                let mut buf = [0u8; 4096];
+                let _ = sock.read(&mut buf).await;
+                let path = String::from_utf8_lossy(&buf)
+                    .split(' ')
+                    .nth(1)
+                    .unwrap_or("/")
+                    .to_string();
+                let (ct, body) = match path.split('?').next().unwrap_or("/") {
+                    "/m.mp4" => ("video/mp4", "x"),
+                    "/f.woff2" => ("font/woff2", "x"),
+                    "/a.js" => ("application/javascript", ";window.__loaded=1;"),
+                    _ => ("text/html", "<html><body>origin</body></html>"),
+                };
+                let head = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Type: {ct}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                    body.len()
+                );
+                let _ = sock.write_all(head.as_bytes()).await;
+                let _ = sock.write_all(body.as_bytes()).await;
+            });
+        }
+    });
+    (addr, handle)
+}
+
+/// 通用命令通道组合验证二（账本 #73 验收 b）：raw Fetch.enable 后
+/// wait_event(Fetch.requestPaused) 循环按 resourceType 分流——Media 与
+/// Font 走 Fetch.failRequest、其余走 Fetch.continueRequest 放行；基线批
+/// 与拦截批对账（requests() 计数下降），收尾 raw Fetch.disable 清理。
+#[tokio::test]
+async fn rune_raw_fetch_interception() {
+    if !gated() {
+        eprintln!("skip: BROWSE_E2E 未设 1");
+        return;
+    }
+    let _seq = SEQ.lock().await;
+    clean_profile().await;
+    let (addr, origin) = spawn_test_origin().await;
+    let session = cdp::Session::new();
+    let engine = Engine::new(session.clone());
+    engine
+        .ensure(&EngineSpec::Auto {
+            chrome: None,
+            headless: true,
+            pipe: false,
+            profile: None,
+            proxy: None,
+            proxy_bypass: None,
+            isolated: false,
+            engine_args: Vec::new(),
+        })
+        .await
+        .expect("raw fetch 验收引擎起不来");
+    // requests() 对账腿要宿主函数束（与 server host_fns 同模式）
+    let host = browse_core::JsHost::new(session.clone());
+    let wrap = |name: &'static str| -> browse_rune::HostFn {
+        let h = host.clone();
+        std::sync::Arc::new(move |args: serde_json::Value| {
+            let h = std::sync::Arc::clone(&h);
+            Box::pin(async move {
+                let argv: Vec<serde_json::Value> = args.as_array().cloned().unwrap_or_default();
+                h.global_json(name, &argv)
+                    .await
+                    .map_err(|e| format!("{e:#}"))
+            })
+                as std::pin::Pin<
+                    Box<dyn std::future::Future<Output = Result<serde_json::Value, String>> + Send>,
+                >
+        })
+    };
+    let host_fns = browse_rune::HostFns {
+        snapshot: Some(wrap("snapshot")),
+        requests: Some(wrap("requests")),
+        request_detail: Some(wrap("requestDetail")),
+    };
+    // 三类子资源批注入器：b1 基线批 await 全落定（对账前收干净）；
+    // b2 拦截批立即返（不能 await——资源等 continueRequest、rune 循环等
+    // js 返回，await 即死锁；落定由拦截循环的静默窗兜住）
+    let trigger_body = |b: &str| {
+        format!(
+            r#"const v = document.createElement('video');
+        v.preload = 'auto'; v.src = '/m.mp4?{b}';
+        v.addEventListener('loadeddata', done); v.addEventListener('error', done);
+        document.body.appendChild(v); v.load();
+        const s = document.createElement('script');
+        s.src = '/a.js?{b}'; s.onload = done; s.onerror = done;
+        document.body.appendChild(s);
+        new FontFace('T', 'url(/f.woff2?{b})').load().then(done, done);"#
+        )
+    };
+    let b1_trigger = format!(
+        r#"return await new Promise((res) => {{
+        let n = 0;
+        const done = () => {{ if (++n === 3) res(true); }};
+        {}
+    }});"#,
+        trigger_body("b1")
+    );
+    let b2_trigger = format!(
+        r#"(() => {{
+        const done = () => {{}};
+        {}
+        return true;
+    }})()"#,
+        trigger_body("b2")
+    );
+    let script = format!(
+        r##"pub async fn main() {{
+        cdp::raw("Network.enable", "").await?;
+        cdp::goto("http://{addr}/").await?;
+        // 基线批 b1：无拦截，三类子资源全落定后对账
+        cdp::js(r#"{b1_trigger}"#, #{{}}).await?;
+        let base = cdp::requests(#{{"filter": "b1"}}).await?;
+        let baseline = base["count"];
+        // 拦截批 b2：只拦 b2 批（urlPattern glob），Media/Font 断、其余放行
+        cdp::raw("Fetch.enable", r#"{{"patterns":[{{"urlPattern":"*b2*"}}]}}"#).await?;
+        cdp::js(r#"{b2_trigger}"#, #{{}}).await?;
+        let blocked = 0;
+        let passed = 0;
+        let seen = 0;
+        loop {{
+            seen += 1;
+            if seen > 50 {{ break; }}
+            let ev = match cdp::wait_event("Fetch.requestPaused", 1500).await {{
+                Ok(ev) => ev,
+                Err(_e) => break,
+            }};
+            // wait_event 回的是事件 params 层（requestId/resourceType 在顶层）
+            let rid = json::to_string(ev["requestId"])?;
+            let evs = json::to_string(ev)?;
+            if evs.contains("\"resourceType\":\"Media\"") || evs.contains("\"resourceType\":\"Font\"") {{
+                cdp::raw("Fetch.failRequest", "{{\"requestId\":" + rid + ",\"errorReason\":\"BlockedByClient\"}}").await?;
+                blocked += 1;
+            }} else {{
+                cdp::raw("Fetch.continueRequest", "{{\"requestId\":" + rid + "}}").await?;
+                passed += 1;
+            }}
+        }}
+        // route 清理（验收原文：恢复）
+        cdp::raw("Fetch.disable", "").await?;
+        let after = cdp::requests(#{{"filter": "b2"}}).await?;
+        Ok(#{{"baseline": baseline, "blocked_run": after["count"], "media_font_blocked": blocked, "others_passed": passed}})
+    }}"##,
+        addr = addr,
+        b1_trigger = b1_trigger,
+        b2_trigger = b2_trigger,
+    );
+    let r = browse_rune::run(
+        session,
+        &script,
+        browse_rune::DEFAULT_CAPS,
+        browse_rune::RunOpts {
+            host_fns,
+            ..Default::default()
+        },
+    )
+    .await
+    .expect("raw fetch 脚本执行失败");
+    eprintln!("raw fetch 回执：{r}");
+    assert_eq!(
+        r.pointer("/ok/baseline"),
+        Some(&json!(3)),
+        "基线批三类全响应：{r}"
+    );
+    assert_eq!(
+        r.pointer("/ok/blocked_run"),
+        Some(&json!(1)),
+        "拦截批仅脚本（放行腿）有响应，媒体字体无 responseReceived：{r}"
+    );
+    assert_eq!(
+        r.pointer("/ok/media_font_blocked"),
+        Some(&json!(2)),
+        "Media+Font 各一被断：{r}"
+    );
+    assert_eq!(
+        r.pointer("/ok/others_passed"),
+        Some(&json!(1)),
+        "脚本放行：{r}"
+    );
+    origin.abort();
     engine.shutdown().await.expect("shutdown");
     clean_profile().await;
 }

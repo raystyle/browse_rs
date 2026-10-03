@@ -1,7 +1,8 @@
 //! #68 三支柱示例:cdp::requests(交互请求对账)、cdp::snapshot(ax 树)、
-//! cdp::cookies/set_cookie(会话收割)。需真引擎,走 CLI 道:
+//! raw 组 cookie 面(Network.setCookie/getAllCookies 直发,糖皮回收后
+//! 组合形)。需真引擎,走 CLI 道:
 //! `browse rune crates/browse-rune/examples/pillars.rn`。本件是可跑
-//! 脚本体(示例脚本非 Rust 程序),四种薄封装各一段。
+//! 脚本体(示例脚本非 Rust 程序),三支柱各一段加 raw 组合一段。
 pub async fn main() {
     cdp::goto("data:text/html,<title>pillars</title><a href='#x'>go</a>").await?;
 
@@ -9,9 +10,9 @@ pub async fn main() {
     let reqs = cdp::requests(#{"filter": ""}).await?;
     // 支柱二:结构支柱(ax 树快照同源,depth 限深)
     let snap = cdp::snapshot(#{"depth": 3}).await?;
-    // 支柱三:会话收割(cookie 读设;Set-Cookie 从 request_detail 的响应头取)
-    cdp::set_cookie("campaign", "1", "localhost").await?;
-    let jar = cdp::cookies().await?;
+    // cookie 面(回收件 set_cookie/cookies 的 raw 组合形):
+    cdp::raw("Network.setCookie", "{\"name\": \"campaign\", \"value\": \"1\", \"domain\": \"localhost\", \"path\": \"/\"}").await?;
+    let jar = cdp::raw("Network.getAllCookies", "").await?;
     Ok(#{
         "requests_count": reqs["count"],
         "snapshot_title": snap["title"],

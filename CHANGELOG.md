@@ -2,6 +2,15 @@
 
 版本级里程碑；逐批过程见 docs/diary。semver 判据在册 docs/requirements/REQ-004。
 
+## Unreleased
+
+- **Rune 面通用 CDP 命令通道（账本 #73，用户裁定方案升级 2026-10-03；ADR-0011）**：
+- `cdp::raw(method, params_json)`：任意 CDP 命令直发到当前页面会话（params 是 JSON 对象串，空串等价空对象，非对象形预检拦；与内置函数同一道 `Session::call_with_deadline` 守卫与 30 秒上界）；与 `wait_event` 的任意 method 名对偶（事件侧已开，命令侧闭环）
+- 糖皮回收（契约破裂面）：`click`/`type_text`/`wait_sel`/`cookies`/`set_cookie` 五件纯透传绑定移除，raw 加 eval/js/time 组合全覆盖（组合形：拟人鼠标、断流分流、cookie 面）；保留 goto/eval 族/句柄三件/js 族/wait_event/三支柱（各有不可透传语义）；wait_sel 裁定回收（纯轮询壳，无引擎侧状态）
+- 组合验证（真 chrome e2e）：a) raw 串 Input.dispatchMouseEvent（wiggle 序列、拖拽 down-move-up、滚轮双发），页内 isTrusted 全 true；b) raw Fetch.enable 加 wait_event(Fetch.requestPaused) 循环按 resourceType 分流（Media/Font 走 failRequest、其余 continueRequest），requests() 对账基线 3 降到 1、收尾 Fetch.disable 恢复。引擎侧零改，resourceType 过滤与放行动作升为 rn 侧脚本逻辑（优于 #73 原案的引擎侧落点）
+- 下游迁移注记：pentest_rs 战役件用量（cookies 4、set_cookie 3、click 1、wait_sel 2）由总台迁 raw 组合形
+- semver 判据预定：raw 新增取 minor，五件回收属契约破裂按判据取 major；终版号与判据落封版 REQ（封版属总台令）
+
 ## 0.30.4 - 2026-10-02
 
 - **余量清扫批（总台令「做一封v0.30.4」；二三层永搁从令）**：
