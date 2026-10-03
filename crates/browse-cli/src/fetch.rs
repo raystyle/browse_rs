@@ -55,7 +55,13 @@ fn strip_html(html: &str) -> String {
     fn find_ascii(haystack: &str, needle: &str) -> Option<usize> {
         let hb = haystack.as_bytes();
         let nb = needle.as_bytes();
-        (0..=hb.len().saturating_sub(nb.len())).find(|&i| {
+        // 短串守卫（二轮 F-1）：haystack 短于 needle 时旧实现 find 安全返
+        // None，本扫描器的饱和下标会退化 0..=0 后切片越界 panic（空 html
+        // 的标题抽取实测崩）
+        if hb.len() < nb.len() {
+            return None;
+        }
+        (0..=hb.len() - nb.len()).find(|&i| {
             hb[i..i + nb.len()]
                 .iter()
                 .zip(nb)
@@ -134,7 +140,12 @@ pub async fn fetch(url: &str, _markdown: bool, timeout_s: u64) -> Result<Value> 
         fn find_ascii(haystack: &str, needle: &str) -> Option<usize> {
             let hb = haystack.as_bytes();
             let nb = needle.as_bytes();
-            (0..=hb.len().saturating_sub(nb.len())).find(|&i| {
+            // 短串守卫（二轮 F-1，与 strip_html 内同款）：空 html 的标题
+            // 抽取实测越界 panic
+            if hb.len() < nb.len() {
+                return None;
+            }
+            (0..=hb.len() - nb.len()).find(|&i| {
                 hb[i..i + nb.len()]
                     .iter()
                     .zip(nb)
@@ -350,5 +361,43 @@ mod tests {
     fn strip_html_ascii_case_insensitive_tags() {
         assert_eq!(strip_html("a <SCRIPT>hidden</SCRIPT> b"), "a b");
         assert_eq!(strip_html("<TITLE>x</TITLE>only"), "only");
+    }
+
+    /// 二轮 F-1 回归锁：短串与未闭合标记不越界 panic（空 html 的标题抽
+    /// 取、未闭合 script/style/title 的正文抽取，旧扫描器饱和下标实测崩）。
+    #[test]
+    fn strip_html_short_and_unclosed_inputs_no_panic() {
+        assert_eq!(strip_html(""), "");
+        assert_eq!(strip_html("abc"), "abc");
+        assert_eq!(strip_html("<script>"), "");
+        assert_eq!(strip_html("<title>"), "");
+        assert_eq!(strip_html("<script src=x"), "");
+        assert_eq!(strip_html("<style>"), "");
+        // 等价标题抽取面：空串与短串不 panic、无标题得空串
+        fn title_of(html: &str) -> String {
+            fn find_ascii(haystack: &str, needle: &str) -> Option<usize> {
+                let hb = haystack.as_bytes();
+                let nb = needle.as_bytes();
+                if hb.len() < nb.len() {
+                    return None;
+                }
+                (0..=hb.len() - nb.len()).find(|&i| {
+                    hb[i..i + nb.len()]
+                        .iter()
+                        .zip(nb)
+                        .all(|(x, y)| x.to_ascii_lowercase() == *y)
+                })
+            }
+            find_ascii(html, "<title")
+                .and_then(|p| html[p..].find('>').map(|q| p + q + 1))
+                .and_then(|start| html[start..].find("</title>").map(|e| (start, e)))
+                .map(|(s, e)| html[s..s + e].trim().to_string())
+                .unwrap_or_default()
+        }
+        assert_eq!(title_of(""), "");
+        assert_eq!(title_of("abc"), "");
+        // 开标记 ASCII 不敏感命中；闭标记查找本大小写敏感（原行为保持）
+        assert_eq!(title_of("<TITLE>t</title>"), "t");
+        assert_eq!(title_of("<TITLE>T</TITLE>"), "");
     }
 }
