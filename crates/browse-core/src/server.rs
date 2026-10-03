@@ -7,7 +7,10 @@
 //!   片段自带 `session.connect` 则不预连（显式意图优先，ADR-0004）。
 //! - 求值撞上「Not connected」再兜底 ensure + 重试一次（覆盖先语句后连接的写法）。
 //! - 单飞槽：同一时刻只跑一条片段，后来者排队（不拒 429）。
-//! - `/eval` 超时默认 300 秒（`BROWSE_EVAL_TIMEOUT`，单位秒）。
+//! - 兜底硬界（REQ-027 统一超时，ADR-0012）：/eval 与 /rune 同缺省 60
+//!   秒，请求级 `timeout_s`（`--timeout` 旗标）覆写 env 旋钮缺省
+//!   （`BROWSE_EVAL_TIMEOUT`/`BROWSE_RUNE_TIMEOUT`）；到期结构化退出带
+//!   在飞面卡点（/eval 方言函数探针、/rune OpProbe）。
 
 use crate::{Engine, EngineSpec, JsHost};
 use axum::extract::State;
@@ -32,6 +35,10 @@ pub struct EvalRequest {
     /// 全量 JS 形态（`browse --js` 面，#22）：走 [`JsHost::eval_js`]。
     #[serde(default)]
     pub js: bool,
+    /// 本次求值的兜底硬界秒（REQ-027 统一兜底超时；`--timeout` 旗标递
+    /// 入，请求级覆写 env 缺省）。与 wait 族等待窗正交（ADR-0012）。
+    #[serde(default)]
+    pub timeout_s: Option<u64>,
 }
 
 /// 描述 POST /rune 的请求体（账本 #67：Rune 编排面）。
@@ -52,6 +59,11 @@ pub struct RuneRequest {
     /// 入，未知值回落缺省）。
     #[serde(default)]
     pub vars_syntax: Option<String>,
+    /// 本次执行的兜底硬界秒（REQ-027 统一兜底超时；`--timeout` 旗标递
+    /// 入，请求级覆写 `BROWSE_RUNE_TIMEOUT` 缺省）。与 wait 族等待窗
+    /// 正交（ADR-0012）。
+    #[serde(default)]
+    pub timeout_s: Option<u64>,
 }
 
 /// 描述 POST /engine/up 的请求体。
@@ -207,25 +219,46 @@ fn idle_timeout() -> Duration {
         .unwrap_or(Duration::from_millis(3_600_000))
 }
 
-fn eval_timeout() -> Duration {
-    std::env::var("BROWSE_EVAL_TIMEOUT")
-        .ok()
-        .and_then(|s| s.parse::<u64>().ok())
-        .map(Duration::from_secs)
-        .unwrap_or(Duration::from_secs(300))
+/// 环境旋钮秒值解析（REQ-027 统一兜底超时）：经 [`crate::js_host::
+/// secs_to_ms`] 防误写守卫（>=1000 按毫秒换算并 daemon 留痕告警），
+/// 缺省回落 default_s。
+fn env_timeout_secs(var: &str, default_s: u64) -> Duration {
+    match std::env::var(var).ok().and_then(|s| s.parse::<u64>().ok()) {
+        None => Duration::from_secs(default_s),
+        Some(v) => {
+            let (ms, warn) = crate::js_host::secs_to_ms(v);
+            if let Some(w) = warn {
+                eprintln!("[browse] {var}={v} {w}（按换算值生效）");
+            }
+            Duration::from_millis(ms)
+        }
+    }
 }
 
-/// rune 面整体执行上界（ADR-0010 增补终裁 2026-10-02，批次二落地）：
-/// 独立旋钮 `BROWSE_RUNE_TIMEOUT`（秒，默认 45，战役台诉求口径）；
-/// `/eval` 的 `BROWSE_EVAL_TIMEOUT` 300 秒契约零动（长跑方言片段正当
-/// 面）。daemon 级上界：实例内全部 rune 执行同界，长爬（逐页 goto 累计
-/// 分钟级）触顶按需调大或拆专用命名实例。
-fn rune_timeout() -> Duration {
-    std::env::var("BROWSE_RUNE_TIMEOUT")
-        .ok()
-        .and_then(|s| s.parse::<u64>().ok())
-        .map(Duration::from_secs)
-        .unwrap_or(Duration::from_secs(45))
+/// 统一兜底硬界缺省（REQ-027，用户令 2026-10-03 终裁「timeout 默认 60
+/// 秒」）：两执行道同缺省 60 秒，请求级 `--timeout` 与 env 旋钮可调。
+/// 沿革：rune 前缺省 45（v0.26.1 战役台诉求）、eval 前缺省 300（REQ-016
+/// 契约）、中途拟 180 后收敛 60，本批统一收口（ADR-0012 在册）。
+const UNIFIED_TIMEOUT_DEFAULT_S: u64 = 60;
+
+/// /eval 的兜底硬界（REQ-027）：请求级 `timeout_s`（`--timeout` 旗标）
+/// 覆写 env 缺省（`BROWSE_EVAL_TIMEOUT`）。
+fn eval_timeout_for(req_s: Option<u64>) -> Duration {
+    req_s.map_or_else(
+        || env_timeout_secs("BROWSE_EVAL_TIMEOUT", UNIFIED_TIMEOUT_DEFAULT_S),
+        Duration::from_secs,
+    )
+}
+
+/// rune 面整体执行兜底硬界（ADR-0010 增补终裁 2026-10-02；REQ-027 请求
+/// 级覆写）：请求级 `timeout_s`（`--timeout` 旗标）覆写 env 缺省
+/// （`BROWSE_RUNE_TIMEOUT`）。daemon 级语义修订：env 是实例内缺省，
+/// 请求级可逐次覆写（长爬逐次调，不再全局定格）。
+fn rune_timeout_for(req_s: Option<u64>) -> Duration {
+    req_s.map_or_else(
+        || env_timeout_secs("BROWSE_RUNE_TIMEOUT", UNIFIED_TIMEOUT_DEFAULT_S),
+        Duration::from_secs,
+    )
 }
 
 /// 起 HTTP daemon，监听 `bind`，直到 POST /quit。
@@ -364,7 +397,10 @@ fn host_fns(host: &std::sync::Arc<JsHost>) -> browse_rune::HostFns {
                     let name = v
                         .get("name")
                         .and_then(Value::as_str)
-                        .ok_or_else(|| "dialect 载荷缺 name".to_string())?
+                        .ok_or_else(|| {
+                            "dialect 载荷缺 name；下一步：这是 rn 侧组装面问题，报告 browse issue"
+                                .to_string()
+                        })?
                         .to_string();
                     let argv: Vec<Value> = v
                         .get("args")
@@ -453,7 +489,7 @@ async fn rune_handler(
     }
     let outcome = tokio::select! {
         r = tokio::time::timeout(
-            rune_timeout(),
+            rune_timeout_for(req.timeout_s),
             browse_rune::run(d.host.session(), &req.code, browse_rune::DEFAULT_CAPS, opts),
         ) => match r {
             Ok(v) => Outcome::Done(v),
@@ -468,10 +504,10 @@ async fn rune_handler(
         Outcome::Done(Ok(v)) => v,
         Outcome::Done(Err(e)) => return err_response(e),
         Outcome::Timeout => {
-            // 整体超时（v0.26.1 最小 CTA，批次二换 rune 专属旋钮）：结构化
-            // timeout 面（op 在飞调用面、elapsed_ms 已等待毫秒、bound_s 上
-            // 界秒）加 daemon 日志行；错误文案保持 CTA 形
-            let bound = rune_timeout();
+            // 整体超时（v0.26.1 最小 CTA，批次二换 rune 专属旋钮；REQ-027
+            // 请求级覆写）：结构化 timeout 面（op 在飞调用面、elapsed_ms
+            // 已等待毫秒、bound_s 上界秒）加 daemon 日志行；错误文案带卡点
+            let bound = rune_timeout_for(req.timeout_s);
             let op = probe_snapshot_json(&op_probe);
             eprintln!(
                 "{}",
@@ -564,8 +600,8 @@ async fn eval_handler(
         }
     }
     // 分流（#22）：js 旗标走全量 JS 旁路，缺省走方言
-    let outcome =
-        tokio::time::timeout(eval_timeout(), run_eval_code(&d.host, &req.code, req.js)).await;
+    let bound = eval_timeout_for(req.timeout_s);
+    let outcome = tokio::time::timeout(bound, run_eval_code(&d.host, &req.code, req.js)).await;
     let value = match outcome {
         Ok(Ok(v)) => v,
         Ok(Err(e)) => {
@@ -584,10 +620,19 @@ async fn eval_handler(
             }
         }
         Err(_) => {
-            return err_response(anyhow::anyhow!(
-                "eval 超时（{} 秒；BROWSE_EVAL_TIMEOUT 可调）",
-                eval_timeout().as_secs()
-            ));
+            // 兜底硬界到期（REQ-027 统一超时）：结构化 timeout 面与 /rune
+            // 同形（op 在飞方言函数面、elapsed_ms、bound_s）加 daemon 日
+            // 志行；错误文案带卡点与 CTA
+            let op = d.host.current_op_snapshot();
+            eprintln!(
+                "{}",
+                json!({ "evalTimeout": {
+                    "op": op,
+                    "elapsedMs": bound.as_millis() as u64,
+                    "boundS": bound.as_secs(),
+                }})
+            );
+            return eval_timeout_response(op, bound);
         }
     };
     // #60 操作时刻引擎上下文（信封键，不进方言 value）：daemon 侧比对
@@ -626,8 +671,37 @@ fn rune_timeout_response(op: Value, bound: Duration) -> (axum::http::StatusCode,
         Json(json!({
             "ok": false,
             "error": format!(
-                "browse: rune 执行超时（{} 秒；BROWSE_RUNE_TIMEOUT 可调，daemon 级上界实例内全部 rune 执行同界）；下一步：看 timeout.op 定位在飞调用面，核对长等待段（goto 等加载、js awaitPromise、wait_event 事件窗、raw 裸调用的 30 秒界）或调大 BROWSE_RUNE_TIMEOUT 重试（长爬拆专用命名实例）",
+                "browse: rune 执行超时（{} 秒；--timeout 旗标请求级覆写或 BROWSE_RUNE_TIMEOUT 可调，env 是实例内缺省）；下一步：看 timeout.op 定位在飞调用面，核对长等待段（goto 等加载、js awaitPromise、wait_event 事件窗、raw 裸调用的 30 秒界）或调大界重试（长爬拆专用命名实例；与 wait 族等待窗正交，等待窗参数自调）",
                 bound.as_secs()
+            ),
+            "timeout": {
+                "op": op,
+                "elapsed_ms": bound.as_millis() as u64,
+                "bound_s": bound.as_secs(),
+            }
+        })),
+    )
+}
+
+/// /eval 兜底硬界到期的结构化回执（REQ-027 统一兜底超时）：形状与
+/// [`rune_timeout_response`] 同构——`op` 是在飞方言函数面（JsHost 探针；
+/// null 即执行间隙）、`elapsed_ms` 已等待毫秒、`bound_s` 上界秒；CTA 带
+/// 卡点定位法（等待类函数收窗参 vs 页面执行慢）。
+fn eval_timeout_response(
+    op: Option<String>,
+    bound: Duration,
+) -> (axum::http::StatusCode, Json<Value>) {
+    let op_desc = op
+        .clone()
+        .unwrap_or_else(|| "执行间隙（两函数之间）".into());
+    (
+        axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+        Json(json!({
+            "ok": false,
+            "error": format!(
+                "browse: eval 超时（{} 秒；--timeout 旗标请求级覆写或 BROWSE_EVAL_TIMEOUT 可调）；卡点：{}；下一步：卡在等待类函数（waitForResponse/waitJs/waitFor）就收窄其等待窗参或确认触发条件，卡在执行类（goto 加载慢、pageEval 重脚本）就调大界重试；等待窗参数与本兜底界正交（ADR-0012）",
+                bound.as_secs(),
+                op_desc
             ),
             "timeout": {
                 "op": op,
@@ -826,6 +900,38 @@ async fn quit_handler(State(st): State<AppState>) -> impl IntoResponse {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// REQ-027 统一兜底超时：两执行道同缺省 60 秒；请求级覆写直通；
+    /// /eval 结构化超时回执与 rune 同形（op/elapsed_ms/bound_s + 卡点
+    /// CTA；执行间隙 op 为 null）。
+    #[test]
+    fn unified_timeout_defaults_and_receipt() {
+        assert_eq!(
+            eval_timeout_for(None),
+            Duration::from_secs(60),
+            "eval 缺省 60（本测试假定 BROWSE_EVAL_TIMEOUT 未设）"
+        );
+        assert_eq!(
+            rune_timeout_for(None),
+            Duration::from_secs(60),
+            "rune 缺省 60（本测试假定 BROWSE_RUNE_TIMEOUT 未设）"
+        );
+        assert_eq!(eval_timeout_for(Some(5)), Duration::from_secs(5));
+        assert_eq!(rune_timeout_for(Some(300)), Duration::from_secs(300));
+        let (_, Json(v)) =
+            eval_timeout_response(Some("waitForResponse".into()), Duration::from_secs(60));
+        assert_eq!(v["ok"], json!(false));
+        assert_eq!(v["timeout"]["op"], json!("waitForResponse"));
+        assert_eq!(v["timeout"]["bound_s"], json!(60));
+        assert_eq!(v["timeout"]["elapsed_ms"], json!(60_000));
+        let msg = v["error"].as_str().unwrap_or_default();
+        assert!(
+            msg.contains("卡点：waitForResponse") && msg.contains("下一步"),
+            "{msg}"
+        );
+        let (_, Json(v)) = eval_timeout_response(None, Duration::from_secs(60));
+        assert_eq!(v["timeout"]["op"], json!(null), "执行间隙 null");
+    }
 
     /// 错误前缀只加一次（#33 快核 G-lite）：cdp 守卫/引擎面文案自带
     /// 「browse: 」时不得叠成「browse: browse:」。

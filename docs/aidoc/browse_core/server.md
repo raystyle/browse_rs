@@ -9,7 +9,10 @@ POST /quit 三端点保留），新增 `/engine/up` 与求值前的懒引擎策�
   片段自带 `session.connect` 则不预连（显式意图优先，ADR-0004）。
 - 求值撞上「Not connected」再兜底 ensure + 重试一次（覆盖先语句后连接的写法）。
 - 单飞槽：同一时刻只跑一条片段，后来者排队（不拒 429）。
-- `/eval` 超时默认 300 秒（`BROWSE_EVAL_TIMEOUT`，单位秒）。
+- 兜底硬界（REQ-027 统一超时，ADR-0012）：/eval 与 /rune 同缺省 60
+  秒，请求级 `timeout_s`（`--timeout` 旗标）覆写 env 旋钮缺省
+  （`BROWSE_EVAL_TIMEOUT`/`BROWSE_RUNE_TIMEOUT`）；到期结构化退出带
+  在飞面卡点（/eval 方言函数探针、/rune OpProbe）。
 
 ## Functions
 

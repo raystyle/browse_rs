@@ -255,7 +255,6 @@ fn help_lists_every_cli_flag() {
         "--dry-run",
         "--markdown",
         "-m",
-        "--timeout",
         "--kind",
         "--name",
         "--type",

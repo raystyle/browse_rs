@@ -97,7 +97,9 @@ pub type HostFn = std::sync::Arc<
         + Sync,
 >;
 
-/// 三支柱宿主函数注入束（Debug 手写：闭包无派生）。
+/// 三支柱宿主函数注入束（Debug 手写：闭包无派生）。构造请用
+/// `..Default::default()` 形——字段加法（如 dialect 腿）不破既有构造点
+/// 的编译（评审 #75 轮 G）。
 #[derive(Default, Clone)]
 pub struct HostFns {
     /// `snapshot(opts)` 同源腿。

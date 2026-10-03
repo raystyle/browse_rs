@@ -29,6 +29,8 @@
 | REQ-023 | implemented | should | 余量清扫批：js_lib 值守卫、G-A6/A9、bh 94 站迁移（v0.30.4，总台令） | 守卫三单测加 surface 重生成锁加 goto 实弹命中；评审 CONFIRM |
 | REQ-024 | implemented | must | rn 面通用 CDP 命令通道与糖皮回收（v0.30.5，总台令升级案） | vm_face 三件加 module 四件加 e2e 9/9 加 CLI 实弹；评审两轮终审放行 |
 | REQ-025 | implemented | should | 余账清扫批：#74 修复与 #71 考古收口（v0.30.6，总台令） | 单测锁加命名实例实弹加三态账行号核；评审一轮放行 |
+| REQ-026 | implemented | must | 方言全量桥 cdp::dialect（v0.30.7，账本 #75） | vm_face 加 module 单测加 e2e 三形同源对账；评审无 F 放行 |
+| REQ-027 | implemented | must | 统一兜底超时：--timeout 旗标、60 秒缺省、卡点回执同形（v0.30.7） | 探针与回执单测加名册守卫加 fetch 收编；ADR-0012 |
 
 ## Roadmap（issue 台账批次规划）
 

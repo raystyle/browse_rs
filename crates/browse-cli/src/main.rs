@@ -158,6 +158,8 @@ async fn main() -> Result<()> {
     let mut isolated = false;
     let mut idle_timeout: Option<String> = None;
     let mut cookies_csv: Option<String> = None;
+    // 统一兜底硬界秒（REQ-027，默认 3 分钟由 daemon 缺省；请求级覆写）
+    let mut cli_timeout_s: Option<u64> = None;
     let mut secrets: Option<String> = None;
     // #66 命令小程序：--vars 键=值 可重复累积；snippets 根旗标（eval 面
     // 模板道与 snippets 子命令共用一根，三序旗标 > env > 内置）
@@ -198,6 +200,20 @@ async fn main() -> Result<()> {
             "--engine-arg" => engine_args.push(args.next("--engine-arg")),
             "--isolated" => isolated = true,
             "--idle-timeout" => idle_timeout = Some(args.next("--idle-timeout")),
+            // 统一兜底硬界（REQ-027）：执行道（rune 与 --js/方言求值）的
+            // 请求级覆写秒，>=1000 按毫秒误写换算并告警；与 wait 族等待
+            // 窗正交（等待窗是命中型参数，本界是到期即退的硬指标）
+            "--timeout" => {
+                let raw: u64 = args.next("--timeout").parse().unwrap_or_else(|_| {
+                    eprintln!("browse: --timeout 要整秒数（退出 2）");
+                    std::process::exit(2)
+                });
+                let (s, warn) = browse_core::js_host::secs_to_ms(raw);
+                if let Some(w) = warn {
+                    eprintln!("browse: --timeout {w}");
+                }
+                cli_timeout_s = Some(s);
+            }
             // #48：无头起引擎时从附着浏览器按域克隆 cookie（逗号分隔多域）
             "--cookies" => cookies_csv = Some(args.next("--cookies")),
             "--secrets" => secrets = Some(args.next("--secrets")),
@@ -255,10 +271,17 @@ async fn main() -> Result<()> {
                     match f.as_str() {
                         "--markdown" | "-m" => _markdown = true,
                         "--timeout" => {
-                            timeout_s = args.next("--timeout").parse().unwrap_or_else(|_| {
-                                eprintln!("browse: --timeout 要数字（退出 2）");
+                            // 统一守卫（REQ-027）：>=1000 按毫秒误写换算
+                            // 并告警（与全局 --timeout 同一口径）
+                            let raw: u64 = args.next("--timeout").parse().unwrap_or_else(|_| {
+                                eprintln!("browse: --timeout 要整秒数（退出 2）");
                                 std::process::exit(2);
-                            })
+                            });
+                            let (sv, warn) = browse_core::js_host::secs_to_ms(raw);
+                            if let Some(w) = warn {
+                                eprintln!("browse: --timeout {w}");
+                            }
+                            timeout_s = sv;
                         }
                         other2 => bail_arg(other2),
                     }
@@ -777,7 +800,7 @@ async fn main() -> Result<()> {
                             .join(",")
                     );
                     let code = format!("return await cloneCookies({arr})");
-                    let r = client::eval(&code, false, false).await?;
+                    let r = client::eval(&code, false, false, None).await?;
                     println!("cookies 克隆：{r}");
                 }
             }
@@ -1442,6 +1465,7 @@ async fn main() -> Result<()> {
                 Some(root.display().to_string()),
                 stdin_param,
                 effective_syntax,
+                cli_timeout_s,
             )
             .await
             {
@@ -1468,7 +1492,7 @@ async fn main() -> Result<()> {
                         eprintln!("browse: --js 与 --repl 不同行（REPL 是方言交互面，退出 2）");
                         std::process::exit(2);
                     }
-                    return run_tty(new_tab, js).await;
+                    return run_tty(new_tab, js, cli_timeout_s).await;
                 }
                 if std::io::stdin().is_terminal() {
                     print_help();
@@ -1476,7 +1500,7 @@ async fn main() -> Result<()> {
                 }
                 // 管道批处理不回归；空管道（EOF 无内容）视同裸调用出帮助体；
                 // --js 空片段裸调用 = stdin 全量 JS 形态（#22）
-                let n = run_stdin(new_tab, js, b64).await?;
+                let n = run_stdin(new_tab, js, b64, cli_timeout_s).await?;
                 if n == 0 {
                     print_help();
                 }
@@ -1497,6 +1521,7 @@ async fn main() -> Result<()> {
                 isolated,
                 secrets,
                 engine_args,
+                cli_timeout_s,
             )
             .await
         }
@@ -1523,6 +1548,7 @@ const KNOWN_GLOBAL_FLAGS: &[&str] = &[
     "--ws",
     "--port",
     "--chrome",
+    "--timeout",
     "--profile",
     "--headless",
     "--pipe",
@@ -1662,6 +1688,7 @@ async fn run_eval(
     isolated: bool,
     secrets: Option<String>,
     engine_args: Vec<String>,
+    timeout_s: Option<u64>,
 ) -> Result<()> {
     // --secrets 随新 daemon 环境注入（#25.4；已在跑 daemon 以启动时口径为准）；
     // CLI 进程自己也载一份（评审 F1）：return 出口的渲染发生在 CLI 侧，
@@ -1710,13 +1737,13 @@ async fn run_eval(
     // 空片段的裸调用分支已在 Mode::Eval 臂前置处理（帮助体 / 管道 / --repl），
     // 进到这里必带片段
     for snip in &snippets {
-        run_snip(snip, new_tab, js).await;
+        run_snip(snip, new_tab, js, timeout_s).await;
     }
     Ok(())
 }
 
-async fn run_snip(snip: &str, new_tab: bool, js: bool) {
-    match client::eval(snip, new_tab, js).await {
+async fn run_snip(snip: &str, new_tab: bool, js: bool, timeout_s: Option<u64>) {
+    match client::eval(snip, new_tab, js, timeout_s).await {
         Ok(v) => {
             // 大值落盘（artifact 降级形态）：stdout 只回路径与预览
             let s = match browse_cli::render::render_or_drop_sync(&v) {
@@ -1911,7 +1938,7 @@ fn hms_utc(ms: u64) -> String {
     )
 }
 
-async fn run_tty(new_tab: bool, js: bool) -> Result<()> {
+async fn run_tty(new_tab: bool, js: bool, timeout_s: Option<u64>) -> Result<()> {
     let mut rl = DefaultEditor::new()?;
     let mut buf = String::new();
     loop {
@@ -1930,7 +1957,7 @@ async fn run_tty(new_tab: bool, js: bool) -> Result<()> {
         }
         if line.trim() == "." {
             if !buf.trim().is_empty() {
-                run_snip(&buf, new_tab, js).await;
+                run_snip(&buf, new_tab, js, timeout_s).await;
             }
             buf.clear();
             continue;
@@ -1940,12 +1967,12 @@ async fn run_tty(new_tab: bool, js: bool) -> Result<()> {
         }
         buf.push_str(&line);
         if snippet_complete(&buf) {
-            run_snip(&buf, new_tab, js).await;
+            run_snip(&buf, new_tab, js, timeout_s).await;
             buf.clear();
         }
     }
     if !buf.trim().is_empty() {
-        run_snip(&buf, new_tab, js).await;
+        run_snip(&buf, new_tab, js, timeout_s).await;
     }
     Ok(())
 }
@@ -1955,7 +1982,7 @@ async fn run_tty(new_tab: bool, js: bool) -> Result<()> {
 /// 形态（#22）：方言走括号配平分段；`--js` 走整段 stdin 一次求值（JS 的
 /// 语句边界不由括号配平决定）；`--b64` 先整段 base64 解码再进各自形态
 /// （`cat x.js.b64 | browse --js --b64` 即管道版全量 JS）。
-async fn run_stdin(new_tab: bool, js: bool, b64: bool) -> Result<usize> {
+async fn run_stdin(new_tab: bool, js: bool, b64: bool, timeout_s: Option<u64>) -> Result<usize> {
     let mut raw = String::new();
     tokio::io::AsyncReadExt::read_to_string(&mut tokio::io::stdin(), &mut raw).await?;
     let text = if b64 {
@@ -1975,7 +2002,7 @@ async fn run_stdin(new_tab: bool, js: bool, b64: bool) -> Result<usize> {
         if text.trim().is_empty() {
             return Ok(0);
         }
-        run_snip(&text, new_tab, js).await;
+        run_snip(&text, new_tab, js, timeout_s).await;
         return Ok(1);
     }
     // 行号口径注记（#33 G4）：本路径跳过空行攒 buf，报错行号相对实收
@@ -1986,7 +2013,7 @@ async fn run_stdin(new_tab: bool, js: bool, b64: bool) -> Result<usize> {
         let trimmed = line.trim_end_matches(['\r']);
         if trimmed.trim() == "." {
             if !buf.trim().is_empty() {
-                run_snip(&buf, new_tab, js).await;
+                run_snip(&buf, new_tab, js, timeout_s).await;
                 ran += 1;
             }
             buf.clear();
@@ -1997,13 +2024,13 @@ async fn run_stdin(new_tab: bool, js: bool, b64: bool) -> Result<usize> {
         }
         buf.push_str(trimmed);
         if snippet_complete(&buf) {
-            run_snip(&buf, new_tab, js).await;
+            run_snip(&buf, new_tab, js, timeout_s).await;
             ran += 1;
             buf.clear();
         }
     }
     if !buf.trim().is_empty() {
-        run_snip(&buf, new_tab, js).await;
+        run_snip(&buf, new_tab, js, timeout_s).await;
         ran += 1;
     }
     Ok(ran)

@@ -147,6 +147,11 @@ pub struct JsHost {
     refs: Mutex<Option<RefTable>>,
     /// 进行中的录制（至多一场；方言面 recordStart/recordStop 管理）。
     record: Mutex<Option<crate::record::Recorder>>,
+    /// 在飞方言调用面探针（统一兜底超时批，REQ-027）：`call_global` 入口
+    /// 置名、正常退出清空、执行 future 被兜底超时臂丢弃时保留——/eval 的
+    /// 结构化超时回执读它报「卡在哪个方言函数」（rn 面 OpProbe 同律；值
+    /// 形 String 因方言片段名非 'static）。
+    current_op: Arc<std::sync::Mutex<Option<String>>>,
     /// 网络拦截规则（routeBlock/routeMock 管理，watcher 应答 requestPaused）。
     routes: Arc<Mutex<Vec<RouteRule>>>,
     /// Fetch 域是否由本宿主开启（手动 `session.Fetch.enable` 不被 watcher 打扰）。
@@ -233,6 +238,7 @@ impl JsHost {
             vars: Mutex::new(HashMap::new()),
             refs: Mutex::new(None),
             record: Mutex::new(None),
+            current_op: Arc::new(std::sync::Mutex::new(None)),
             routes,
             fetch_by_us,
             init_script,
@@ -858,7 +864,26 @@ impl JsHost {
         self.call_global(name, argv).await
     }
 
+    /// 在飞方言调用面快照（统一兜底超时批）：`None` 即执行间隙（两函数
+    /// 之间）；超时臂读到的值就是卡点函数名。
+    pub fn current_op_snapshot(&self) -> Option<String> {
+        self.current_op.lock().ok().and_then(|g| g.clone())
+    }
+
+    /// 方言调用收口（片段道与编程道同经）：在飞面置名包住内层——正常
+    /// 退出清空，future 被兜底超时臂丢弃时不清即保留卡点（REQ-027）。
     async fn call_global(&self, name: &str, argv: &[Value]) -> Result<Value> {
+        if let Ok(mut g) = self.current_op.lock() {
+            *g = Some(name.to_string());
+        }
+        let r = self.call_global_inner(name, argv).await;
+        if let Ok(mut g) = self.current_op.lock() {
+            *g = None;
+        }
+        r
+    }
+
+    async fn call_global_inner(&self, name: &str, argv: &[Value]) -> Result<Value> {
         match name {
             "listPageTargets" => {
                 let tabs = self.session.list_page_targets().await?;
@@ -3592,13 +3617,14 @@ fn ax_id(x: &Value) -> Option<i64> {
         .or_else(|| x.as_str().and_then(|s| s.parse().ok()))
 }
 
-/// wait 类 timeout 秒值换毫秒（#51 统一口径）：不小于 1000 视为毫秒误写，
-/// 按毫秒换算（15000 即 15 秒）并出告警，换算后封顶 600 秒；三位数内按秒
-/// 原样放大（上界 999 秒）。判据从大于 3600 收到 1000（#57 F1）：1000 至
-/// 3600 的秒直解静默窗已实弹炸在本仓测试（300 意图变 300 秒），真实等待
-/// 三位数秒封顶足够。返回 (毫秒, 告警)，告警由调用方附进结果对象（无对象
-/// 面走 daemon 留痕）。
-fn secs_to_ms(v: u64) -> (u64, Option<String>) {
+/// 统一秒口径换算器（#51 口径，REQ-027 公开为全域单一实现）：不小于
+/// 1000 视为毫秒误写，按毫秒换算（15000 即 15 秒）并出告警，换算后封顶
+/// 600 秒；三位数内按秒原样放大（上界 999 秒）。判据从大于 3600 收到
+/// 1000（#57 F1）。调用面：方言 wait 族、`--timeout` 旗标、
+/// `BROWSE_EVAL_TIMEOUT`/`BROWSE_RUNE_TIMEOUT` 旋钮——兜底硬指标与等待
+/// 窗共用同一防误写守卫（两者语义正交，见 ADR-0012）。返回 (毫秒, 告警)，
+/// 告警由调用方附进结果对象（无对象面走 daemon 留痕）。
+pub fn secs_to_ms(v: u64) -> (u64, Option<String>) {
     const MISUSE: u64 = 1000;
     const CAP: u64 = 600;
     if v >= MISUSE {
@@ -3918,6 +3944,20 @@ pub fn base64_decode(s: &str) -> Result<Vec<u8>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// 统一兜底超时批（REQ-027）：在飞探针初始 None、正常退出（含报错
+    /// 退出）清空——超时臂丢弃 future 时不清即保留卡点，本测试锁清空半边。
+    #[tokio::test]
+    async fn current_op_probe_clears_after_call() {
+        let host = JsHost::new(cdp::Session::new());
+        assert_eq!(host.current_op_snapshot(), None, "初始执行间隙");
+        let _ = host.global_json("nosuchfn", &[]).await;
+        assert_eq!(
+            host.current_op_snapshot(),
+            None,
+            "正常退出（含未知函数报错）后应清空"
+        );
+    }
 
     /// glob 语义：等值、前中后缀通配、多段、锚定不误伤。
     #[test]

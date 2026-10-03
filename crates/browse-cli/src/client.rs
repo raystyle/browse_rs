@@ -189,11 +189,11 @@ pub fn skills_passthrough_env() -> Vec<(&'static str, String)> {
 /// # Errors
 ///
 /// HTTP 失败或 daemon 求值失败（语法错、CDP 错、守卫拦截、超时）。
-pub async fn eval(code: &str, new_tab: bool, js: bool) -> Result<Value> {
+pub async fn eval(code: &str, new_tab: bool, js: bool, timeout_s: Option<u64>) -> Result<Value> {
     let c = client();
     let resp = c
         .post(format!("{}/eval", http()))
-        .json(&json!({ "code": code, "new_tab": new_tab, "js": js }))
+        .json(&json!({ "code": code, "new_tab": new_tab, "js": js, "timeout_s": timeout_s }))
         .send()
         .await
         .context("POST /eval")?;
@@ -229,11 +229,12 @@ pub async fn rune(
     root: Option<String>,
     stdin: Option<String>,
     vars_syntax: browse_rune::vars_syntax::VarsSyntax,
+    timeout_s: Option<u64>,
 ) -> Result<Value> {
     let c = client();
     let resp = c
         .post(format!("{}/rune", http()))
-        .json(&json!({ "code": code, "root": root, "stdin": stdin, "vars_syntax": vars_syntax.name() }))
+        .json(&json!({ "code": code, "root": root, "stdin": stdin, "vars_syntax": vars_syntax.name(), "timeout_s": timeout_s }))
         .send()
         .await
         .context("POST /rune")?;

@@ -1,6 +1,6 @@
 {
   "crate": "browse-core",
-  "version": "0.30.6",
+  "version": "0.30.7",
   "items": [
     {
       "path": "browse_core::chrome_mgr",
@@ -196,6 +196,11 @@
       "path": "browse_core::js_host::render_result",
       "kind": "function",
       "docs": "把方言求值结果渲染成 CLI stdout 文本：字符串带引号（JSON 转义，与对象\n输出可区分，#21）、数字与布尔裸打、空容器不打、其余打 JSON。\n\n# Examples\n\n```\nuse serde_json::json;\nassert_eq!(browse_core::render_result(&json!(\"hi\")), \"\\\"hi\\\"\");\nassert_eq!(browse_core::render_result(&json!(\"a\\\"b\\n\")), \"\\\"a\\\\\\\"b\\\\n\\\"\");\nassert_eq!(browse_core::render_result(&json!(7)), \"7\");\nassert_eq!(browse_core::render_result(&json!({})), \"\");\nassert_eq!(browse_core::render_result(&json!({\"a\": 1})), r#\"{\"a\":1}\"#);\n```"
+    },
+    {
+      "path": "browse_core::js_host::secs_to_ms",
+      "kind": "function",
+      "docs": "统一秒口径换算器（#51 口径，REQ-027 公开为全域单一实现）：不小于\n1000 视为毫秒误写，按毫秒换算（15000 即 15 秒）并出告警，换算后封顶\n600 秒；三位数内按秒原样放大（上界 999 秒）。判据从大于 3600 收到\n1000（#57 F1）。调用面：方言 wait 族、`--timeout` 旗标、\n`BROWSE_EVAL_TIMEOUT`/`BROWSE_RUNE_TIMEOUT` 旋钮——兜底硬指标与等待\n窗共用同一防误写守卫（两者语义正交，见 ADR-0012）。返回 (毫秒, 告警)，\n告警由调用方附进结果对象（无对象面走 daemon 留痕）。"
     },
     {
       "path": "browse_core::parser",
@@ -665,7 +670,7 @@
     {
       "path": "browse_core::server",
       "kind": "module",
-      "docs": "daemon 的 HTTP API：常驻会话 + 方言求值 + 引擎生命周期。\n\n移植自 browser-harness-rs `src/server.rs`（POST /eval、GET /health、\nPOST /quit 三端点保留），新增 `/engine/up` 与求值前的懒引擎策略：\n\n- 求值前未连接且片段里没有 `session.connect` -> 自动 [`crate::Engine::ensure`]；\n  片段自带 `session.connect` 则不预连（显式意图优先，ADR-0004）。\n- 求值撞上「Not connected」再兜底 ensure + 重试一次（覆盖先语句后连接的写法）。\n- 单飞槽：同一时刻只跑一条片段，后来者排队（不拒 429）。\n- `/eval` 超时默认 300 秒（`BROWSE_EVAL_TIMEOUT`，单位秒）。"
+      "docs": "daemon 的 HTTP API：常驻会话 + 方言求值 + 引擎生命周期。\n\n移植自 browser-harness-rs `src/server.rs`（POST /eval、GET /health、\nPOST /quit 三端点保留），新增 `/engine/up` 与求值前的懒引擎策略：\n\n- 求值前未连接且片段里没有 `session.connect` -> 自动 [`crate::Engine::ensure`]；\n  片段自带 `session.connect` 则不预连（显式意图优先，ADR-0004）。\n- 求值撞上「Not connected」再兜底 ensure + 重试一次（覆盖先语句后连接的写法）。\n- 单飞槽：同一时刻只跑一条片段，后来者排队（不拒 429）。\n- 兜底硬界（REQ-027 统一超时，ADR-0012）：/eval 与 /rune 同缺省 60\n  秒，请求级 `timeout_s`（`--timeout` 旗标）覆写 env 旋钮缺省\n  （`BROWSE_EVAL_TIMEOUT`/`BROWSE_RUNE_TIMEOUT`）；到期结构化退出带\n  在飞面卡点（/eval 方言函数探针、/rune OpProbe）。"
     },
     {
       "path": "browse_core::server::Daemon",

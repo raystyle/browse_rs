@@ -13,6 +13,7 @@
 | [ADR-0009](ADR-0009-template-engine-minijinja.md) | JS 命令小程序模板引擎选 minijinja | accepted |
 | [ADR-0010](ADR-0010-rune-orchestration-face.md) | Rune 编排面：browse rune 与自注册 cdp 模块（自有栈） | accepted |
 | [ADR-0011](ADR-0011-rune-raw-universal-channel.md) | Rune 面通用 CDP 命令通道（cdp::raw）与糖皮回收 | accepted |
+| [ADR-0012](ADR-0012-unified-fallback-timeout.md) | 统一兜底超时（--timeout 旗标、60 秒缺省、卡点回执同形） | accepted |
 
 规则：一条 ADR 一个决定；被替代时 frontmatter 改 `status: superseded` 并加
 `superseded_by: ADR-00xx`（指向在册编号），原文冻结；Context 写给 18 个月后

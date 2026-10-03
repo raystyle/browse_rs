@@ -2,6 +2,21 @@
 
 版本级里程碑；逐批过程见 docs/diary。semver 判据在册 docs/requirements/REQ-004。
 
+## 0.30.7 - 2026-10-03
+
+- **方言全量桥（账本 #75，总台令「提 实现全量桥 封v0.30.7」；ADR-0011 增补）**：
+- `cdp::dialect(fn, args_json)`：方言全局函数按名直达方言面同一实现（js_host `global_json` 按名派发：currentTab/waitLoad/waitForResponse/clickRef/routeBlock 等 100+ 件，含三支柱同源）；args 是 JSON 数组串（位置参序，空串等价空数组，非数组形预检拦），与 raw 的 `(method, params_json)` 对象串形对称
+- 与 raw 对偶：raw=CDP 层通用通道，dialect=方言层通用通道，同为单通道替代逐件绑定；守卫在 Session 层照拦（域策略同拦）；60 秒界与同源腿同律；薄封装件经桥可达不等于 rn 面内建（调用形自带 dialect 前缀）
+- 动机：方言面有态聚合件（waitForResponse 的界内等体、waitIdle 的窗口语义）与既有战役片段逻辑在 rn 侧原要手组等价物或 CLI 层混合编排
+- 实测：e2e 三形（零参 currentTab、数字参 waitLoad、对象参 requests 与三支柱同源对账 1==1）；评审无 F 终审放行（三低 G 随批收：载荷缺 name 补 CTA、HostFns 构造纪律注记、manual 意图路由句两通道）
+- **统一兜底超时（REQ-027，用户令「统一标准统一命令统一函数」+「兜底硬指标与等待窗不冲突可命名区别」+「默认 60 秒」；ADR-0012）**：
+- 统一标准：兜底硬指标（执行层，到期即结构化退出，**统一缺省 60 秒**）与等待窗（wait 族命中型参数，自命中即返）两类概念正交、命名恒区别；缺省沿革收口（rune 前 45、eval 前 300，统一 60）
+- 统一命令：全局旗标 `--timeout <s>`（尾置合法，值经统一秒口径守卫：>=1000 按毫秒误写换算并告警），作用于 rune 与 --js/方言求值两道（请求级 `timeout_s` 覆写 env 缺省）；`browse fetch` 的 `--timeout` 收编同一守卫；env 旋钮语义从「daemon 级定格」改为「实例内缺省、逐次可覆写」
+- 统一函数：秒口径换算器单一实现公开（`js_host::secs_to_ms`，旗标/env/wait 族共用）；在飞面探针统一（/eval 侧 JsHost `current_op` 挂 `call_global` 收口，片段道与编程道同覆盖）；/eval 超时回执新增结构化 `timeout` 对象（`op` 在飞方言函数面/`elapsed_ms`/`bound_s`）与 /rune 同形，错误文案带卡点 CTA
+- 行为变化面：eval 默认界 300 收紧到 60（超 60 秒无参长跑需显式 `--timeout` 或调 env）；rune 默认 45 放宽到 60
+- 测试：探针清空单测、统一界缺省与回执形单测、旗标名册双向守卫同步、surface/aidoc 投影随批
+- semver 判据结论（0.30.7 裁定）：能力新增（dialect 桥）与行为变化（超时统一）按判据取 minor；总台明令封 0.30.7（patch），从令（REQ-026/REQ-027 在册留痕，同 REQ-022/REQ-024 先例形）
+
 ## 0.30.6 - 2026-10-03
 
 - **余账清扫批（总台令「开工 review 态后封 v0.30.6」）**：

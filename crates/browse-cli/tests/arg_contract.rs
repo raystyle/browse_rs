@@ -538,6 +538,7 @@ fn roster_flags_all_recognized_in_rune_tail_position() {
         "--ws",
         "--port",
         "--chrome",
+        "--timeout",
         "--profile",
         "--headless",
         "--pipe",

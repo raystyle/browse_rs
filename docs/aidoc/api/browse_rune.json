@@ -1,6 +1,6 @@
 {
   "crate": "browse-rune",
-  "version": "0.30.6",
+  "version": "0.30.7",
   "items": [
     {
       "path": "browse_rune::exec",
@@ -55,7 +55,7 @@
     {
       "path": "browse_rune::module::HostFns",
       "kind": "struct",
-      "docs": "三支柱宿主函数注入束（Debug 手写：闭包无派生）。"
+      "docs": "三支柱宿主函数注入束（Debug 手写：闭包无派生）。构造请用\n`..Default::default()` 形——字段加法（如 dialect 腿）不破既有构造点\n的编译（评审 #75 轮 G）。"
     },
     {
       "path": "browse_rune::module::ModuleCtx",
