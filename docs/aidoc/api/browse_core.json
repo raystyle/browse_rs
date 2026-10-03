@@ -170,7 +170,7 @@
     {
       "path": "browse_core::fetch_core::attach_optional_fields",
       "kind": "function",
-      "docs": "fetch 回执的可选字段拼装（两道编排共用）：html 字段（渲染形）与\nmarkdown 字段（对本腿 html 转换）。"
+      "docs": "fetch 回执的可选字段拼装（两道编排共用）：`html_enroll` 是 `html`\n字段的入册源（`None` 不入册），`markdown_src` 是 `markdown` 字段的\n转换源（`None` 不入册）。两参独立（评审二轮 F-1：`--markdown` 单置\n不连带 html 字段入册；升级腿的转换源已取到但不必入册，杜绝拿\n「转换源」顶「入册开关」把 markdown 悄悄转成空串）。"
     },
     {
       "path": "browse_core::fetch_core::extract_js",

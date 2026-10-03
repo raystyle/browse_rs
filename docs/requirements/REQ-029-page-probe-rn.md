@@ -25,4 +25,6 @@ trace: skills 单测（probe_rn_load_override_and_default 加 frozen_slugs_match
 - parse_probe(字符串解析腿)随对象直桥移除;page_fields doctest 改 serde_json 直构
 - e2e 特征页断言（skill trigger 层）实跑部署态 workspace 的 probe.rn:隐式加载路径有真实覆盖；判据改动后跑该 e2e 即验
 - 旧 8 秒 deadline 注记(#52)随 call_with_deadline 直调腿退役;run_probe_rn 外层 8 秒界接棒（挂死页兜底）,rune 面自带 30 秒单调用界与 /eval 兜底界;外层界丢弃在飞 future 会丢内层清登记路径,pending 表带登记时刻（Instant）,reap_pending_older_than 按时刻扫老项（e2e 挂死块断言 pending<=1,reap 时效由 cdp 单测 reap_pending_removes_only_aged_entries 锁）
-- G-E:default_probe_rn 判据 JS 内嵌 r# 裸串,debug_assert 锁不含 "# 定界;G-F:workspace README 点明 probe.rn 无模板道
+- G-E 加二轮 G-2:default_probe_rn 判据 JS 内嵌 r## 裸串（外层 r###）,debug_assert 加单测真断言双锁不含 "## 定界;G-F:workspace README 点明 probe.rn 无模板道
+- 二轮 G-3 取舍明记:主世界化**放弃** #52 时代隔离世界对页面属性覆写（expando/defineProperty）的挂死免疫,换回框架全局与元素 expando 信号;挂死风险由 8 秒外层界加 pending 按龄回收兜底,勿误读为免疫仍在
+- 二轮 F-1:fetch 可选字段 helper 补 include 语义（入册源与转换源两参独立）,CLI 与全局两腿接线修,升级腿 markdown 单置的 html 漏入册与空串两雷清,CLI shape_engine_receipt 纯函数单测加全局升级腿 e2e 断言锁

@@ -2431,8 +2431,10 @@ return await responseBody(evs[0].params.requestId)"#,
         "8 秒外层界应兜住挂死探针（实测 {wall:.1}s；上界放宽到 #52 时代窗，双引擎并行跑时前置导航段受负载拉长，界本体语义由零 page 键与 pending 断言承重）"
     );
     assert!(
-        engine.session().pending_len().await <= 1,
-        "探针僵尸至多 1 条（reaper 32 秒后回收，其余在途不应积尸）"
+        engine.session().pending_len().await <= 2,
+        "探针僵尸至多 2 条（在飞 evaluate 一条，评审二轮 G-1：外层界丢弃
+        rune future 时 Cleanup::drop 补发的 releaseObjectGroup 对挂死渲染
+        器可再挂一条；reaper 32 秒后按龄回收，其余在途不应积尸）"
     );
     // 会话仍健：browser 级调用（Target.getTargets 面）不受页内挂死影响
     let healthy = host
@@ -3546,6 +3548,23 @@ async fn fetch_global_face() {
     let md = r["markdown"].as_str().unwrap_or_default();
     assert!(md.contains("# Static Head"), "mdka 转换含标题：{md}");
     assert_eq!(r["title"], json!("fg"), "{r}");
+    // 升级腿 markdown 单置（评审二轮 F-1 回归锁）：raw body 薄（thin-content）
+    // 升级引擎腿，markdown 从渲染 html 真转换（含 JS 注入节点）、html 字段
+    // 不入册（转换源不等于入册开关）
+    let up = host
+        .eval_snippet(&format!(
+            "return await fetch(\"http://127.0.0.1:{port}/\", {{markdown: true, timeout: 5}})"
+        ))
+        .await
+        .expect("fetch 全局升级腿 markdown 单置");
+    assert_eq!(up["via"], json!("engine"), "薄页应升级引擎腿：{up}");
+    assert_eq!(up["upgradedFrom"], json!("thin-content"), "{up}");
+    assert!(up.get("html").is_none(), "md 单置零 html 键：{up}");
+    let up_md = up["markdown"].as_str().unwrap_or_default();
+    assert!(
+        up_md.contains("# Static Head") && up_md.contains("js-injected-node"),
+        "升级腿 markdown 从渲染 html 转换（不空串、含注入节点）：{up_md}"
+    );
     origin.abort();
     engine.shutdown().await.expect("shutdown");
     clean_profile().await;

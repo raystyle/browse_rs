@@ -9,7 +9,7 @@
 - 方言全局 `fetch(url, opts?)`：完整两腿（HTTP 直取加三条件升级引擎腿），**rn 脚本经 `cdp::dialect("fetch", ...)` 直达零新绑定**（dialect 桥的首次实战）；域名知识点名与 goto 同口径
 - 纯函数单源 `browse_core::fetch_core`（粗抽/升级判定/标题/抽取/markdown），CLI 与全局两道编排共用；CLI 零 daemon HTTP 快路径不变（腿编排双轨注记，ADR-0009 形）
 - e2e：本地源 JS 注入节点的渲染证明（html 字段含 raw body 没有的节点、markdown 含标题）；rn 经桥 fetch 断言（data: URL 升级引擎腿）
-- **页面特征判据 rn 脚本化（REQ-029，总台令三连 2026-10-03）**：判据移 workspace `page-skills/scripts/probe.rn`（标准 scripts 目录），browse 隐式加载（多根序首命中覆写内置缺省，缺省与历史 PROBE 同判据），经 rune VM 跑（cdp::js 主世界探页：框架全局与元素 expando 隔离世界不可见，评审 F-1 裁定；对象直桥，外层 8 秒界超时静默降级零键，在飞调用 pending 僵尸由带时间戳的 reap_pending_older_than 32 秒后回收；失败首败留痕一次）；白名单与 confidence 校验留本仓不变；workspace 仓收窄两层定位（intent-skills 层删除，81cbf14）；判据增改走 workspace 仓免 browse 发版
+- **页面特征判据 rn 脚本化（REQ-029，总台令三连 2026-10-03）**：判据移 workspace `page-skills/scripts/probe.rn`（标准 scripts 目录），browse 隐式加载（多根序首命中覆写内置缺省，缺省与历史 PROBE 同判据），经 rune VM 跑（cdp::js 主世界探页：框架全局与元素 expando 隔离世界不可见，评审 F-1 裁定；对象直桥，外层 8 秒界超时静默降级零键，在飞调用 pending 僵尸由带时间戳的 reap_pending_older_than 32 秒后回收；失败首败留痕一次；取舍：放弃 #52 时代隔离世界对页面属性覆写的挂死免疫，换回框架/expando 信号）；白名单与 confidence 校验留本仓不变；workspace 仓收窄两层定位（intent-skills 层删除，81cbf14）；判据增改走 workspace 仓免 browse 发版
 
 ## 0.30.7 - 2026-10-03
 

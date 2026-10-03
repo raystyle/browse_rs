@@ -169,32 +169,47 @@ async fn fetch_engine_leg(
         .and_then(Value::as_str)
         .and_then(|s| serde_json::from_str::<Value>(s).ok())
         .unwrap_or(json!({}));
+    Ok(shape_engine_receipt(
+        url,
+        reason,
+        http_status,
+        &inner,
+        shape,
+        add_domain_skills,
+    ))
+}
+
+/// 引擎腿回执整形（纯函数供单测锁旗标契约，评审二轮 F-1）：腿成因与
+/// HTTP 先试状态只在该信息存在时入册（`dom-html` 直取形没有）；可选
+/// 字段入册源与转换源独立——html 只在 `include_html` 入册，markdown
+/// 从抽取带回的 html 转换（升级腿取了源不连带 html 入册）。
+fn shape_engine_receipt(
+    url: &str,
+    reason: &str,
+    http_status: Option<u16>,
+    inner: &Value,
+    shape: LegShape,
+    skills: fn(&str, &mut Value),
+) -> Value {
     let mut r = json!({
         "url": url, "via": "engine",
         "title": inner.get("title"),
         "text": inner.get("text"),
     });
-    // 腿成因与 HTTP 先试状态只在该信息存在时入册（--html 直取形没有）
     if reason != "dom-html" {
         r["upgradedFrom"] = json!(reason);
     }
     if let Some(st) = http_status {
         r["httpStatus"] = json!(st);
     }
-    // 可选字段单源（fetch_core）：html 入册只在 include_html（显式
-    // --html 或 dom-html 直取形），markdown 从抽取带回的 html 转换——
-    // 两者解耦（G-B：--markdown 单置不再连带 html 字段入册）
-    let html_src = if shape.include_html || shape.markdown {
-        inner
-            .get("html")
-            .and_then(Value::as_str)
-            .map(str::to_string)
-    } else {
-        None
-    };
-    fetch_core::attach_optional_fields(&mut r, html_src.as_deref(), shape.markdown);
-    add_domain_skills(url, &mut r);
-    Ok(r)
+    let html_src = inner.get("html").and_then(Value::as_str);
+    fetch_core::attach_optional_fields(
+        &mut r,
+        if shape.include_html { html_src } else { None },
+        if shape.markdown { html_src } else { None },
+    );
+    skills(url, &mut r);
+    r
 }
 
 /// 域名层点名（#56，两腿共用缝）：URL 与 workspace 目录取
@@ -212,6 +227,80 @@ fn add_domain_skills(url: &str, r: &mut Value) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// 引擎腿旗标契约（评审二轮 F-1）：升级腿 `--markdown` 单置——markdown
+    /// 从渲染 html 真转换、html 字段不入册；`--html` 直取形两键齐；
+    /// 纯旗标形零键。
+    #[test]
+    fn engine_receipt_flag_contract() {
+        let inner = json!({
+            "title": "t",
+            "text": "body",
+            "html": "<main><h1>Head</h1><p>words</p></main>"
+        });
+        // 升级腿 markdown 单置（need_html=true 供转换，include_html=false）
+        let upgraded = shape_engine_receipt(
+            "https://spa.test/x",
+            "thin-content",
+            Some(200),
+            &inner,
+            LegShape {
+                need_html: true,
+                include_html: false,
+                markdown: true,
+            },
+            |_, _| {},
+        );
+        assert!(
+            upgraded.get("html").is_none(),
+            "md 单置零 html 键: {upgraded}"
+        );
+        assert!(
+            upgraded["markdown"].as_str().unwrap().contains("# Head"),
+            "markdown 从渲染 html 真转换: {upgraded}"
+        );
+        assert_eq!(upgraded["upgradedFrom"], json!("thin-content"));
+
+        // dom-html 直取形：html 与 markdown 齐入册
+        let direct = shape_engine_receipt(
+            "https://spa.test/x",
+            "dom-html",
+            None,
+            &inner,
+            LegShape {
+                need_html: true,
+                include_html: true,
+                markdown: true,
+            },
+            |_, _| {},
+        );
+        assert!(
+            direct.get("html").is_some() && direct.get("markdown").is_some(),
+            "{direct}"
+        );
+        assert!(
+            direct.get("upgradedFrom").is_none(),
+            "直取形成因不入册: {direct}"
+        );
+
+        // 纯旗标形零可选键
+        let bare = shape_engine_receipt(
+            "https://spa.test/x",
+            "thin-content",
+            Some(200),
+            &inner,
+            LegShape {
+                need_html: false,
+                include_html: false,
+                markdown: false,
+            },
+            |_, _| {},
+        );
+        assert!(
+            bare.get("html").is_none() && bare.get("markdown").is_none(),
+            "{bare}"
+        );
+    }
 
     /// #56 域名点名两腿接线：命中时两腿回执形都附 domain_skills 与
     /// hint；未命中（data: URL 无域名段）键集与现状逐字节一致（G4 钉

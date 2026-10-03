@@ -143,14 +143,20 @@ pub fn to_markdown(html: &str) -> String {
     mdka::html_to_markdown(html)
 }
 
-/// fetch 回执的可选字段拼装（两道编排共用）：html 字段（渲染形）与
-/// markdown 字段（对本腿 html 转换）。
-pub fn attach_optional_fields(r: &mut Value, html_src: Option<&str>, markdown: bool) {
-    if let Some(h) = html_src {
+/// fetch 回执的可选字段拼装（两道编排共用）：`html_enroll` 是 `html`
+/// 字段的入册源（`None` 不入册），`markdown_src` 是 `markdown` 字段的
+/// 转换源（`None` 不入册）。两参独立（评审二轮 F-1：`--markdown` 单置
+/// 不连带 html 字段入册；升级腿的转换源已取到但不必入册，杜绝拿
+/// 「转换源」顶「入册开关」把 markdown 悄悄转成空串）。
+pub fn attach_optional_fields(
+    r: &mut Value,
+    html_enroll: Option<&str>,
+    markdown_src: Option<&str>,
+) {
+    if let Some(h) = html_enroll {
         r["html"] = json!(h);
     }
-    if markdown {
-        let src = html_src.unwrap_or_default();
+    if let Some(src) = markdown_src {
         r["markdown"] = json!(to_markdown(src));
     }
 }
@@ -195,6 +201,42 @@ mod tests {
         // 空与短串零崩（同 F-1 纪律；mdka 空串回空串）
         assert_eq!(to_markdown(""), "");
         let _ = to_markdown("x");
+    }
+
+    /// 可选字段独立入册（二轮 F-1）：md 单置不连带 html；升级形转换源
+    /// 不入册不再把 markdown 变空串。
+    #[test]
+    fn attach_optional_fields_enroll_and_source_independent() {
+        let mut r = serde_json::json!({});
+        attach_optional_fields(&mut r, None, Some("<h1>T</h1><p>b</p>"));
+        assert!(r.get("html").is_none(), "md 单置零 html 键: {r}");
+        assert!(r["markdown"].as_str().unwrap().contains("# T"), "{r}");
+
+        let mut r = serde_json::json!({});
+        attach_optional_fields(&mut r, Some("<h1>T</h1>"), None);
+        assert!(
+            r.get("html").is_some() && r.get("markdown").is_none(),
+            "{r}"
+        );
+
+        let mut r = serde_json::json!({});
+        attach_optional_fields(
+            &mut r,
+            None, // 升级腿：转换源不入册
+            Some("<p>rendered</p>"),
+        );
+        assert!(r.get("html").is_none(), "{r}");
+        assert!(
+            !r["markdown"].as_str().unwrap().is_empty(),
+            "升级源不丢: {r}"
+        );
+
+        let mut r = serde_json::json!({});
+        attach_optional_fields(&mut r, None, None);
+        assert!(
+            r.get("html").is_none() && r.get("markdown").is_none(),
+            "{r}"
+        );
     }
 
     /// 二轮 F-1 回归锁：短串与未闭合标记不越界 panic（空 html 的标题

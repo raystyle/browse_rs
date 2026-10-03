@@ -556,18 +556,20 @@ fn load_probe_rn_multi(roots: &[std::path::PathBuf]) -> String {
 /// `__reactFiber$`/`__svelte*`，隔离世界一律不可见会静默废掉框架与
 /// hydration 腿）。
 fn default_probe_rn() -> String {
-    // r# 嵌套安全断言（评审 G-E）：判据 JS 含 "# 会破 rn 裸串定界
+    // 定界安全（评审 G-E 加二轮 G-2）：内层用 r## 定界，判据 JS 含 "#
+    // 不破（只 "## 破）；debug 断言 + 单测真断言双锁（debug_assert 不
+    // 覆盖 release，单测在 CI 闸拦在发版前）
     debug_assert!(
-        !PAGE_PROBE_JS.contains("\"#"),
-        "判据 JS 含 \"# 会破 r# 定界"
+        !PAGE_PROBE_JS.contains("\"##"),
+        "判据 JS 含 \"## 会破 r## 定界"
     );
     format!(
-        r##"// browse 内置缺省特征判据（workspace page-skills/scripts/probe.rn 可覆写）
+        r###"// browse 内置缺省特征判据（workspace page-skills/scripts/probe.rn 可覆写）
 // 体走主世界（cdp::js）：框架全局与元素 expando 只在页面世界可见
 pub async fn main() {{
-    let v = cdp::js(r#"return {PAGE_PROBE_JS}"#, #{{}}).await?;
+    let v = cdp::js(r##"return {PAGE_PROBE_JS}"##, #{{}}).await?;
     Ok(v)
-}}"##
+}}"###
     )
 }
 
@@ -645,6 +647,11 @@ mod tests {
         let d = load_probe_rn_multi(std::slice::from_ref(&miss));
         assert!(d.contains("pub async fn main"), "{d}");
         assert!(d.contains("cdp::js"), "{d}");
+        // 定界安全真断言(二轮 G-2:debug_assert 不覆盖 release,CI 闸在此拦)
+        assert!(
+            !PAGE_PROBE_JS.contains("\"##"),
+            "判据 JS 含 \"## 破 r## 定界"
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 

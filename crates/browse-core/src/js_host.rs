@@ -972,10 +972,12 @@ impl JsHost {
             .get("html")
             .and_then(Value::as_str)
             .map(str::to_string);
+        // 入册源与转换源独立（评审二轮 F-1）：html 只在 dom_html 入册，
+        // markdown 从抽取带回的 html 转换（升级腿已取到源，不再丢成空串）
         crate::fetch_core::attach_optional_fields(
             &mut r,
             if dom_html { html_src.as_deref() } else { None },
-            markdown,
+            if markdown { html_src.as_deref() } else { None },
         );
         self.attach_fetch_skills(url, &mut r);
         Ok(attach_warning(r, warn))

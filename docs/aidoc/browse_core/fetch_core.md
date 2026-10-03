@@ -9,7 +9,7 @@ fetch 的纯函数面（REQ-028 单源）：HTTP 腿的正文粗抽与升级判�
 
 ## Functions
 
-- `attach_optional_fields` — fetch 回执的可选字段拼装（两道编排共用）：html 字段（渲染形）与
+- `attach_optional_fields` — fetch 回执的可选字段拼装（两道编排共用）：`html_enroll` 是 `html`
 - `extract_js` — 引擎腿的页内抽取 JS（主世界 returnByValue 求值体）：标题、正文
 - `needs_upgrade` — 升级判定的三条件（#50）：正文空、墙词、少于 20 词。
 - `strip_html` — HTML 粗抽正文文本（HTTP 腿的降级面）：剥 script/style 与标签，压空白。
