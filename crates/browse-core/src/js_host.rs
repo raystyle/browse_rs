@@ -889,8 +889,10 @@ impl JsHost {
             .get("markdown")
             .and_then(Value::as_bool)
             .unwrap_or(false);
-        let (timeout_s, warn) = match opts.get("timeout") {
-            None | Some(Value::Null) => (15u64, None),
+        let (timeout_ms, warn) = match opts.get("timeout") {
+            None | Some(Value::Null) => (15_000u64, None),
+            // secs_to_ms 回值即毫秒（评审 F-1：此前再乘 1000 把 15 秒放大
+            // 成 4 小时，per-call HTTP 超时形同虚设——ms/s 值形雷同款）
             Some(v) => v.as_u64().map(secs_to_ms).ok_or_else(|| anyhow!(
                 "fetch 的 timeout 应是整秒数（当前：{}）；下一步：秒口径直写如 fetch(url, {{timeout: 15}})",
                 preview(v)
@@ -899,7 +901,8 @@ impl JsHost {
         if let Some(w) = &warn {
             eprintln!("[browse] fetch {w}");
         }
-        let timeout_ms = timeout_s * 1000;
+        // 升级成因（HTTP 腿的失败/升级原因加状态；--html 直取形为 None）
+        let mut upgraded: Option<(&str, u16)> = None;
         // 渲染 DOM 形恒走引擎腿（渲染需要 JS）
         if !dom_html {
             let client = reqwest::Client::builder()
@@ -922,6 +925,7 @@ impl JsHost {
             } else {
                 crate::fetch_core::needs_upgrade(&text)
             };
+            upgraded = reason.map(|why| (why, status));
             if reason.is_none() {
                 let mut r = json!({
                     "url": url, "via": "http", "status": status,
@@ -936,9 +940,12 @@ impl JsHost {
                 return Ok(attach_warning(r, warn));
             }
         }
-        // 引擎腿：goto 直调（不经 call_global，防探针翻转）加主世界抽取
+        // 引擎腿：goto 直调（不经 call_global，防探针翻转）加主世界抽取；
+        // html 的「取」与「入册」解耦（评审 G-1/G-2）：markdown 也要取 html
+        // 供转换，但 html 字段只在 html 选项置位时入册（防响应膨胀）
         crate::semantic::goto(&self.session, url, 20_000, None).await?;
-        let expr = crate::fetch_core::extract_js(true);
+        let need_html = dom_html || markdown;
+        let expr = crate::fetch_core::extract_js(need_html);
         let ev = self
             .session
             .call(
@@ -956,11 +963,20 @@ impl JsHost {
             "title": inner.get("title"),
             "text": inner.get("text"),
         });
+        // 升级成因入册（--html 直取形没有，与 CLI 腿同口径；评审 G-1）
+        if !dom_html && let Some((why, st)) = upgraded {
+            r["upgradedFrom"] = json!(why);
+            r["httpStatus"] = json!(st);
+        }
         let html_src = inner
             .get("html")
             .and_then(Value::as_str)
             .map(str::to_string);
-        crate::fetch_core::attach_optional_fields(&mut r, html_src.as_deref(), markdown);
+        crate::fetch_core::attach_optional_fields(
+            &mut r,
+            if dom_html { html_src.as_deref() } else { None },
+            markdown,
+        );
         self.attach_fetch_skills(url, &mut r);
         Ok(attach_warning(r, warn))
     }

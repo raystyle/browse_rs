@@ -97,7 +97,12 @@ pub async fn close_tab(s: &Session, target_id: Option<&str>) -> Result<Value> {
 ///
 /// navigate 回执带 errorText；预算内 readyState 未到 complete；idle 档
 /// 未静默。
-pub async fn goto(s: &Session, url: &str, timeout_ms: u64, idle_ms: Option<u64>) -> Result<Value> {
+pub async fn goto(
+    s: &std::sync::Arc<Session>,
+    url: &str,
+    timeout_ms: u64,
+    idle_ms: Option<u64>,
+) -> Result<Value> {
     let t0 = std::time::Instant::now();
     let nav = s.call("Page.navigate", json!({ "url": url })).await?;
     if let Some(et) = nav.pointer("/errorText").and_then(Value::as_str) {

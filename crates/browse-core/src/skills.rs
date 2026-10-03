@@ -97,7 +97,7 @@ pub const PAGE_PROBE_JS: &str = r##"(() => {
   const add = (s, c) => { out.slugs.push({ slug: s, confidence: c }); };
   try {
     const w = window, d = w.document;
-    if (!d || !d.body) return JSON.stringify(out);
+    if (!d || !d.body) return out;
 
     // ---- 全局与 hydration 标记（廉价先行；点名收进 slug 段保冻结序）----
     const nuxt = w.__NUXT_DATA__ || w.__NUXT__;
@@ -207,7 +207,7 @@ pub const PAGE_PROBE_JS: &str = r##"(() => {
 
     if (fname) out.framework = { name: fname, version: fver };
   } catch (e) { /* 整体降级：空骨架零键附加 */ }
-  return JSON.stringify(out);
+  return out;
 })()"##;
 
 /// #51 冻结 slug 名单（探测与回执的合法值域；页面可控串注入面的
@@ -225,30 +225,11 @@ pub const FROZEN_PAGE_SLUGS: &[&str] = &[
     "service-worker",
 ];
 
-/// 解析探测回执（#51，纯函数）：吃 Runtime.evaluate `/result/value` 的
-/// 字符串做 JSON.parse；非对象形态（数组、标量、坏 JSON）返回 `None`，
-/// 调用方静默降级。边界：探测串由页内 `JSON.stringify` 产出而页面可
-/// 覆写该全局（评审 F3 实证），故值域信任不在本函数在
-/// [`page_fields`] 的白名单。
-///
-/// # Examples
-///
-/// ```
-/// assert!(browse_core::skills::parse_probe(r#"{"framework":null,"slugs":[]}"#).is_some());
-/// assert!(browse_core::skills::parse_probe("not json").is_none());
-/// assert!(browse_core::skills::parse_probe("[1,2]").is_none());
-/// ```
-pub fn parse_probe(raw: &str) -> Option<Value> {
-    let v: Value = serde_json::from_str(raw).ok()?;
-    v.as_object()?;
-    Some(v)
-}
-
 /// 把探测结果变成回执附加键对（#51，纯函数）：framework 形合法出
 /// `("framework", {name,version})`；slugs 过滤后非空出 `page_skills` 与
 /// `page_skills_hint`（各 slug 的读全文命令用 `；` 连接）；全空返回
-/// 空 vec（调用方零插入）。**白名单是硬边界（评审 F3）**：探测串由页内
-/// `JSON.stringify` 产出、页面可覆写该全局伪造回执，故这里逐条校验
+/// 空 vec（调用方零插入）。**白名单是硬边界（评审 F3）**：探测产自页内
+/// 而页面可控（覆写全局或伪造判据脚本回执都做得到），故这里逐条校验
 /// slug 在 [`FROZEN_PAGE_SLUGS`]、confidence 是两档枚举、去重保序
 /// （天然封顶名单长），framework 的 name/version 形与长度也校验；
 /// 非法条目静默丢弃，全非法即零键。
@@ -256,16 +237,22 @@ pub fn parse_probe(raw: &str) -> Option<Value> {
 /// # Examples
 ///
 /// ```
-/// let probe = browse_core::skills::parse_probe(
-///     r#"{"framework":{"name":"vue","version":"3.5"},"slugs":[{"slug":"spa","confidence":"CONFIRMED"}]}"#,
-/// ).unwrap();
+/// let probe = serde_json::json!({
+///     "framework": {"name": "vue", "version": "3.5"},
+///     "slugs": [{"slug": "spa", "confidence": "CONFIRMED"}]
+/// });
 /// let f = browse_core::skills::page_fields(&probe);
 /// assert_eq!(f.len(), 3, "framework 加 page_skills 加 hint: {f:?}");
 ///
-/// // 页面伪造串：名单外 slug 与非法 confidence 全被滤掉（评审 F3）
-/// let forged = browse_core::skills::parse_probe(
-///     r#"{"framework":{"name":"pwn"},"slugs":[{"slug":"../../etc/passwd","confidence":"CONFIRMED"},{"slug":"spa","confidence":"MAYBE"},{"slug":"captcha","confidence":"CONFIRMED"}]}"#,
-/// ).unwrap();
+/// // 页面伪造形：名单外 slug 与非法 confidence 全被滤掉（评审 F3）
+/// let forged = serde_json::json!({
+///     "framework": {"name": "pwn"},
+///     "slugs": [
+///         {"slug": "../../etc/passwd", "confidence": "CONFIRMED"},
+///         {"slug": "spa", "confidence": "MAYBE"},
+///         {"slug": "captcha", "confidence": "CONFIRMED"}
+///     ]
+/// });
 /// let f = browse_core::skills::page_fields(&forged);
 /// let skills = f.iter().find(|(k, _)| *k == "page_skills").unwrap();
 /// assert_eq!(skills.1, serde_json::json!([{"slug":"captcha","confidence":"CONFIRMED"}]));
@@ -462,7 +449,7 @@ pub fn url_domain_fields_multi(
 /// 让 goto 失败；未命中或关闭时一键不加（回执与现状逐字节一致）。
 /// 调用点在 [`crate::semantic::goto`] 的回执构建处，elapsedMs 在此
 /// 之前已固化（探测耗时不算进导航时长）。
-pub(crate) async fn augment_goto(s: &cdp::Session, receipt: &mut Value) {
+pub(crate) async fn augment_goto(s: &std::sync::Arc<cdp::Session>, receipt: &mut Value) {
     let url = receipt
         .get("url")
         .and_then(Value::as_str)
@@ -476,22 +463,13 @@ pub(crate) async fn augment_goto(s: &cdp::Session, receipt: &mut Value) {
         }
     }
     if page_skills_enabled() {
-        // 8 秒 deadline 收进 call_with_deadline 内层（#52）：外层包
-        // timeout 会把内层清登记路径一起 drop，真挂死页留 pending 僵尸；
-        // 失败静默降级零键
-        let probe = s
-            .call_with_deadline(
-                "Runtime.evaluate",
-                json!({ "expression": PAGE_PROBE_JS, "returnByValue": true }),
-                std::time::Duration::from_secs(8),
-            )
-            .await
-            .ok()
-            .and_then(|r| {
-                r.pointer("/result/value")
-                    .and_then(Value::as_str)
-                    .and_then(parse_probe)
-            });
+        // 特征判据 rn 脚本化（总台令 2026-10-03）：workspace
+        // `page-skills/_probe.rn` 隐式加载（多根序首优先）覆写内置缺省，
+        // 判据增改走 workspace 仓免 browse 发版；脚本经 rune VM 跑
+        // （cdp::eval 隔离世界探页，回 {framework, slugs} 对象），失败或
+        // 环境错静默降级零键；白名单仍在本仓（页面可控输出经
+        // FROZEN_PAGE_SLUGS 滤，信任模型不变）
+        let probe = run_probe_rn(s).await;
         if let Some(p) = probe
             && let Some(obj) = receipt.as_object_mut()
         {
@@ -500,6 +478,56 @@ pub(crate) async fn augment_goto(s: &cdp::Session, receipt: &mut Value) {
             }
         }
     }
+}
+
+/// 跑特征判据 rn 脚本：回执 ok 值（{framework, slugs} 对象）或 None
+/// （脚本缺失回缺省、编译/执行/环境错均静默降级——判据脚本属机制配方，
+/// 坏脚本不许让 goto 失败）。VM 双限额与 30 秒单调用界走 rune 面缺省。
+async fn run_probe_rn(s: &std::sync::Arc<cdp::Session>) -> Option<Value> {
+    let script = load_probe_rn();
+    let receipt = browse_rune::run(
+        std::sync::Arc::clone(s),
+        &script,
+        browse_rune::DEFAULT_CAPS,
+        browse_rune::RunOpts::default(),
+    )
+    .await
+    .ok()?;
+    receipt.get("ok").cloned()
+}
+
+/// 特征判据脚本加载（隐式，总台令 2026-10-03 标准目录形）：workspace
+/// 各根序首命中的 `page-skills/scripts/probe.rn` 覆写（机制脚本标准
+/// 目录，后续判据类脚本同住）；全根未命中回内置缺省（判据与历史
+/// PROBE 全同，保离线行为稳定）。
+fn load_probe_rn() -> String {
+    load_probe_rn_multi(&crate::paths::workspace_roots())
+}
+
+/// [`load_probe_rn`] 的多根纯函数形（单测用）：序首命中根的
+/// `page-skills/scripts/probe.rn` 覆写，全根未命中回内置缺省。
+fn load_probe_rn_multi(roots: &[std::path::PathBuf]) -> String {
+    for root in roots {
+        if let Ok(body) =
+            std::fs::read_to_string(root.join("page-skills").join("scripts").join("probe.rn"))
+        {
+            return body;
+        }
+    }
+    default_probe_rn()
+}
+
+/// 内置缺省判据脚本（rn 形，workspace 覆写位 page-skills/scripts/probe.rn）：
+/// 包一层 `pub async fn main`，体是
+/// [`PAGE_PROBE_JS`]（隔离世界求值，对象直桥）。
+fn default_probe_rn() -> String {
+    format!(
+        r##"// browse 内置缺省特征判据（workspace page-skills/scripts/probe.rn 可覆写）
+pub async fn main() {{
+    let v = cdp::eval(r#"{PAGE_PROBE_JS}"#).await?;
+    Ok(v)
+}}"##
+    )
 }
 
 #[cfg(test)]
@@ -552,14 +580,31 @@ mod tests {
         assert!(list_domain_skills(&dir, "nope").is_empty(), "缺段空表");
         let _ = std::fs::remove_dir_all(&dir);
     }
-
-    /// parse_probe：合法对象过、坏 JSON 与非对象形拒。
+    /// 判据脚本加载（rn 化批）：序首命中覆写优先、全根未命中回内置
+    /// 缺省（缺省判据与历史 PROBE 同判据：含 frozen 名单同款 add 位）。
     #[test]
-    fn probe_parse_shapes() {
-        assert!(parse_probe(r#"{"framework":null,"slugs":[]}"#).is_some());
-        assert!(parse_probe("not json").is_none());
-        assert!(parse_probe("[1,2]").is_none(), "数组非对象拒");
-        assert!(parse_probe(r#""str""#).is_none(), "标量非对象拒");
+    fn probe_rn_load_override_and_default() {
+        let dir = std::env::temp_dir().join(format!("browse-probe-rn-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let hit = dir.join("hit");
+        let miss = dir.join("miss");
+        std::fs::create_dir_all(hit.join("page-skills").join("scripts")).unwrap();
+        std::fs::create_dir_all(&miss).unwrap();
+        std::fs::write(
+            hit.join("page-skills").join("scripts").join("probe.rn"),
+            "// 自定义判据",
+        )
+        .unwrap();
+        // 序首命中:覆写内容直出
+        assert_eq!(
+            load_probe_rn_multi(&[hit.clone(), miss.clone()]),
+            "// 自定义判据"
+        );
+        // 全根未命中:内置缺省(判据同体,含 pub async fn main 与 cdp::eval 包裹)
+        let d = load_probe_rn_multi(std::slice::from_ref(&miss));
+        assert!(d.contains("pub async fn main"), "{d}");
+        assert!(d.contains("cdp::eval"), "{d}");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     /// 冻结名单与探针发射名单零漂移（评审 G-A）：名单每项探针都有
@@ -594,19 +639,22 @@ mod tests {
     /// page_fields：空骨架零键；framework 单独可出；slugs 出两键带命令。
     #[test]
     fn probe_fields_shapes() {
-        let empty = parse_probe(r#"{"framework":null,"slugs":[]}"#).unwrap();
+        let empty = serde_json::json!({"framework": null, "slugs": []});
         assert!(page_fields(&empty).is_empty(), "空骨架零键");
 
         let fw_only =
-            parse_probe(r#"{"framework":{"name":"react","version":null},"slugs":[]}"#).unwrap();
+            serde_json::json!({"framework": {"name": "react", "version": null}, "slugs": []});
         let f = page_fields(&fw_only);
         assert_eq!(f.len(), 1);
         assert_eq!(f[0].0, "framework");
 
-        let full = parse_probe(
-            r#"{"framework":{"name":"vue","version":"3.5"},"slugs":[{"slug":"spa","confidence":"CONFIRMED"},{"slug":"shadow-dom","confidence":"CONFIRMED"}]}"#,
-        )
-        .unwrap();
+        let full = serde_json::json!({
+            "framework": {"name": "vue", "version": "3.5"},
+            "slugs": [
+                {"slug": "spa", "confidence": "CONFIRMED"},
+                {"slug": "shadow-dom", "confidence": "CONFIRMED"}
+            ]
+        });
         let f = page_fields(&full);
         assert_eq!(f.len(), 3, "framework 加 page_skills 加 hint: {f:?}");
         let hint = f.iter().find(|(k, _)| *k == "page_skills_hint").unwrap();

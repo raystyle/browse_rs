@@ -155,23 +155,6 @@ pub fn attach_optional_fields(r: &mut Value, html_src: Option<&str>, markdown: b
     }
 }
 
-/// 取、未闭合 script/style/title 的正文抽取，旧扫描器饱和下标实测崩）。
-#[test]
-fn strip_html_short_and_unclosed_inputs_no_panic() {
-    assert_eq!(strip_html(""), "");
-    assert_eq!(strip_html("abc"), "abc");
-    assert_eq!(strip_html("<script>"), "");
-    assert_eq!(strip_html("<title>"), "");
-    assert_eq!(strip_html("<script src=x"), "");
-    assert_eq!(strip_html("<style>"), "");
-    // 等价标题抽取面：空串与短串不 panic、无标题得空串
-    assert_eq!(title_of(""), "");
-    assert_eq!(title_of("abc"), "");
-    // 开标记 ASCII 不敏感命中；闭标记查找本大小写敏感（原行为保持）
-    assert_eq!(title_of("<TITLE>t</title>"), "t");
-    assert_eq!(title_of("<TITLE>T</TITLE>"), "");
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -209,8 +192,27 @@ mod tests {
         assert!(md.contains("# Hello"), "{md}");
         assert!(md.contains("world"), "{md}");
         assert!(md.contains("**b**") || md.contains("b"), "{md}");
-        // 空与短串零崩（同 F-1 纪律）
-        assert!(!to_markdown("").is_empty() || true);
+        // 空与短串零崩（同 F-1 纪律；mdka 空串回空串）
+        assert_eq!(to_markdown(""), "");
         let _ = to_markdown("x");
+    }
+
+    /// 二轮 F-1 回归锁：短串与未闭合标记不越界 panic（空 html 的标题
+    /// 抽取、未闭合 script/style/title 的正文抽取，旧扫描器饱和下标
+    /// 实测崩）。
+    #[test]
+    fn strip_html_short_and_unclosed_inputs_no_panic() {
+        assert_eq!(strip_html(""), "");
+        assert_eq!(strip_html("abc"), "abc");
+        assert_eq!(strip_html("<script>"), "");
+        assert_eq!(strip_html("<title>"), "");
+        assert_eq!(strip_html("<script src=x"), "");
+        assert_eq!(strip_html("<style>"), "");
+        // 等价标题抽取面：空串与短串不 panic、无标题得空串
+        assert_eq!(title_of(""), "");
+        assert_eq!(title_of("abc"), "");
+        // 开标记 ASCII 不敏感命中；闭标记查找本大小写敏感（原行为保持）
+        assert_eq!(title_of("<TITLE>t</title>"), "t");
+        assert_eq!(title_of("<TITLE>T</TITLE>"), "");
     }
 }

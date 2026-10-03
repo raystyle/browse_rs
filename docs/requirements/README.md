@@ -32,6 +32,7 @@
 | REQ-026 | implemented | must | 方言全量桥 cdp::dialect（v0.30.7，账本 #75） | vm_face 加 module 单测加 e2e 三形同源对账；评审无 F 放行 |
 | REQ-027 | implemented | must | 统一兜底超时：--timeout 旗标、60 秒缺省、卡点回执同形（v0.30.7） | 探针与回执单测加名册守卫加 fetch 收编；ADR-0012 |
 | REQ-028 | implemented | must | fetch 渲染 DOM HTML 与 mdka markdown，方言全局化（rn 经桥直达） | fetch_core 单测加 e2e 双件加 CLI 实弹；mdka 3.2 |
+| REQ-029 | implemented | must | 页面特征判据 rn 脚本化（workspace scripts 隐式加载）与 workspace 收窄两层 | 加载器单测加 e2e 特征页过 rn 路径；workspace 81cbf14 |
 
 ## Roadmap（issue 台账批次规划）
 

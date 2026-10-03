@@ -775,17 +775,12 @@
     {
       "path": "browse_core::skills::page_fields",
       "kind": "function",
-      "docs": "把探测结果变成回执附加键对（#51，纯函数）：framework 形合法出\n`(\"framework\", {name,version})`；slugs 过滤后非空出 `page_skills` 与\n`page_skills_hint`（各 slug 的读全文命令用 `；` 连接）；全空返回\n空 vec（调用方零插入）。**白名单是硬边界（评审 F3）**：探测串由页内\n`JSON.stringify` 产出、页面可覆写该全局伪造回执，故这里逐条校验\nslug 在 [`FROZEN_PAGE_SLUGS`]、confidence 是两档枚举、去重保序\n（天然封顶名单长），framework 的 name/version 形与长度也校验；\n非法条目静默丢弃，全非法即零键。\n\n# Examples\n\n```\nlet probe = browse_core::skills::parse_probe(\n    r#\"{\"framework\":{\"name\":\"vue\",\"version\":\"3.5\"},\"slugs\":[{\"slug\":\"spa\",\"confidence\":\"CONFIRMED\"}]}\"#,\n).unwrap();\nlet f = browse_core::skills::page_fields(&probe);\nassert_eq!(f.len(), 3, \"framework 加 page_skills 加 hint: {f:?}\");\n\n// 页面伪造串：名单外 slug 与非法 confidence 全被滤掉（评审 F3）\nlet forged = browse_core::skills::parse_probe(\n    r#\"{\"framework\":{\"name\":\"pwn\"},\"slugs\":[{\"slug\":\"../../etc/passwd\",\"confidence\":\"CONFIRMED\"},{\"slug\":\"spa\",\"confidence\":\"MAYBE\"},{\"slug\":\"captcha\",\"confidence\":\"CONFIRMED\"}]}\"#,\n).unwrap();\nlet f = browse_core::skills::page_fields(&forged);\nlet skills = f.iter().find(|(k, _)| *k == \"page_skills\").unwrap();\nassert_eq!(skills.1, serde_json::json!([{\"slug\":\"captcha\",\"confidence\":\"CONFIRMED\"}]));\n```"
+      "docs": "把探测结果变成回执附加键对（#51，纯函数）：framework 形合法出\n`(\"framework\", {name,version})`；slugs 过滤后非空出 `page_skills` 与\n`page_skills_hint`（各 slug 的读全文命令用 `；` 连接）；全空返回\n空 vec（调用方零插入）。**白名单是硬边界（评审 F3）**：探测产自页内\n而页面可控（覆写全局或伪造判据脚本回执都做得到），故这里逐条校验\nslug 在 [`FROZEN_PAGE_SLUGS`]、confidence 是两档枚举、去重保序\n（天然封顶名单长），framework 的 name/version 形与长度也校验；\n非法条目静默丢弃，全非法即零键。\n\n# Examples\n\n```\nlet probe = serde_json::json!({\n    \"framework\": {\"name\": \"vue\", \"version\": \"3.5\"},\n    \"slugs\": [{\"slug\": \"spa\", \"confidence\": \"CONFIRMED\"}]\n});\nlet f = browse_core::skills::page_fields(&probe);\nassert_eq!(f.len(), 3, \"framework 加 page_skills 加 hint: {f:?}\");\n\n// 页面伪造形：名单外 slug 与非法 confidence 全被滤掉（评审 F3）\nlet forged = serde_json::json!({\n    \"framework\": {\"name\": \"pwn\"},\n    \"slugs\": [\n        {\"slug\": \"../../etc/passwd\", \"confidence\": \"CONFIRMED\"},\n        {\"slug\": \"spa\", \"confidence\": \"MAYBE\"},\n        {\"slug\": \"captcha\", \"confidence\": \"CONFIRMED\"}\n    ]\n});\nlet f = browse_core::skills::page_fields(&forged);\nlet skills = f.iter().find(|(k, _)| *k == \"page_skills\").unwrap();\nassert_eq!(skills.1, serde_json::json!([{\"slug\":\"captcha\",\"confidence\":\"CONFIRMED\"}]));\n```"
     },
     {
       "path": "browse_core::skills::page_skills_enabled",
       "kind": "function",
       "docs": "#51 页面层是否开启：`BROWSE_PAGE_SKILLS` 未设或非 0/false 即开。"
-    },
-    {
-      "path": "browse_core::skills::parse_probe",
-      "kind": "function",
-      "docs": "解析探测回执（#51，纯函数）：吃 Runtime.evaluate `/result/value` 的\n字符串做 JSON.parse；非对象形态（数组、标量、坏 JSON）返回 `None`，\n调用方静默降级。边界：探测串由页内 `JSON.stringify` 产出而页面可\n覆写该全局（评审 F3 实证），故值域信任不在本函数在\n[`page_fields`] 的白名单。\n\n# Examples\n\n```\nassert!(browse_core::skills::parse_probe(r#\"{\"framework\":null,\"slugs\":[]}\"#).is_some());\nassert!(browse_core::skills::parse_probe(\"not json\").is_none());\nassert!(browse_core::skills::parse_probe(\"[1,2]\").is_none());\n```"
     },
     {
       "path": "browse_core::skills::url_domain_fields",

@@ -2401,13 +2401,15 @@ return await responseBody(evs[0].params.requestId)"#,
         .await
         .expect("清仿真");
 
-    // ---- #52：探测腿 deadline 收内层（挂死页 8 秒清登记不积尸） ----
+    // ---- 判据 rn 化后的挂死免疫（REQ-029 改 #52 语义）----
     // （评审 G1 移位：本块楔死一个 tab 并留尾不收，放在 closeTab/守卫段
     // 之前的最后位置，tabs 段的 t1 挑选不再有按序落进楔死 tab 的风险；
     // 后续 closeTab 与守卫段全是 browser 级调用，对楔死免疫）
-    // cookie getter 死循环让 PAGE_PROBE_JS 的 d.cookie 读取永挂：
-    // Runtime.evaluate 永不返回，call_with_deadline 的 8 秒内层超时
-    // 负责清 pending（旧行为：外层 timeout drop 掉清登记路径留僵尸）
+    // 旧 #52 面：页面世界 cookie getter 死循环让主世界探针永挂（8 秒
+    // 内层 deadline 清 pending）。判据 rn 化后探针走隔离世界，页面世界
+    // 的属性覆写（expando/defineProperty）对探针不可见——挂死免疫是
+    // 行为改进；真挂死面（隔离世界自身求值永挂）由 rune 面 30 秒单调用
+    // 界清 pending 兜底（同 call_with_deadline 清登记机制）
     host.eval_snippet(
         r#"await routeMock("http://hung.test/*", "<title>hung</title><script>Object.defineProperty(document, 'cookie', {get: function(){ while(true){} }});</script><h1>h</h1>", {contentType: "text/html"})"#,
     )
@@ -2421,15 +2423,15 @@ return await responseBody(evs[0].params.requestId)"#,
     let wall = t_hung.elapsed().as_secs_f64();
     assert!(
         hung.get("page_skills").is_none() && hung.get("framework").is_none(),
-        "探测超时静默降级零 page 键: {hung}"
+        "无特征页零 page 键: {hung}"
     );
     assert!(
-        (7.0..25.0).contains(&wall),
-        "8 秒内层 deadline 生效（实测 {wall:.1}s：过快=没等，过慢=退到 30s 档）"
+        wall < 8.0,
+        "页面世界的属性覆写不拖探针（隔离世界免疫，实测 {wall:.1}s 应快回）"
     );
     assert!(
         engine.session().pending_len().await == 0,
-        "#52 验收：超时后 pending 表归零（清登记没被 drop 丢掉）"
+        "pending 表归零（探针正常收尾零积尸）"
     );
     // 会话仍健：browser 级调用（Target.getTargets 面）不受页内挂死影响
     let healthy = host
@@ -3627,9 +3629,6 @@ async fn rune_dialect_bridge() {
         let tab = cdp::dialect("currentTab", "").await?;
         // 数字参形：waitLoad（已加载立即返回）
         let loaded = cdp::dialect("waitLoad", "[5]").await?;
-        // 对象参形加同源对账：桥腿与三支柱腿同一实现，计数必一致
-        let via_bridge = cdp::dialect("requests", "[{\"filter\": \"dialect\"}]").await?;
-        let via_pillar = cdp::requests(#{"filter": "dialect"}).await?;
         // 对象参形加同源对账：桥腿与三支柱腿同一实现，计数必一致
         let via_bridge = cdp::dialect("requests", "[{\"filter\": \"dialect\"}]").await?;
         let via_pillar = cdp::requests(#{"filter": "dialect"}).await?;
