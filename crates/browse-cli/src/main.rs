@@ -208,11 +208,13 @@ async fn main() -> Result<()> {
                     eprintln!("browse: --timeout 要整秒数（退出 2）");
                     std::process::exit(2)
                 });
-                let (s, warn) = browse_core::js_host::secs_to_ms(raw);
+                // secs_to_ms 回的是毫秒,请求字段是秒——换回秒再递(实弹
+                // 抓过「3 变 3000 秒」的雷,sink 捕获在卷)
+                let (ms, warn) = browse_core::js_host::secs_to_ms(raw);
                 if let Some(w) = warn {
                     eprintln!("browse: --timeout {w}");
                 }
-                cli_timeout_s = Some(s);
+                cli_timeout_s = Some(ms / 1000);
             }
             // #48：无头起引擎时从附着浏览器按域克隆 cookie（逗号分隔多域）
             "--cookies" => cookies_csv = Some(args.next("--cookies")),
@@ -272,16 +274,17 @@ async fn main() -> Result<()> {
                         "--markdown" | "-m" => _markdown = true,
                         "--timeout" => {
                             // 统一守卫（REQ-027）：>=1000 按毫秒误写换算
-                            // 并告警（与全局 --timeout 同一口径）
+                            // 并告警（与全局 --timeout 同一口径；换算回毫秒
+                            // 后除千回秒,本变量是秒形）
                             let raw: u64 = args.next("--timeout").parse().unwrap_or_else(|_| {
                                 eprintln!("browse: --timeout 要整秒数（退出 2）");
                                 std::process::exit(2);
                             });
-                            let (sv, warn) = browse_core::js_host::secs_to_ms(raw);
+                            let (ms, warn) = browse_core::js_host::secs_to_ms(raw);
                             if let Some(w) = warn {
                                 eprintln!("browse: --timeout {w}");
                             }
-                            timeout_s = sv;
+                            timeout_s = ms / 1000;
                         }
                         other2 => bail_arg(other2),
                     }

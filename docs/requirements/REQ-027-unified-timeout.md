@@ -24,3 +24,4 @@ trace: js_host 探针清空单测＋server 统一界缺省与回执形单测＋a
 - 行为变化面：eval 默认界 300 收紧 60（超 60 秒无参长跑需显式给界）；rune 默认 45 放宽 60；daemon 级「实例内同界」口径改为「env 缺省可逐次覆写」（ADR-0010 增补段的历史口径由本 REQ 修订）
 - wait 族参数零动（正交裁定）；rn `cdp::wait_event(method, ms)` 维持毫秒原生形（等待窗面，不属兜底界）
 - CLI 全局 `--timeout` 与 fetch 子旗标同名：fetch 分支自持解析（内环先消费），全局臂只作用于 rune/eval 道
+- 实弹雷记档：CLI 臂首版把 `secs_to_ms` 的毫秒回值直接塞进秒形请求字段（`--timeout 3` 发 `timeout_s:3000`，兜底界成 50 分钟内窗恒赢）；本地 sink 捕获请求体抓出，修为 `ms/1000` 回秒；fetch 臂同款同修。教训：单测锁不到跨进程值形传递，CLI 到 daemon 的数值字段要 sink 实捕或 e2e 断言界值行为
