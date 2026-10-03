@@ -35,7 +35,7 @@
     {
       "path": "browse_core::chrome_mgr::chromium_root",
       "kind": "function",
-      "docs": "托管根目录（本实例状态目录下的 `chromium/`）。"
+      "docs": "托管根目录（**默认**状态目录下的 `chromium/`，机器级共享资产）。\n\n恒指默认根、不随 `BROWSE_NAME` 实例名走子目录（issue #74）：部署与\nmanifest pin 是全机一份，命名实例与默认实例共用同一托管集，否则\n命名实例的 pinned 解析恒 miss（部署在默认根、找去 `~/.browse-rs/\n<name>/chromium`），`browse chrome install/use` 的托管语义对命名实例\n整体失效。"
     },
     {
       "path": "browse_core::chrome_mgr::doctor_json",

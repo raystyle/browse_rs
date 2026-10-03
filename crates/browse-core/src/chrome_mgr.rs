@@ -70,9 +70,15 @@ pub fn version_from_dir_name(dir: &Path) -> String {
     name.strip_prefix("chromium-").unwrap_or(&name).to_string()
 }
 
-/// 托管根目录（本实例状态目录下的 `chromium/`）。
+/// 托管根目录（**默认**状态目录下的 `chromium/`，机器级共享资产）。
+///
+/// 恒指默认根、不随 `BROWSE_NAME` 实例名走子目录（issue #74）：部署与
+/// manifest pin 是全机一份，命名实例与默认实例共用同一托管集，否则
+/// 命名实例的 pinned 解析恒 miss（部署在默认根、找去 `~/.browse-rs/
+/// <name>/chromium`），`browse chrome install/use` 的托管语义对命名实例
+/// 整体失效。
 pub fn chromium_root() -> PathBuf {
-    crate::paths::state_dir().join("chromium")
+    crate::paths::state_dir_for(&None).join("chromium")
 }
 
 /// AppContainer ACE 的受托 SID（S-1-15-2-2 = ALL APPLICATION PACKAGES，
@@ -887,6 +893,29 @@ mod tests {
         assert!(valid_version("").is_err());
         assert!(valid_version("../evil").is_err());
         assert!(valid_version("a/b").is_err());
+    }
+
+    /// 托管根不随实例名走（issue #74）：设 BROWSE_NAME 前后同一根，
+    /// 且恒指默认 state 根（部署与 pin 机器级共享）。
+    #[test]
+    fn chromium_root_ignores_instance_name() {
+        let base = chromium_root();
+        // SAFETY: 短窗覆写 BROWSE_NAME，断言后按原值还原；本 lib 测试
+        // 二进制内无并发读 BROWSE_NAME 的测试（e2e 在独立二进制）
+        unsafe {
+            let saved = std::env::var("BROWSE_NAME").ok();
+            std::env::set_var("BROWSE_NAME", "issue74probe");
+            let named = chromium_root();
+            match saved.as_deref() {
+                Some(v) => std::env::set_var("BROWSE_NAME", v),
+                None => std::env::remove_var("BROWSE_NAME"),
+            }
+            assert_eq!(base, named, "命名实例的托管根应与默认根同位");
+            assert!(
+                named.ends_with(".browse-rs/chromium") || named.ends_with(r".browse-rs\chromium"),
+                "应指默认根：{named:?}"
+            );
+        }
     }
 
     /// 目录名版本提取：带 chromium- 前缀剥前缀，裸版本名原样。
