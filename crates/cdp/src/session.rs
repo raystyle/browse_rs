@@ -1320,7 +1320,10 @@ fn domain_rules() -> (Vec<&'static str>, Vec<&'static str>) {
 /// `http(s):` 前缀的形（data:/about:/ftp:）返回的是首个 `:` 前段（即
 /// scheme 名，如 `"data"`），不是空串，要 http(s) 门禁的调用方自判；IPv6
 /// 字面量不支撑（`[::1]` 取 `[`，历史口径，未接入面）；非 special scheme
-/// 的 `\` 语义分歧不支撑（影响面近零，评审 R4-G-3 记档）。
+/// 的 `\` 语义分歧不支撑（影响面近零，评审 R4-G-3 记档）；deny 规则按
+/// Unicode 输入形比对——运营方以 A-label（`xn--…`）立规而攻击面传
+/// Unicode 拼写的反向边角不覆盖（评审 R7-G-1 记档，现实名单全 ASCII
+/// 字面域时主方向安全）。
 ///
 /// userinfo（`user[:pass]@`）必须剥掉再取 host（评审 F-6：不剥则
 /// `https://x@evil.com/` 的 host 取成 `x@evil.com`，后缀匹配被 `@` 卡住，
