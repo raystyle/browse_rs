@@ -1,6 +1,6 @@
 {
   "crate": "browse-core",
-  "version": "0.30.8",
+  "version": "0.30.9",
   "items": [
     {
       "path": "browse_core::chrome_mgr",

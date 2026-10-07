@@ -4,7 +4,20 @@
 
 ## Unreleased
 
-（无；最新封版 0.30.8）
+（无；最新封版 0.30.9）
+
+## 0.30.9 - 2026-10-08
+
+- **全量 code review 修复批（REQ-031，grok+kimi 双工位七轮对线至三方一致）**：
+- 正确性十件：rune 隔离世界死 context 错误驱动自愈（eval 撞 Cannot find context 置空重建重试；raw/dialect 导航置空名单补 navigateToHistoryEntry 与 fetch）；录制 ack 取 params.sessionId 帧号（帧流不再 3 帧停摆）；waitIdle 改 requestId 集合对账（重定向同 id 重发不再恒在飞、WebSocket 无终态对剔除、活动 session 过滤）；方言解析器关键字词边界（`letter = 5` 不再静默成 `let ter`）；会话 cookie expires<=0 省略透传加 setCookie success 入账；方言数组负数/浮点下标落 null；`issue new` stdin 有界读（--dry-run 不再被开管道挂死）；解析器截断标识符报错；importStorageState 失败面（failed/firstError）
+- 安全一族：域策略 url_host 对齐 WHATWG 可构造形全消（剥 userinfo、`\` 全斜杠位归一、Tab/LF/CR 剔除、首尾 C0/空格剔除、scheme 大小写不敏感、斜杠数不限六轮六形，deny 不可绕；域规则小写归一）
+- 韧性六件：附着探测命中但连接失败回落自起（幻影 DevToolsActivePort 不再击穿 ADR-0003）；Fetch 域互抢守卫补 session.call 面与成员面 disable；路由 watcher 连接纪元重同步（连败十次挂起可恢复）；自更新锁收割道回读校验；管道 pipe2(O_CLOEXEC) 加同位空转清位（断管即关浏览器承诺成立）；eval/rune 超时与停止臂 pending 僵尸回收
+- fetch 面：引擎腿页内抽取异常显式报错（CLI 与全局两腿，不再吞成空回执；信封解析提纯函数带回归锁）；goto 预算与 daemon 硬界随 --timeout 耦合修正（+12s 余量）；dialect 桥上界随请求级界（不再恒 60 秒截死长预算方言腿）；可选字段求而未得 null 占位；surface 两份摘要统一可选键
+- CLI 面：尾随裸词报错、chrome install 旗标位显式报、--timeout/--idle-timeout 病态值拒（env 旋钮 0 值同拒）、收集环 CTA 统一、eval 腿结构化 timeout 行、HTTP 状态码入错误上下文、drops 同毫秒不互覆
+- spawn/chrome 面：chromium-* 版本数值序、下载腿总超时、manifest 损坏留痕、engine.log 开不了留痕、强杀收尸、shutdown 锁收窄加 pid 复核、grantPermissions 缺 origin 拒、实例名相对穿越拒、daemon 端口坏值留痕、connect 端口坏值留痕、自更新解压 64MB 上界加版本尾数数值序
+- rune 面：goto 提交等待（跨文档先等主框架 frameNavigated 越水位）；Cleanup 换靶回原会话清账；rune_running 恐慌守卫；vars_syntax BOM 剥离；probe 脚本可见失败首败留痕与不可读告警
+- 文档对齐：architecture 三层图收 browse-rune/fetch_core 与 /rune 路由、workspace 两层定位；AGENTS 发现序补托管 pin 档与附着回落语义；README EVAL_TIMEOUT 60 秒与 BROWSE_CHROME 坏值语义；ADR-0008 成本句 rn 化；schema 派生面消非法 type（int/id/any 映射与省键）
+- 记档不做六项与轮次账见 REQ-031 Notes（修复自伤三件留痕：信封类型链、G3 谎报、pipe2 空转臂——实证「每轮修复可能引入新缺陷，轮次到 CONFIRM 为止」）
 
 ## 0.30.8 - 2026-10-03
 
