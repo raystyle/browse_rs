@@ -3517,18 +3517,25 @@ fn spawn_route_watcher(
         // 后新连接上从未重发 Fetch.enable，规则在册而拦截已死、fetch_by_us
         // 滞留 true 无告警——换代即按当前路由表重发（表空则复位旗标），
         // 与 dialog watcher 的纪元清账同呼吸
-        let mut seen_epoch = session.connection_epoch();
+        // 连接纪元双记（评审五轮 G）：`last_conn_epoch` 只在真换代时推进
+        //（计数随之归零）；`seen_epoch` 可被失败回滚（回到旧值制造重试差），
+        // 回滚重入不清计数——否则每拍先归零再加一，挂起阈值永不可达
+        let mut last_conn_epoch = session.connection_epoch();
+        let mut seen_epoch = last_conn_epoch;
         // 连败计数（评审 R4-G-2）：回滚重试无节流会在滞留态 250ms 刷一行
         // 日志；连败上界后挂起重同步（复位 fetch_by_us），重发 routeBlock
-        // 可再触发。初值在换代臂内先归零再读（definite-assignment）
-        let mut enable_fails: u32;
+        // 可再触发
+        let mut enable_fails: u32 = 0;
         loop {
             tokio::time::sleep(std::time::Duration::from_millis(250)).await;
             let epoch = session.connection_epoch();
             if epoch != seen_epoch {
                 let prev_epoch = seen_epoch;
+                if epoch != last_conn_epoch {
+                    last_conn_epoch = epoch;
+                    enable_fails = 0;
+                }
                 seen_epoch = epoch;
-                enable_fails = 0;
                 if fetch_by_us.load(Ordering::Relaxed) {
                     let rules = routes.lock().await;
                     if rules.is_empty() {
