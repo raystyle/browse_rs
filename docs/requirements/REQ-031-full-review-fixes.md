@@ -22,7 +22,9 @@ trace: 双工位评审（herdr browse-grok-review / browse-kimi-review，产物 
 
 ## Notes
 
-- 记档不做三项及理由：G-29 connect_pipes 线程 spawn 的 expect 属进程资源枯竭终态（补 # Panics 文档句已随批）；G-39 Windows 运行中映像不可删的 .bak 残骸是 OS 语义限制（下次 update 的 rename 链自然覆盖，清扫收益低于复杂度）；G-41 的 rawstr 多行普通串行号计数属错误消息美化（无行为面）
+- 记档不做及理由：G-29 connect_pipes 线程 spawn 的 expect 属进程资源枯竭终态（# Panics 文档句随三轮补齐）；G-39 Windows 运行中映像不可删的 .bak 残骸是 OS 语义限制（下次 update 的 rename 链自然覆盖，清扫收益低于复杂度）；G-41 的 rawstr 多行普通串行号计数属错误消息美化（无行为面）；G-r6 server 无 CatchPanicLayer 记档不做（引 tower-http 依赖属 minor 批决策，与修复批分离；处理器 panic 最险的 rune_running 滞留位已由 RunningGuard 收口）；G-r10 自更新锁收割道回读后仍有微秒级理论双持窗（记档，超出可观测粒度）
+- **G-4 的守卫面边界（kimi 二轮 G-r11 更正口径）**：Fetch 互抢守卫罩方言两道（`session.Fetch.enable/disable` 成员面与 `session.call("Fetch.enable"/"disable")` 面）；rn `cdp::raw` 面**有意不罩**（raw 是任意 CDP 命令显式逃生舱，http-api 与 --llms 已载「rn raw Fetch.enable 自行避让」纪律，罩它等于关逃生舱）
 - G-22 shutdown 锁收窄采用「pid 复核后复位」防窗口内新引擎误伤；G-33 实例名净化只拒相对穿越组件（绝对路径是测试面既有能力：join 语义整体改向状态目录，首次实现过猛杀 ledger keygen 测试后收窄，教训留 diary）
-- fetch 引擎腿 goto 预算随 --timeout（旧写死 20s）；/eval 请求体带 timeout_s；dialect 桥上界随请求级兜底硬界（kimi G-5/G-6）
+- fetch 引擎腿 goto 预算随 --timeout（旧写死 20s）；/eval 请求体带 timeout_s（三轮起 +12s 余量：探针与抽取不吃导航预算）；dialect 桥上界随请求级兜底硬界（kimi G-5/G-6）
+- 二轮对线：grok 抓出修复自伤 F 一件（CLI 引擎腿信封类型链：片段回对象、CLI 按串解析必空，391048f 收口并提 parse_engine_eval_receipt 纯函数加回归锁）；kimi 抓出 F-6 修复不完整一件（WHATWG 解析分歧：special scheme 的 `\` 等同 `/` 终止权威段、Tab/LF/CR 解析前剔除，deny 仍可绕，三轮补 `\\` 分隔符与控制符剔除加回归锁）
 - 评审轮次：修复批提交后派两工位交叉复核（对方向为对方腿的修复面），F 清零且双 CONFIRM 才闭环（三方一致判据）

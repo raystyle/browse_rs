@@ -445,7 +445,10 @@ impl Session {
     ///
     /// # Panics
     ///
-    /// 管道泵里的锁只在「持锁线程先前已 panic」的中毒锁上 panic（实际不可达）。
+    /// 管道泵里的锁只在「持锁线程先前已 panic」的中毒锁上 panic（实际不可达）；
+    /// 泵线程 spawn 失败（`pipe write/read thread`，进程线程资源枯竭的终态）
+    /// 直接 panic——此形下 child 句柄由 Drop 兜底杀进程，无孤儿（评审 G-r7
+    /// 补句：两处 `.expect` 在 468/506 一带，属资源枯竭终态不另设恢复道）。
     pub async fn connect_pipes<R, W>(self: &Arc<Self>, mut read: R, mut write: W) -> Result<()>
     where
         R: std::io::Read + Send + 'static,
@@ -1330,12 +1333,22 @@ fn domain_rules() -> (Vec<&'static str>, Vec<&'static str>) {
 /// assert_eq!(cdp::session::url_host("https://user:pass@EVIL.com:8443/x"), "evil.com");
 /// ```
 pub fn url_host(url: &str) -> String {
-    let rest = url
+    // WHATWG 预处理（评审 R2-F-1）：Chrome 解析前剔除 ASCII Tab/LF/CR——
+    // 不剔则 `https://ev\nil.com/` 守卫见到 ev\nil.com 而 Chrome 导航到
+    // evil.com，deny 可绕
+    let cleaned: String = url
+        .chars()
+        .filter(|c| !matches!(c, '\t' | '\r' | '\n'))
+        .collect();
+    let rest = cleaned
         .strip_prefix("https://")
-        .or_else(|| url.strip_prefix("http://"))
-        .unwrap_or(url);
-    // 权威段到首个 `/ ? #` 为止：不能按 `:` 切——userinfo 与 host:port 都含冒号
-    let authority = rest.split(['/', '?', '#']).next().unwrap_or("");
+        .or_else(|| cleaned.strip_prefix("http://"))
+        .unwrap_or(&cleaned);
+    // 权威段到首个 `/ \ ? #` 为止：不能按 `:` 切（userinfo 与 host:port
+    // 都含冒号）；http(s) 是 special scheme，`\` 等同 `/` 做权威段终止符
+    // （WHATWG 明文）——不入分隔集则 `evil.com\@legit.com` 权威段整段
+    // 吃下、Chrome 实际导航 evil.com 而守卫取到 legit.com（评审 R2-F-1）
+    let authority = rest.split(['/', '\\', '?', '#']).next().unwrap_or("");
     let no_user = authority.rsplit_once('@').map_or(authority, |(_, h)| h);
     no_user.split(':').next().unwrap_or("").to_ascii_lowercase()
 }
@@ -1989,6 +2002,25 @@ mod tests {
         assert!(host_matches(&url_host("https://x@evil.com/"), "evil.com"));
         assert!(host_matches(
             &url_host("https://u:p@sub.EVIL.com/"),
+            "evil.com"
+        ));
+    }
+
+    /// WHATWG 解析分歧类不绕域策略（评审 R2-F-1 回归锁）：special
+    /// scheme 的 `\` 等同 `/` 终止权威段；Tab/LF/CR 在解析前剔除——
+    /// Chrome 实际导航的 host 与守卫取到的必须一致。
+    #[test]
+    fn url_host_whatwg_parsing_alignment() {
+        // 反斜杠：Chrome 导航 evil.com（\@legit.com 落路径段），守卫同取
+        assert_eq!(url_host("https://evil.com\\@legit.com/"), "evil.com");
+        assert_eq!(url_host("https://legit.com/\\path"), "legit.com");
+        // Tab/换行剔除：`ev\nil.com` 的真实 host 是 evil.com
+        assert_eq!(url_host("https://ev\nil.com/"), "evil.com");
+        assert_eq!(url_host("https://evil\t.com/"), "evil.com");
+        assert_eq!(url_host("https://evil.com\r/"), "evil.com");
+        // deny 命中恢复
+        assert!(host_matches(
+            &url_host("https://evil.com\\@legit.com/"),
             "evil.com"
         ));
     }

@@ -226,6 +226,24 @@ fn env_timeout_secs(var: &str, default_s: u64) -> Duration {
     match std::env::var(var).ok().and_then(|s| s.parse::<u64>().ok()) {
         None => Duration::from_secs(default_s),
         Some(v) => {
+            // 0 值拒绝（评审 G-r8）：0 秒界=每次调用必超时的病态值，回落
+            // 缺省并一次性留痕（CLI 面 --timeout 0 已直出 exit 2）
+            if v == 0 {
+                static WARNED_ZERO: std::sync::OnceLock<std::sync::Mutex<Vec<String>>> =
+                    std::sync::OnceLock::new();
+                let seen = WARNED_ZERO.get_or_init(Default::default);
+                let fresh = seen
+                    .lock()
+                    .map(|g| !g.iter().any(|x| x == var))
+                    .unwrap_or(false);
+                if fresh {
+                    if let Ok(mut g) = seen.lock() {
+                        g.push(var.to_string());
+                    }
+                    eprintln!("[browse] {var}=0 是病态界（即刻超时），回落缺省 {default_s} 秒");
+                }
+                return Duration::from_secs(default_s);
+            }
             let (ms, warn) = crate::js_host::secs_to_ms(v);
             if let Some(w) = warn {
                 // 每旋钮每进程只警示一次（评审 G-1）：本函数在请求路径逐

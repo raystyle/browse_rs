@@ -803,6 +803,11 @@ impl Engine {
         {
             return Err(e);
         }
+        // 强杀后收尸（评审 G-r4，与 bail_kill 臂同律）：杀而不等留僵尸挂
+        // daemon；被杀进程应答快，wait 无长阻塞风险
+        if let Some(c) = child.as_mut() {
+            let _ = c.wait();
+        }
         // 隔离态 profile 随引擎退场删除（#25.3 拆出），不留站点痕迹
         if let Some(dir) = isolated_dir {
             let res =

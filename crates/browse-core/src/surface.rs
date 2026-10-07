@@ -303,7 +303,7 @@ pub const COMMANDS: &[CmdSpec] = &[
             ),
             arg!("timeout", "number", false, "15"),
         ],
-        description: "一次性只读抓取：HTTP 直取零浏览器成本；三条件升级引擎（正文空、墙词、少于 20 词）走 goto 加页内抽取（懒拉起）；回 {via, title, text} 加可选键（HTTP 腿：status/bytes/markdown?；引擎升级腿：upgradedFrom/httpStatus/markdown?/html?；--html 直取形：html/markdown?）；--html 恒走引擎腿回渲染后 DOM HTML（documentElement.outerHTML，JS 执行后的面）；--markdown 经 mdka 把本腿 html（渲染形为渲染 DOM、HTTP 直通为 raw body）转 markdown 字段（v1 同 text 的 no-op 已升真转换；求了没取到给 null 占位）；两腿都按 URL 做 goto 同口径的 workspace 站点知识点名（命中附 domain_skills 与 hint，不依赖引擎）；页内抽取异常显式报错不带空回执。对照 waitForResponse：这是无会话一次性抓取。",
+        description: "一次性只读抓取：HTTP 直取零浏览器成本；三条件升级引擎（正文空、墙词、少于 20 词）走 goto 加页内抽取（懒拉起）；回 {via, title, text} 加可选键（HTTP 腿：status/bytes/markdown?；引擎升级腿：upgradedFrom/httpStatus/markdown?；--html 直取形：html/markdown?）；--html 恒走引擎腿回渲染后 DOM HTML（documentElement.outerHTML，JS 执行后的面）；--markdown 经 mdka 把本腿 html（渲染形为渲染 DOM、HTTP 直通为 raw body）转 markdown 字段（v1 同 text 的 no-op 已升真转换；求了没取到给 null 占位）；两腿都按 URL 做 goto 同口径的 workspace 站点知识点名（命中附 domain_skills 与 hint，不依赖引擎）；页内抽取异常显式报错不带空回执。对照 waitForResponse：这是无会话一次性抓取。",
         example: "browse fetch https://example.com",
     },
     CmdSpec {
@@ -1225,7 +1225,7 @@ pub const COMMANDS: &[CmdSpec] = &[
                 "{html: false, markdown: false, timeout: 15}"
             ),
         ],
-        description: "一次性只读抓取（方言全局；rn 经 cdp::dialect 桥直达）：HTTP 直取零浏览器成本，三条件升级（正文空、墙词、少于 20 词）走 goto 加页内抽取；html:true 恒走引擎腿回渲染后 DOM HTML（html 字段），markdown:true 经 mdka 转本腿 html 回 markdown 字段；回 {via, title, text} 加可选键（HTTP 腿：status/bytes/markdown?；引擎升级腿：upgradedFrom/httpStatus/markdown?/html?；html:true 直取形：html/markdown?；求了没取到给 null 占位）；页内抽取异常显式报错；与 CLI browse fetch 同语义（纯函数单源，腿编排双轨）。",
+        description: "一次性只读抓取（方言全局；rn 经 cdp::dialect 桥直达）：HTTP 直取零浏览器成本，三条件升级（正文空、墙词、少于 20 词）走 goto 加页内抽取；html:true 恒走引擎腿回渲染后 DOM HTML（html 字段），markdown:true 经 mdka 转本腿 html 回 markdown 字段；回 {via, title, text} 加可选键（HTTP 腿：status/bytes/markdown?；引擎升级腿：upgradedFrom/httpStatus/markdown?；html:true 直取形：html/markdown?；求了没取到给 null 占位）；页内抽取异常显式报错；与 CLI browse fetch 同语义（纯函数单源，腿编排双轨）。",
         example: r#"return await fetch("https://example.com", {markdown: true})"#,
     },
     CmdSpec {
@@ -1630,6 +1630,17 @@ pub fn catalog_json() -> Value {
     )
 }
 
+/// [`ArgSpec::ty`] 到 JSON Schema type 的映射（评审 G-r5）：方言目录
+/// 值域里的 `int`/`id` 不是合法 JSON Schema type，派生面映射到
+/// `integer`/`string`；其余直通。
+fn schema_ty(ty: &str) -> &str {
+    match ty {
+        "int" => "integer",
+        "id" => "string",
+        other => other,
+    }
+}
+
 fn input_schema(c: &CmdSpec) -> Value {
     let mut props = serde_json::Map::new();
     let mut required = Vec::new();
@@ -1637,7 +1648,7 @@ fn input_schema(c: &CmdSpec) -> Value {
         props.insert(
             a.name.to_string(),
             json!({
-                "type": a.ty,
+                "type": schema_ty(a.ty),
                 "description": if let Some(d) = a.default {
                     format!("缺省 {d}")
                 } else {

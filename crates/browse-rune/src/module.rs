@@ -537,7 +537,10 @@ pub fn cdp_module(ctx: ModuleCtx) -> Result<(Module, Cleanup), rune::ContextErro
                         loop {
                             let committed = st
                                 .session
-                                .peek_events_since("Page.frameNavigated", mark, 10)
+                                // peek 上限 200（评审 G-r3）：旧页子框架密集导航
+                                // 会让主框架 commit 越出小窗，10 条恒 miss 白等
+                                // 到 10 秒放行
+                                .peek_events_since("Page.frameNavigated", mark, 200)
                                 .await
                                 .iter()
                                 .filter(|e| e.pointer("/params/frame/parentId").is_none())

@@ -3522,6 +3522,7 @@ fn spawn_route_watcher(
             tokio::time::sleep(std::time::Duration::from_millis(250)).await;
             let epoch = session.connection_epoch();
             if epoch != seen_epoch {
+                let prev_epoch = seen_epoch;
                 seen_epoch = epoch;
                 if fetch_by_us.load(Ordering::Relaxed) {
                     let rules = routes.lock().await;
@@ -3539,9 +3540,11 @@ fn spawn_route_watcher(
                             .call("Fetch.enable", json!({ "patterns": patterns }))
                             .await
                         {
-                            eprintln!(
-                                "[browse] 重连后重开 Fetch 拦截失败（路由在册未生效，可重发 routeBlock 触发同步）：{e:#}"
-                            );
+                            // 失败回滚纪元（评审 G-r2）：重连瞬间活动路由未
+                            // 就绪时 enable 会踩空——回滚让下一拍（250ms 后，
+                            // 路由通常已就位）重试，不静默死到下次换代
+                            seen_epoch = prev_epoch;
+                            eprintln!("[browse] 重连后重开 Fetch 拦截失败（250ms 后重试）：{e:#}");
                         }
                     }
                 }
@@ -3702,8 +3705,28 @@ fn connect_opts(v: Option<&Value>) -> ConnectOptions {
         port: v
             .get("port")
             .and_then(Value::as_u64)
-            .and_then(|n| u16::try_from(n).ok())
-            .or_else(|| v.as_u64().and_then(|n| u16::try_from(n).ok())),
+            .and_then(|n| {
+                // 坏值留痕（评审 G-r9）：try_from 失败静默落 None 会「忽略
+                // port 走缺省发现」，连错目标的归因面被吃掉
+                if u16::try_from(n).is_err() {
+                    eprintln!(
+                        "[browse] connect 的 port {n} 超 0-65535，按未给处理（走 wsUrl/发现序）"
+                    );
+                    return None;
+                }
+                Some(n as u16)
+            })
+            .or_else(|| {
+                v.as_u64().and_then(|n| {
+                    if u16::try_from(n).is_err() {
+                        eprintln!(
+                            "[browse] connect 实参 {n} 超 0-65535，按未给处理（走 wsUrl/发现序）"
+                        );
+                        return None;
+                    }
+                    Some(n as u16)
+                })
+            }),
         profile_dir: v
             .get("profileDir")
             .and_then(Value::as_str)

@@ -175,8 +175,14 @@ pub fn anon_pair() -> Result<(PipeReader, PipeWriter)> {
 #[cfg(not(windows))]
 pub fn anon_pair() -> Result<(PipeReader, PipeWriter)> {
     let mut fds = [0i32; 2];
-    if unsafe { libc::pipe(fds.as_mut_ptr()) } != 0 {
-        return Err(anyhow!("pipe(2) 失败：{}", std::io::Error::last_os_error()));
+    // pipe2(O_CLOEXEC)（评审 G-r1）：裸 pipe 到 fork 之间，他线程 spawn 的
+    // 无关子进程（git shell-out 等）会继承四端 fd；CLOEXEC 后只有显式
+    // 布线的 3/4（pre_exec 的 dup2 会清目标位的 CLOEXEC）进 chrome
+    if unsafe { libc::pipe2(fds.as_mut_ptr(), libc::O_CLOEXEC) } != 0 {
+        return Err(anyhow!(
+            "pipe2(O_CLOEXEC) 失败：{}",
+            std::io::Error::last_os_error()
+        ));
     }
     Ok((
         PipeReader { h: fds[0] as usize },
