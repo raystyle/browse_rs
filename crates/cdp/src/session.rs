@@ -1336,26 +1336,39 @@ fn domain_rules() -> (Vec<&'static str>, Vec<&'static str>) {
 /// assert_eq!(cdp::session::url_host("https://user:pass@EVIL.com:8443/x"), "evil.com");
 /// ```
 pub fn url_host(url: &str) -> String {
-    // WHATWG 预处理（评审 R2-F-1 + 四轮 G）：Chrome 解析前剔除 ASCII
-    // Tab/LF/CR——不剔则 `https://ev\nil.com/` 守卫见到 ev\nil.com 而
-    // Chrome 导航到 evil.com；special scheme 的 `\` 在**所有斜杠位**等同
-    // `/`（不止权威段终止符）——scheme 段的 `https:\\` / `https:/\` 也要
-    // 归一，否则前缀认不出、host 取成 "https" 而 deny 脱靶
+    // WHATWG 预处理（评审 R2-F-1 + 四轮 G + R6-F-1）：①剔除 ASCII
+    // Tab/LF/CR（任意位）——不剔则 `https://ev\nil.com/` 守卫见到
+    // ev\nil.com 而 Chrome 导航到 evil.com；②special scheme 的 `\` 在
+    // **所有斜杠位**等同 `/`——scheme 段的 `https:\\` / `https:/\` 也要
+    // 归一，否则前缀认不出、host 取成 "https" 而 deny 脱靶；③首尾
+    // C0 控制符与空格剔除（WHATWG 明文「Remove any leading and
+    // trailing C0 control or space」，集即 `<= U+0020`）——前导空格同
+    // 样让前缀剥离失败
     let cleaned: String = url
         .chars()
         .filter(|c| !matches!(c, '\t' | '\r' | '\n'))
         .map(|c| if c == '\\' { '/' } else { c })
         .collect();
+    let cleaned = cleaned.trim_matches(|c: char| c <= ' ');
     // scheme 段剥离按「special authority ignore slashes」语义（评审
     // R5-F-1，WHATWG 明文）：special scheme 后斜杠数不限——`https:evil.com`
     //（零斜杠）与 `https:///evil.com`（多斜杠）Chrome 都导航到 evil.com，
-    // 恰剥两斜杠会取错权威段而 deny 脱靶。先剥 scheme 冒号段，再跳过
-    // **全部**前导斜杠（`\` 已在预处理归一为 `/`）
-    let rest = cleaned
-        .strip_prefix("https:")
-        .or_else(|| cleaned.strip_prefix("http:"))
-        .map(|r| r.trim_start_matches('/'))
-        .unwrap_or(&cleaned);
+    // 恰剥两斜杠会取错权威段而 deny 脱靶。先剥 scheme 冒号段（ASCII
+    // 大小写不敏感，评审 R6-F-1：scheme 名大小写不敏感是 WHATWG 明文，
+    // `HTTPS://EVIL.COM/` 的 host 是 evil.com），再跳过**全部**前导斜杠
+    let rest = if cleaned
+        .get(..6)
+        .is_some_and(|s| s.eq_ignore_ascii_case("https:"))
+    {
+        cleaned[6..].trim_start_matches('/')
+    } else if cleaned
+        .get(..5)
+        .is_some_and(|s| s.eq_ignore_ascii_case("http:"))
+    {
+        cleaned[5..].trim_start_matches('/')
+    } else {
+        cleaned
+    };
     // 权威段到首个 `/ \ ? #` 为止：不能按 `:` 切（userinfo 与 host:port
     // 都含冒号）；http(s) 是 special scheme，`\` 等同 `/` 做权威段终止符
     // （WHATWG 明文）——不入分隔集则 `evil.com\@legit.com` 权威段整段
@@ -2033,6 +2046,12 @@ mod tests {
         assert_eq!(url_host("https:evil.com"), "evil.com");
         assert_eq!(url_host("https:///evil.com"), "evil.com");
         assert_eq!(url_host("http:/evil.com"), "evil.com");
+        // scheme 大小写不敏感 + 首尾 C0/空格剔除（六轮 F，族内最后两形）
+        assert_eq!(url_host("HTTPS://EVIL.COM/"), "evil.com");
+        assert_eq!(url_host("Https://evil.com/"), "evil.com");
+        assert_eq!(url_host("Http:/evil.com"), "evil.com");
+        assert_eq!(url_host("  https://evil.com/  "), "evil.com");
+        assert_eq!(url_host("\u{1}https://evil.com/"), "evil.com");
         // Tab/换行剔除：`ev\nil.com` 的真实 host 是 evil.com
         assert_eq!(url_host("https://ev\nil.com/"), "evil.com");
         assert_eq!(url_host("https://evil\t.com/"), "evil.com");
