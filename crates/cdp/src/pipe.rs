@@ -166,22 +166,41 @@ pub fn anon_pair() -> Result<(PipeReader, PipeWriter)> {
 
 /// 建一对匿名管道：`(读端, 写端)`。
 ///
-/// POSIX 走 `pipe2(O_CLOEXEC)`：fork 窗内他线程 spawn 的无关子进程不继承
+/// POSIX 建对即带 CLOEXEC：fork 窗内他线程 spawn 的无关子进程不继承
 /// 这四端（评审 G-r1）；布线到固定 fd 3/4 由 spawn 侧的 pre_exec 做
 /// （`dup2` 会清目标位 CLOEXEC；同位空转分支显式清位，见 wire 注释）。
+/// Linux 走 `pipe2(O_CLOEXEC)` 原子形；apple 无 pipe2 绑定，`pipe` 加
+/// `fcntl` 逐端补 CLOEXEC（两系统调用间有一拍窗口，同收 fork 前泄 fd 面）。
 ///
 /// # Errors
 ///
-/// `pipe2(2)` 失败。
+/// `pipe`/`pipe2` 建对失败。
 #[cfg(not(windows))]
 pub fn anon_pair() -> Result<(PipeReader, PipeWriter)> {
     let mut fds = [0i32; 2];
-    // pipe2(O_CLOEXEC)（评审 G-r1）：裸 pipe 到 fork 之间，他线程 spawn 的
-    // 无关子进程（git shell-out 等）会继承四端 fd；CLOEXEC 后只有显式
+    // 带上 CLOEXEC 建对（评审 G-r1）：裸 pipe 到 fork 之间，他线程 spawn
+    // 的无关子进程（git shell-out 等）会继承四端 fd；CLOEXEC 后只有显式
     // 布线的 3/4（pre_exec 的 dup2 会清目标位的 CLOEXEC）进 chrome
-    if unsafe { libc::pipe2(fds.as_mut_ptr(), libc::O_CLOEXEC) } != 0 {
+    #[cfg(target_os = "linux")]
+    let created = unsafe { libc::pipe2(fds.as_mut_ptr(), libc::O_CLOEXEC) } == 0;
+    #[cfg(not(target_os = "linux"))]
+    let created = {
+        let made = unsafe { libc::pipe(fds.as_mut_ptr()) } == 0;
+        if made {
+            for fd in fds {
+                unsafe {
+                    let flags = libc::fcntl(fd, libc::F_GETFD);
+                    if flags >= 0 {
+                        libc::fcntl(fd, libc::F_SETFD, flags | libc::FD_CLOEXEC);
+                    }
+                }
+            }
+        }
+        made
+    };
+    if !created {
         return Err(anyhow!(
-            "pipe2(O_CLOEXEC) 失败：{}",
+            "建管道（CLOEXEC）失败：{}",
             std::io::Error::last_os_error()
         ));
     }
