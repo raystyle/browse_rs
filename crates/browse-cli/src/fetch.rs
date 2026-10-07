@@ -131,10 +131,13 @@ async fn fetch_engine_leg(
     let extract = fetch_core::extract_js(shape.need_html);
     // 引擎腿 goto 预算随 --timeout 走（评审 G5/kimi G-5）：写死 20 秒让
     // `--timeout 300` 的导航腿先撞 20 秒墙、`--timeout 5` 又等满 20 秒；
-    // 页内抽取回整 evaluate 回执（评审 grok P1）：exceptionDetails 在
-    // Rust 侧显式上抛，不再吞成「成功空回执」
+    // 页内抽取回整 evaluate 回执（评审 grok P1 + 二轮 F）：成员调用回的
+    // 是 CDP 结果**对象**，/eval 信封的 value 随之是对象——CLI 侧按字符串
+    // 解析（as_str）必空。回执在片段里 JSON.stringify 成串再回（方言
+    // 全局 JSON.stringify），Rust 侧解析后判 exceptionDetails 再取
+    // /result/value，成功与异常两路都通
     let code = format!(
-        "await goto({url}, {{timeout: {to}}}); return await session.Runtime.evaluate({{expression: {expr}, returnByValue: true}})",
+        "await goto({url}, {{timeout: {to}}}); return JSON.stringify(await session.Runtime.evaluate({{expression: {expr}, returnByValue: true}}))",
         url = serde_json::to_string(url)?,
         to = timeout_s,
         expr = serde_json::to_string(extract)?,
@@ -146,7 +149,10 @@ async fn fetch_engine_leg(
     let bind = crate::client::daemon_bind();
     let resp = client
         .post(format!("http://{bind}/eval"))
-        .json(&serde_json::json!({ "code": code, "timeout_s": timeout_s }))
+        // 外层 /eval 硬界给 goto 预算之上再加余量（二轮 G5）：goto 用满
+        // timeout_s 后还有探针（至多 8 秒）与页内抽取要跑，硬界同数会把
+        // 内层预算掐死在导航上；+12 秒余量，客户端 HTTP 侧另有 +60
+        .json(&serde_json::json!({ "code": code, "timeout_s": timeout_s + 12 }))
         .timeout(std::time::Duration::from_secs(timeout_s + 60))
         .send()
         .await
@@ -169,11 +175,7 @@ async fn fetch_engine_leg(
             v.get("error").and_then(Value::as_str).unwrap_or("?")
         );
     }
-    let ev = v
-        .get("value")
-        .and_then(Value::as_str)
-        .and_then(|s| serde_json::from_str::<Value>(s).ok())
-        .unwrap_or(json!({}));
+    let ev = parse_engine_eval_receipt(&v)?;
     if let Some(exc) = ev.pointer("/exceptionDetails/text").and_then(Value::as_str) {
         let detail = ev
             .pointer("/exceptionDetails/exception/description")
@@ -183,11 +185,12 @@ async fn fetch_engine_leg(
             "引擎腿页内抽取失败：{detail}；下一步：--html 看渲染 DOM、加大 --timeout，或 goto 后手动 evaluate 定位"
         );
     }
-    let inner = ev
+    let inner_raw = ev
         .pointer("/result/value")
         .and_then(Value::as_str)
-        .and_then(|s| serde_json::from_str::<Value>(s).ok())
-        .unwrap_or(json!({}));
+        .ok_or_else(|| anyhow!("引擎腿回执缺 result.value（无异常却无值，形异常）：{ev}"))?;
+    let inner: Value =
+        serde_json::from_str(inner_raw).map_err(|e| anyhow!("引擎腿抽取值不是合法 JSON：{e}"))?;
     Ok(shape_engine_receipt(
         url,
         reason,
@@ -196,6 +199,27 @@ async fn fetch_engine_leg(
         shape,
         add_domain_skills,
     ))
+}
+
+/// /eval 信封到 evaluate 回执的解析（二轮 F 回归锁）：片段回
+/// `JSON.stringify` 的串，value 恒字符串；对象形（成员面直返的旧错形，
+/// 一轮 P1 修复曾引入）不再静默落 `{}` 空回执——显式报形异常。
+fn parse_engine_eval_receipt(v: &Value) -> Result<Value> {
+    let raw = v.get("value").and_then(Value::as_str).ok_or_else(|| {
+        // 形异常给类型面（二轮 F 教训：对象形曾静默落空回执，归因要能
+        // 直接看出「片段漏了 stringify」）
+        let kind = match v.get("value") {
+            None => "缺席".to_string(),
+            Some(Value::String(_)) => "字符串".to_string(),
+            Some(Value::Null) => "null".to_string(),
+            Some(Value::Bool(_)) => "布尔".to_string(),
+            Some(Value::Number(_)) => "数值".to_string(),
+            Some(Value::Array(_)) => "数组".to_string(),
+            Some(Value::Object(_)) => "对象（片段漏了 JSON.stringify？）".to_string(),
+        };
+        anyhow!("引擎腿回执形异常（value 应是 JSON.stringify 的串，得到{kind}）")
+    })?;
+    serde_json::from_str::<Value>(raw).map_err(|e| anyhow!("引擎腿回执不是合法 JSON：{e}"))
 }
 
 /// 引擎腿回执整形（纯函数供单测锁旗标契约，评审二轮 F-1）：腿成因与
@@ -390,5 +414,29 @@ mod tests {
             }
         }
         let _ = std::fs::remove_dir_all(&ws);
+    }
+}
+
+/// 信封解析回归锁（评审二轮 F）：value 对象形（一轮修复曾引入的错形）
+/// 显式报错不落空回执；字符串形正常解析。
+#[cfg(test)]
+mod envelope_tests {
+    use serde_json::json;
+
+    #[test]
+    fn parse_engine_eval_receipt_rejects_object_envelope() {
+        let env = json!({ "ok": true, "value": { "result": { "value": "x" } } });
+        let err = super::parse_engine_eval_receipt(&env).unwrap_err();
+        assert!(
+            format!("{err:#}").contains("对象"),
+            "对象形应报形异常: {err:#}"
+        );
+    }
+
+    #[test]
+    fn parse_engine_eval_receipt_parses_string_envelope() {
+        let env = json!({ "ok": true, "value": "{\"exceptionDetails\": null}" });
+        let v = super::parse_engine_eval_receipt(&env).unwrap();
+        assert_eq!(v.pointer("/exceptionDetails"), Some(&json!(null)));
     }
 }

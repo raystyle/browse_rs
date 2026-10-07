@@ -18,7 +18,9 @@ crates/cdp          连接与协议（无业务语义）
                     水位即放行——两个方向都偏保守不偏漏）
   discovery.rs      wsUrl/port/profileDir -> WS URL；probe_default 附着探测；
                     DevToolsActivePort 文本解析（纯函数，契约测试锁）
-  spawn.rs          chrome 发现序；端口态/管道态 spawn（Windows 句柄继承 /
+  spawn.rs          chrome 定位（BROWSE_CHROME/祖先部署/常规路径；组合序含
+                    CLI 与托管 pin 档的拼接在 browse-core engine.rs
+                    resolve_chrome）；端口态/管道态 spawn（Windows 句柄继承 /
                     POSIX pre_exec dup2 到 fd 3/4 并关本侧两端的子副本）；
                     terminate_pid 兜底
   pipe.rs           匿名管道薄封装（Windows CreatePipe；POSIX pipe(2)）
@@ -43,8 +45,9 @@ crates/browse-core  语义与 daemon（不碰 argv）
                     按页面特征（一次有界 rn 探针，主世界 cdp::js，8 秒
                     界；workspace page-skills/scripts/probe.rn 序首命中
                     覆写内置缺省；10 slug 两档置信）点名机制配方；fetch
-                    两腿回执按 URL 同口径点名站点知识（CLI 侧，不依赖
-                    引擎），detect() 判读映射机制配方；未命中零新增键
+                    两腿（CLI 与方言全局）按 URL 同口径点名站点知识
+                    （不依赖引擎回执），detect() 判读映射机制配方；未命中
+                    零新增键
   record.rs         录制：startScreencast 帧流泵落盘 + 按帧号（params.
                     sessionId）ack
   paths.rs          实例命名空间（BROWSE_NAME -> 状态目录 + 派生端口，
