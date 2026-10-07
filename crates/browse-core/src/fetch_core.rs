@@ -143,21 +143,35 @@ pub fn to_markdown(html: &str) -> String {
     mdka::html_to_markdown(html)
 }
 
-/// fetch 回执的可选字段拼装（两道编排共用）：`html_enroll` 是 `html`
-/// 字段的入册源（`None` 不入册），`markdown_src` 是 `markdown` 字段的
-/// 转换源（`None` 不入册）。两参独立（评审二轮 F-1：`--markdown` 单置
-/// 不连带 html 字段入册；升级腿的转换源已取到但不必入册，杜绝拿
-/// 「转换源」顶「入册开关」把 markdown 悄悄转成空串）。
+/// fetch 回执的可选字段拼装（两道编排共用）：外层 `None` 不入册；
+/// `Some(None)` 是「显式求了但抽取没带回」——`null` 占位入册（评审
+/// G-8：消费方分得清「没求」与「求了没取到」，键缺席不做双义）；
+/// `Some(Some(v))` 是真值。`html_enroll` 是 `html` 字段的入册源，
+/// `markdown_src` 是 `markdown` 字段的转换源。两参独立（评审二轮 F-1：
+/// `--markdown` 单置不连带 html 字段入册；升级腿的转换源已取到但不必
+/// 入册，杜绝拿「转换源」顶「入册开关」把 markdown 悄悄转成空串）。
 pub fn attach_optional_fields(
     r: &mut Value,
-    html_enroll: Option<&str>,
-    markdown_src: Option<&str>,
+    html_enroll: Option<Option<&str>>,
+    markdown_src: Option<Option<&str>>,
 ) {
-    if let Some(h) = html_enroll {
-        r["html"] = json!(h);
+    match html_enroll {
+        None => {}
+        Some(None) => {
+            r["html"] = Value::Null;
+        }
+        Some(Some(h)) => {
+            r["html"] = json!(h);
+        }
     }
-    if let Some(src) = markdown_src {
-        r["markdown"] = json!(to_markdown(src));
+    match markdown_src {
+        None => {}
+        Some(None) => {
+            r["markdown"] = Value::Null;
+        }
+        Some(Some(src)) => {
+            r["markdown"] = json!(to_markdown(src));
+        }
     }
 }
 
@@ -204,16 +218,16 @@ mod tests {
     }
 
     /// 可选字段独立入册（二轮 F-1）：md 单置不连带 html；升级形转换源
-    /// 不入册不再把 markdown 变空串。
+    /// 不入册不再把 markdown 变空串。求了没取到 null 占位（G-8）。
     #[test]
     fn attach_optional_fields_enroll_and_source_independent() {
         let mut r = serde_json::json!({});
-        attach_optional_fields(&mut r, None, Some("<h1>T</h1><p>b</p>"));
+        attach_optional_fields(&mut r, None, Some(Some("<h1>T</h1><p>b</p>")));
         assert!(r.get("html").is_none(), "md 单置零 html 键: {r}");
         assert!(r["markdown"].as_str().unwrap().contains("# T"), "{r}");
 
         let mut r = serde_json::json!({});
-        attach_optional_fields(&mut r, Some("<h1>T</h1>"), None);
+        attach_optional_fields(&mut r, Some(Some("<h1>T</h1>")), None);
         assert!(
             r.get("html").is_some() && r.get("markdown").is_none(),
             "{r}"
@@ -223,7 +237,7 @@ mod tests {
         attach_optional_fields(
             &mut r,
             None, // 升级腿：转换源不入册
-            Some("<p>rendered</p>"),
+            Some(Some("<p>rendered</p>")),
         );
         assert!(r.get("html").is_none(), "{r}");
         assert!(
@@ -235,6 +249,14 @@ mod tests {
         attach_optional_fields(&mut r, None, None);
         assert!(
             r.get("html").is_none() && r.get("markdown").is_none(),
+            "{r}"
+        );
+
+        // 求了没取到：null 占位（G-8），与「没求」的键缺席分得开
+        let mut r = serde_json::json!({});
+        attach_optional_fields(&mut r, Some(None), Some(None));
+        assert!(
+            r.get("html") == Some(&Value::Null) && r.get("markdown") == Some(&Value::Null),
             "{r}"
         );
     }

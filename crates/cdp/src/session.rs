@@ -1284,7 +1284,8 @@ fn domain_policy_violation(url: &str) -> Option<&'static str> {
 }
 
 /// 解析 `BROWSE_ALLOW_DOMAINS` / `BROWSE_DENY_DOMAINS`（逗号分隔，
-/// `*.` 前缀与裸域名都按后缀匹配）。
+/// `*.` 前缀与裸域名都按后缀匹配；规则归一小写再 leak——host 侧恒小写，
+/// 规则侧不归一则 `Example.COM` 永不命中，评审 G4）。
 ///
 /// `'static` 由 leak 一次性换来（进程级配置只解析一次）。
 fn domain_rules() -> (Vec<&'static str>, Vec<&'static str>) {
@@ -1297,7 +1298,7 @@ fn domain_rules() -> (Vec<&'static str>, Vec<&'static str>) {
                     .ok()
                     .map(|v| {
                         v.split(',')
-                            .map(|s| s.trim().trim_start_matches("*."))
+                            .map(|s| s.trim().trim_start_matches("*.").to_ascii_lowercase())
                             .filter(|s| !s.is_empty())
                             .map(|s| Box::leak(s.to_string().into_boxed_str()) as &'static str)
                             .collect()
@@ -1309,10 +1310,15 @@ fn domain_rules() -> (Vec<&'static str>, Vec<&'static str>) {
         .clone()
 }
 
-/// 裸 URL 的 host 提取（`http(s)://` 后到首个 `/?:#`，小写），不引 url
-/// crate。何时用：域策略匹配与技能触发层的域名分段。边界：非
-/// `http(s)://` 前缀的形（data:/about:/ftp:）返回的是首个分隔段（即
-/// scheme 名，如 `"data"`），不是空串，要 http(s) 门禁的调用方自判。
+/// 裸 URL 的 host 提取（`http(s)://` 后的权威段剥 userinfo 与端口，小写），
+/// 不引 url crate。何时用：域策略匹配与技能触发层的域名分段。边界：非
+/// `http(s)://` 前缀的形（data:/about:/ftp:）返回的是首个 `:` 前段（即
+/// scheme 名，如 `"data"`），不是空串，要 http(s) 门禁的调用方自判；IPv6
+/// 字面量不支撑（`[::1]` 取 `[`，历史口径，未接入面）。
+///
+/// userinfo（`user[:pass]@`）必须剥掉再取 host（评审 F-6：不剥则
+/// `https://x@evil.com/` 的 host 取成 `x@evil.com`，后缀匹配被 `@` 卡住，
+/// deny 名单可绕）；密码可含 `@`，取最后一个 `@` 之后。
 ///
 /// # Examples
 ///
@@ -1320,16 +1326,18 @@ fn domain_rules() -> (Vec<&'static str>, Vec<&'static str>) {
 /// assert_eq!(cdp::session::url_host("https://X.com/a?b"), "x.com");
 /// assert_eq!(cdp::session::url_host("http://mail.google.com:8080/x"), "mail.google.com");
 /// assert_eq!(cdp::session::url_host("data:text/html,x"), "data");
+/// assert_eq!(cdp::session::url_host("https://x@evil.com/"), "evil.com");
+/// assert_eq!(cdp::session::url_host("https://user:pass@EVIL.com:8443/x"), "evil.com");
 /// ```
 pub fn url_host(url: &str) -> String {
     let rest = url
         .strip_prefix("https://")
         .or_else(|| url.strip_prefix("http://"))
         .unwrap_or(url);
-    rest.split(['/', ':', '?', '#'])
-        .next()
-        .unwrap_or("")
-        .to_ascii_lowercase()
+    // 权威段到首个 `/ ? #` 为止：不能按 `:` 切——userinfo 与 host:port 都含冒号
+    let authority = rest.split(['/', '?', '#']).next().unwrap_or("");
+    let no_user = authority.rsplit_once('@').map_or(authority, |(_, h)| h);
+    no_user.split(':').next().unwrap_or("").to_ascii_lowercase()
 }
 
 /// host 等值或后缀匹配（`x.com` 匹配 `a.x.com`，不匹配 `ax.com`）。
@@ -1968,6 +1976,21 @@ mod tests {
         assert_eq!(url_host("http://a.b:8080/"), "a.b");
         assert_eq!(url_host("about:blank"), "about");
         assert_eq!(url_host("data:text/html,x"), "data");
+    }
+
+    /// userinfo 形不绕域策略（评审 F-6 回归锁）：剥 `user[:pass]@` 后
+    /// deny 后缀命中恢复；`@` 卡后缀、`:` 截前段两形都锁死。
+    #[test]
+    fn url_host_strips_userinfo() {
+        assert_eq!(url_host("https://x@evil.com/"), "evil.com");
+        assert_eq!(url_host("https://user:pass@evil.com:8443/x"), "evil.com");
+        assert_eq!(url_host("http://a@b.c@d.e/"), "d.e");
+        // 剥完 userinfo 后 host 侧的后缀匹配不再被 `@` 卡住
+        assert!(host_matches(&url_host("https://x@evil.com/"), "evil.com"));
+        assert!(host_matches(
+            &url_host("https://u:p@sub.EVIL.com/"),
+            "evil.com"
+        ));
     }
 
     /// 守卫错误的 CTA 契约：给「下一步」，不只给原因。

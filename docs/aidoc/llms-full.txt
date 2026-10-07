@@ -219,7 +219,7 @@ assert_eq!(render(&stmts), "const tabs = await listPageTargets()");
 - `list_json` — 列已装版本与 pin（给 chromeList 面与 CLI）。
 - `manifest_path` — manifest 落盘路径。
 - `pinned_chrome` — 托管位解析：pin 版本的 chrome 二进制路径（发现序的托管档）。
-- `read_manifest` — 读登记册；根目录不存在或 manifest 缺失视为空册。
+- `read_manifest` — 读登记册；根目录不存在或 manifest 缺失视为空册（首装形）。损坏
 - `remove_version` — 删除一个已装版本：目录与 manifest 登记一起清，回执带释放的文件数与
 - `update` — `browse chrome update`：发现最新版（[`latest_version`]），未装则镜像
 - `update_with` — 带显式版本的 update 内核（测试与程序化面，不触发现端点）：未登记则装
@@ -294,7 +294,7 @@ fetch 的纯函数面（REQ-028 单源）：HTTP 腿的正文粗抽与升级判�
 
 ## Functions
 
-- `attach_optional_fields` — fetch 回执的可选字段拼装（两道编排共用）：`html_enroll` 是 `html`
+- `attach_optional_fields` — fetch 回执的可选字段拼装（两道编排共用）：外层 `None` 不入册；
 - `extract_js` — 引擎腿的页内抽取 JS（主世界 returnByValue 求值体）：标题、正文
 - `needs_upgrade` — 升级判定的三条件（#50）：正文空、墙词、少于 20 词。
 - `strip_html` — HTML 粗抽正文文本（HTTP 腿的降级面）：剥 script/style 与标签，压空白。
@@ -508,7 +508,7 @@ ark 管理的安装拦自更新走 ark 单通道（判据：exe 同目录 `ark-m
 - `switch_tab` — 切换活动路由到既有 tab（不改 Chrome 可见前景），返回该 tab 简表。
 - `type_ref` — 真实按键序列输入（#23）：focus 后逐字符 keyDown(text)+keyUp，
 - `type_ref_in` — 同 [`type_ref`]，但可指定归属子 session（#60 OOPIF：焦点、按键序列与
-- `wait_idle` — 等 network 静默：从调用时刻起观察 `Network.requestWillBeSent` 与
+- `wait_idle` — 等 network 静默：从调用时刻起观察 `requestWillBeSent` 与
 - `wait_load` — 等页面 load 完成：先宽容地等一次 frameNavigated（导航可能已完成，
 - `wait_settled` — 等导航落定（评审二轮 F4）：reload、历史跳、点击后导航的通用收尾。
 
@@ -912,7 +912,7 @@ Windows 直接用 `CreatePipe`，POSIX 用 `pipe(2)`。
 ## Functions
 
 - `is_browser_method` — 判断方法是否属于 browser 端点域（这类方法不附 `sessionId`）。
-- `url_host` — 裸 URL 的 host 提取（`http(s)://` 后到首个 `/?:#`，小写），不引 url
+- `url_host` — 裸 URL 的 host 提取（`http(s)://` 后的权威段剥 userinfo 与端口，小写），
 
 ## Types
 
@@ -937,7 +937,7 @@ Windows 直接用 `CreatePipe`，POSIX 用 `pipe(2)`。
 - `find_chrome` — 依优先序探测 Chrome 可执行文件，找不到返回 `None`。
 - `spawn_engine` — 拉起一个带调试口的专属引擎实例（独立 profile、端口自动分配）。
 - `spawn_engine_pipes` — 按管道契约拉起 clean-chrome（S005 / D02-6；Windows 句柄态与 POSIX
-- `terminate_pid` — 强杀进程树（优雅退出 `Browser.close` 失败后的兜底）。
+- `terminate_pid` — 强杀引擎进程（优雅退出 `Browser.close` 失败后的兜底）：Windows
 - `wait_devtools_ready` — 等 spawn 出来的实例调试口就绪，返回 WS URL（读它 profile 下的
 
 ## Types

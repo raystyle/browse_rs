@@ -19,26 +19,34 @@ crates/cdp          连接与协议（无业务语义）
   discovery.rs      wsUrl/port/profileDir -> WS URL；probe_default 附着探测；
                     DevToolsActivePort 文本解析（纯函数，契约测试锁）
   spawn.rs          chrome 发现序；端口态/管道态 spawn（Windows 句柄继承 /
-                    POSIX pre_exec dup2 到 fd 3/4）；terminate_pid 兜底
+                    POSIX pre_exec dup2 到 fd 3/4 并关本侧两端的子副本）；
+                    terminate_pid 兜底
   pipe.rs           匿名管道薄封装（Windows CreatePipe；POSIX pipe(2)）
   methods.rs        652 命令清单（生成物）+ 拼写建议
 
 crates/browse-core  语义与 daemon（不碰 argv）
-  parser.rs         方言语法分析器（纯函数；方言外语法解析期报错并给提示）
+  parser.rs         方言语法分析器（纯函数；方言外语法解析期报错并给提示；
+                    关键字带词边界——`letter = 5` 不被 `let` 吃前缀）
   js_host.rs        方言求值器：session.<Domain>.<method> 直转 CDP；
                     vars 跨片段持久；元素引用表（snapshot 短 ref +
                     daemon 侧文档代：session 与导航计数，页面零写入，
-                    #30 消注入痕）；全局函数族（见 README 清单）
+                    #30 消注入痕）；全局函数族（见 README 清单）；路由
+                    watcher（routeBlock/routeMock 的 Fetch 拦截代答与重连
+                    重同步）
   semantic.rs       语义层：tab 族、交互三件（clickAt/fillInput/pressKey）、
                     clickRef/fillRef（backendNodeId 锚）、等待判官
-                    （waitLoad/waitIdle）；Input 挂起自愈重试；goto 回执
-                    构建后经 skills::augment_goto 条件附技能键
-  skills.rs         技能触发层（#50/#51/#56，ADR-0008）：goto 后按域名段点名
-                    workspace 站点知识、按页面特征（一次有界 pageEval，
-                    10 slug 两档置信）点名机制配方；fetch 两腿回执按 URL
-                    同口径点名站点知识（CLI 侧，不依赖引擎），detect() 判读
-                    映射机制配方；未命中零新增键
-  record.rs         录制：startScreencast 帧流泵落盘 + 按 sessionId ack
+                    （waitLoad/waitIdle——requestId 集合对账）；Input 挂起
+                    自愈重试；goto 回执构建后经 skills::augment_goto 条件
+                    附技能键
+  skills.rs         技能触发层（#50/#51/#56，ADR-0008；判据 rn 脚本化
+                    REQ-029）：goto 后按域名段点名 workspace 站点知识、
+                    按页面特征（一次有界 rn 探针，主世界 cdp::js，8 秒
+                    界；workspace page-skills/scripts/probe.rn 序首命中
+                    覆写内置缺省；10 slug 两档置信）点名机制配方；fetch
+                    两腿回执按 URL 同口径点名站点知识（CLI 侧，不依赖
+                    引擎），detect() 判读映射机制配方；未命中零新增键
+  record.rs         录制：startScreencast 帧流泵落盘 + 按帧号（params.
+                    sessionId）ack
   paths.rs          实例命名空间（BROWSE_NAME -> 状态目录 + 派生端口，
                     ADR-0006）；engine_profile_dir 与 workspace_dir（跨
                     实例共享的知识仓根）等落点
@@ -46,12 +54,22 @@ crates/browse-core  语义与 daemon（不碰 argv）
                     仓内文件读取（site/page 的越界守卫），CLI 直读不经
                     daemon
   engine.rs         引擎状态机：附着优先缺则自起（BROWSE_NO_ATTACH 可跳过
-                    探测）；只杀自己 spawn 的；auto attach 首个 page target
+                    探测；附着探测命中但连接失败回落自起，不留幻影死路）；
+                    只杀自己 spawn 的；auto attach 首个 page target
   server.rs         daemon HTTP API：/eval（单飞槽 + 懒引擎 + 超时）、
+                    /rune 与 /rune/stop（Rune 编排面，ADR-0010/0011）、
                     /health、/engine/up、/quit
+  fetch_core.rs     fetch 纯函数单源（三条件升级、抽取 JS、可选字段拼装）
+
+crates/browse-rune  Rune 编排面（browse rune 子命令的 VM 与执行器，ADR-0010）
+  module.rs         自注册 cdp 模块：goto/eval/eval_handle/call/release（隔离
+                    世界，死 context 自愈）、wait_event、raw、dialect（方言
+                    全量桥）、js/js_lib（主世界）、render、stdin、三支柱
+  exec.rs           编译执行器：双限额（指令 1e7 / 分配 16MB）、结果桥
+                    {"ok"|"error": <json>}、错误二分（脚本可见失败 vs VM 终态）
 
 crates/browse-cli   bin 只接线
-  client.rs         daemon 客户端：探活、detached 自动拉起、eval/up/quit；
+  client.rs         daemon 客户端：探活、detached 自动拉起、eval/rune/up/quit；
                     端口随 BROWSE_NAME/BROWSE_PORT
   render.rs         打印面：大值自动落盘（>32KB 写 drops/，stdout 回
                     __dropped 提示行 + 预览）
@@ -91,13 +109,15 @@ POST /eval {code}
 与 daemon 端口（fnv1a 派生 9900-9999；`BROWSE_PORT` 显式优先）。默认实例
 零变化。命名实例各自 spawn chrome（profile 独占不互锁）。
 
-## workspace 技能仓（ADR-0008）
+## workspace 技能仓（ADR-0008；两层定位 REQ-029）
 
 知识仓 `github.com/raystyle/browse_workspace` 部署在 `~/.browse-rs/workspace`
-（`BROWSE_WORKSPACE` 覆盖；**不分 BROWSE_NAME**，跨实例共享）。三层使用面：
-goto/fetch/detect 回执自动点名（domain_skills/page_skills 加 hint，
-`BROWSE_DOMAIN_SKILLS=0` /`BROWSE_PAGE_SKILLS=0` 分层关）-> `browse workspace site/page` 免浏览器读全文
-（CLI 直读文件，canonicalize 越界守卫）-> `browse workspace list` 意图反查。
+（`BROWSE_WORKSPACE` 覆盖；**不分 BROWSE_NAME**，跨实例共享）。两层使用面：
+goto/fetch/detect 回执自动点名（域名段 domain_skills + 页面特征 page_skills
+加 hint，`BROWSE_DOMAIN_SKILLS=0` /`BROWSE_PAGE_SKILLS=0` 分层关）->
+`browse workspace site/page` 免浏览器读全文（CLI 直读文件，canonicalize
+越界守卫）。页面特征判据在 `page-skills/scripts/probe.rn`（browse 隐式加载，
+多根序首命中覆写内置缺省，改判据走 workspace 仓免 browse 发版，REQ-029）。
 install/update 走 git shell-out（clone / pull --ff-only 脏树拒绝），本地修改
 手工 commit/push 回推。env 三变量经 `ensure_daemon_with_env` 显式透传（防御性：
 现状与继承等效，防未来 env_clear 与非 CLI 拉起路径；改配置重启 daemon，

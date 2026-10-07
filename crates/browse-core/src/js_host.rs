@@ -662,7 +662,10 @@ impl JsHost {
         // async IIFE 重发一次——async 修 await 合法性，换行定界防片段的
         // 行尾注释吞掉闭合括号（评审三洞全收）
         let r = self.evaluate_js_once(js).await?;
-        if exception_text(&r).is_some_and(|t| t.contains("Illegal return statement")) {
+        // 收紧为语法错判定（评审 G-13）：只认 SyntaxError 型的 Illegal
+        // return——用户代码运行期抛含该子串的错（如片段内 eval("return 1")）
+        // 不再把整段（含已执行副作用）重跑一遍
+        if is_illegal_return_syntax(&r) {
             let wrapped = format!("(async () => {{\n{js}\n}})()");
             return self.finish_js(&self.evaluate_js_once(&wrapped).await?);
         }
@@ -784,10 +787,14 @@ impl JsHost {
                     let o = self.eval_expr(obj).await?;
                     let i = self.eval_expr(index).await?;
                     match i {
-                        Value::Number(n) => {
-                            let idx = n.as_u64().unwrap_or(0) as usize;
-                            Ok(o.get(idx).cloned().unwrap_or(Value::Null))
-                        }
+                        // 非负整数下标才取元素（评审 F-8）：负数与浮点（含
+                        // 整值浮点 2.0）在 JS 语义是 undefined，本方言映射
+                        // null——不得 `unwrap_or(0)` 静默取首元素（错数据比
+                        // 报错危险，`tabs[-1]` 得 tabs[0]）
+                        Value::Number(n) => match n.as_u64() {
+                            Some(idx) => Ok(o.get(idx as usize).cloned().unwrap_or(Value::Null)),
+                            None => Ok(Value::Null),
+                        },
                         Value::String(s) => Ok(o.get(&s).cloned().unwrap_or(Value::Null)),
                         _ => Ok(Value::Null),
                     }
@@ -942,8 +949,11 @@ impl JsHost {
         }
         // 引擎腿：goto 直调（不经 call_global，防探针翻转）加主世界抽取；
         // html 的「取」与「入册」解耦（评审 G-1/G-2）：markdown 也要取 html
-        // 供转换，但 html 字段只在 html 选项置位时入册（防响应膨胀）
-        crate::semantic::goto(&self.session, url, 20_000, None).await?;
+        // 供转换，但 html 字段只在 html 选项置位时入册（防响应膨胀）。
+        // goto 预算随 timeout 选项走（评审 G5：写死 20 秒与 timeout 选项
+        // 脱钩）；页内抽取异常显式上抛（评审 grok P1：exceptionDetails
+        // 不再吞成「成功空回执」）
+        crate::semantic::goto(&self.session, url, timeout_ms, None).await?;
         let need_html = dom_html || markdown;
         let expr = crate::fetch_core::extract_js(need_html);
         let ev = self
@@ -953,6 +963,15 @@ impl JsHost {
                 json!({ "expression": expr, "returnByValue": true, "awaitPromise": true }),
             )
             .await?;
+        if let Some(exc) = ev.pointer("/exceptionDetails/text").and_then(Value::as_str) {
+            let detail = ev
+                .pointer("/exceptionDetails/exception/description")
+                .and_then(Value::as_str)
+                .unwrap_or(exc);
+            anyhow::bail!(
+                "fetch 引擎腿页内抽取失败：{detail}；下一步：html:true 看渲染 DOM、加大 timeout，或 goto 后手动 evaluate 定位"
+            );
+        }
         let inner = ev
             .pointer("/result/value")
             .and_then(Value::as_str)
@@ -973,11 +992,12 @@ impl JsHost {
             .and_then(Value::as_str)
             .map(str::to_string);
         // 入册源与转换源独立（评审二轮 F-1）：html 只在 dom_html 入册，
-        // markdown 从抽取带回的 html 转换（升级腿已取到源，不再丢成空串）
+        // markdown 从抽取带回的 html 转换（升级腿已取到源，不再丢成空串）；
+        // 求了没取到给 null 占位（评审 G-8）：键缺席只表「没求」
         crate::fetch_core::attach_optional_fields(
             &mut r,
-            if dom_html { html_src.as_deref() } else { None },
-            if markdown { html_src.as_deref() } else { None },
+            dom_html.then_some(html_src.as_deref()),
+            markdown.then_some(html_src.as_deref()),
         );
         self.attach_fetch_skills(url, &mut r);
         Ok(attach_warning(r, warn))
@@ -1183,6 +1203,14 @@ impl JsHost {
                 if opts.get("hires").and_then(Value::as_bool).unwrap_or(false)
                     && let Some(scale) = opts.get("scale").and_then(Value::as_f64)
                 {
+                    // 裸 clip 守卫（评审 G-12）：scale 只在 clip 里合法，
+                    // 无 ref 时硬塞产出裸 `{scale}` clip 吃协议错——要全页
+                    // 高采样用 full 加 scale 前先给 ref（元素级裁剪）
+                    if params.get("clip").is_none() {
+                        bail!(
+                            "screenshot 的 hires/scale 要配 ref（scale 是 clip 内字段，无 ref 会发裸 clip 吃协议错）；下一步：给 ref 做元素级高采样，全页采样用 full:true"
+                        );
+                    }
                     params["clip"]["scale"] = json!(scale.max(1.0));
                 }
                 if format == "jpeg" {
@@ -2479,12 +2507,27 @@ impl JsHost {
                         }),
                     )
                     .await;
-                let p: Value = probe
-                    .ok()
+                // 探针失败不吞（评审 G-11）：失败时 readyState 取空串会
+                // 滑进「loading」误导判读——真因（未连接/求值被拒/页内
+                // 异常）显式进 verdict 与 evidence
+                let probe_err: Option<String> = probe
+                    .as_ref()
+                    .map_err(|e| format!("{e:#}"))
                     .and_then(|v| {
                         v.pointer("/result/value")
                             .and_then(Value::as_str)
-                            .and_then(|t| serde_json::from_str(t).ok())
+                            .and_then(|t| serde_json::from_str::<Value>(t).ok())
+                            .ok_or_else(|| "回执无 result.value（页内探针异常？）".to_string())
+                    })
+                    .err();
+                let p: Value = probe_err
+                    .is_none()
+                    .then(|| probe.as_ref().ok())
+                    .flatten()
+                    .and_then(|v| {
+                        v.pointer("/result/value")
+                            .and_then(Value::as_str)
+                            .and_then(|t| serde_json::from_str::<Value>(t).ok())
                     })
                     .unwrap_or(json!({}));
                 let title = p
@@ -2522,6 +2565,9 @@ impl JsHost {
                     .filter(|e| from_active_session(&active, e))
                     .count();
                 let mut evidence: Vec<String> = Vec::new();
+                if let Some(err) = &probe_err {
+                    evidence.push(format!("probe=failed: {err}"));
+                }
                 let title_disp = p.get("title").cloned().unwrap_or(json!(""));
                 evidence.push(format!("title={title_disp}"));
                 evidence.push(format!("readyState={ready}"));
@@ -2539,8 +2585,12 @@ impl JsHost {
                     "challenge",
                 ];
                 let challenge_hit = challenge_kw.iter().any(|k| title.contains(k));
-                let (verdict, suggestion) = if challenge_hit && (c403 + c503 > 0 || text_len < 600)
-                {
+                let (verdict, suggestion) = if probe_err.is_some() {
+                    (
+                        "probe-failed",
+                        "页态探针失败（不是加载中，原因见 evidence 的 probe=failed 条）；下一步：browse status 看引擎连接，goto 后复测，jsErrors() 看页面炸在哪",
+                    )
+                } else if challenge_hit && (c403 + c503 > 0 || text_len < 600) {
                     (
                         "challenged",
                         "人机挑战页：等几秒复测 detect()，或换附着态人工过验证；routeMock 不可绕真挑战",
@@ -2928,7 +2978,23 @@ impl JsHost {
                 Ok(json!({ "rules": self.routes.lock().await.len() }))
             }
             "routeClear" => {
+                // 在飞 requestPaused 收尸（评审 P-3）：CDP 的 Fetch.disable
+                // 不放行已暂停请求（Puppeteer/Playwright 关拦截时都显式
+                // continue 全部在飞），不收则页面挂到超时且无线索——先清
+                // 路由表（watcher 此后不代答）再放行缓冲里的暂停请求，最
+                // 后 disable
                 self.routes.lock().await.clear();
+                for ev in self.session.drain_events("Fetch.requestPaused").await {
+                    if let (Some(sid), Some(rid)) = (
+                        ev.get("sessionId").and_then(Value::as_str),
+                        ev.pointer("/params/requestId").and_then(Value::as_str),
+                    ) {
+                        let _ = self
+                            .session
+                            .call_on("Fetch.continueRequest", json!({ "requestId": rid }), sid)
+                            .await;
+                    }
+                }
                 self.sync_fetch_patterns().await?;
                 Ok(json!(true))
             }
@@ -3191,6 +3257,26 @@ impl JsHost {
                     .ok_or_else(|| anyhow!(
                         "session.call 缺 method 字符串；下一步：await session.call(\"Page.navigate\", {{url:\"https://example.com\"}})"
                     ))?;
+                // Fetch 域互抢守卫（评审 G-4）：Member 面（session.Fetch.enable）
+                // 已拦，本 call 面同拦——绕道直呼不再漏；disable 同洞（watcher
+                // 在跑时手动关域把路由静默弄死，fetch_by_us 滞留 true）
+                match method {
+                    "Fetch.enable"
+                        if self.fetch_by_us.load(std::sync::atomic::Ordering::Relaxed) =>
+                    {
+                        anyhow::bail!(
+                            "Fetch.enable 与 routeBlock/routeMock 拦截互抢（手动开域会覆盖路由 pattern 集，watcher 还会代答放行你的 requestPaused）；下一步：先 await routeClear() 再开手动 Fetch 域（或反之，同会话不混用）"
+                        );
+                    }
+                    "Fetch.disable"
+                        if self.fetch_by_us.load(std::sync::atomic::Ordering::Relaxed) =>
+                    {
+                        anyhow::bail!(
+                            "Fetch.disable 会把 routeBlock/routeMock 的在跑拦截静默弄死（fetch_by_us 滞留 true，路由在册不工作）；下一步：先 await routeClear() 清路由（它自己会 disable），别手动关域"
+                        );
+                    }
+                    _ => {}
+                }
                 let params = argv.get(1).cloned().unwrap_or(json!({}));
                 self.session.call(method, params).await
             }
@@ -3417,8 +3503,39 @@ fn spawn_route_watcher(
     fetch_by_us: Arc<std::sync::atomic::AtomicBool>,
 ) {
     tokio::spawn(async move {
+        // 连接纪元观察（评审 P-4）：重连（browse down && up / 崩溃重拉）
+        // 后新连接上从未重发 Fetch.enable，规则在册而拦截已死、fetch_by_us
+        // 滞留 true 无告警——换代即按当前路由表重发（表空则复位旗标），
+        // 与 dialog watcher 的纪元清账同呼吸
+        let mut seen_epoch = session.connection_epoch();
         loop {
             tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+            let epoch = session.connection_epoch();
+            if epoch != seen_epoch {
+                seen_epoch = epoch;
+                if fetch_by_us.load(Ordering::Relaxed) {
+                    let rules = routes.lock().await;
+                    if rules.is_empty() {
+                        fetch_by_us.store(false, Ordering::Relaxed);
+                    } else {
+                        let mut seen = std::collections::BTreeSet::new();
+                        let patterns: Vec<Value> = rules
+                            .iter()
+                            .map(|r| r.pattern.clone())
+                            .filter(|p| seen.insert(p.clone()))
+                            .map(|p| json!({ "urlPattern": p }))
+                            .collect();
+                        if let Err(e) = session
+                            .call("Fetch.enable", json!({ "patterns": patterns }))
+                            .await
+                        {
+                            eprintln!(
+                                "[browse] 重连后重开 Fetch 拦截失败（路由在册未生效，可重发 routeBlock 触发同步）：{e:#}"
+                            );
+                        }
+                    }
+                }
+            }
             if !fetch_by_us.load(Ordering::Relaxed) {
                 continue;
             }
@@ -3575,8 +3692,8 @@ fn connect_opts(v: Option<&Value>) -> ConnectOptions {
         port: v
             .get("port")
             .and_then(Value::as_u64)
-            .map(|n| n as u16)
-            .or_else(|| v.as_u64().map(|n| n as u16)),
+            .and_then(|n| u16::try_from(n).ok())
+            .or_else(|| v.as_u64().and_then(|n| u16::try_from(n).ok())),
         profile_dir: v
             .get("profileDir")
             .and_then(Value::as_str)
@@ -3595,6 +3712,21 @@ fn exception_text(r: &Value) -> Option<&str> {
         .pointer("/exception/description")
         .or_else(|| r.get("exceptionDetails")?.get("text"))
         .and_then(Value::as_str)
+}
+
+/// 是否「顶层裸 return」的语法错（评审 G-13 收紧）：异常 className 是
+/// SyntaxError 且描述含 Illegal return statement——运行期抛出的同文错误
+/// （异常 className 不是 SyntaxError）不算，防整段重跑重复副作用。
+fn is_illegal_return_syntax(r: &Value) -> bool {
+    let Some(d) = r.get("exceptionDetails") else {
+        return false;
+    };
+    let class_is_syntax = d
+        .pointer("/exception/className")
+        .and_then(Value::as_str)
+        .is_some_and(|c| c.ends_with("SyntaxError"))
+        || exception_text(r).is_some_and(|t| t.contains("SyntaxError"));
+    class_is_syntax && exception_text(r).is_some_and(|t| t.contains("Illegal return statement"))
 }
 
 /// 把 `Network.getResponseBody` 的返回解码成 `{body, base64Encoded}`：
@@ -3740,8 +3872,9 @@ fn str_arg<'a>(argv: &'a [Value], i: usize, who: &str) -> Result<&'a str> {
 
 /// 事件是否来自当前活动 tab（#37 评审 F1，口径同 wait_for_response 的
 /// #33 F2）：他 tab 的 console/异常/请求信号不泄漏；无活动 session 时只
-/// 认 browser 级（无 sessionId）。
-fn from_active_session(active: &Option<String>, e: &Value) -> bool {
+/// 认 browser 级（无 sessionId）。语义层 wait_idle 的 requestId 对账同用
+/// （评审 F-3 收口）。
+pub(crate) fn from_active_session(active: &Option<String>, e: &Value) -> bool {
     match active {
         Some(a) => e.get("sessionId").and_then(Value::as_str) == Some(a.as_str()),
         None => e.get("sessionId").is_none(),
@@ -4054,8 +4187,10 @@ pub fn render_result(v: &Value) -> String {
 pub fn base64_decode(s: &str) -> Result<Vec<u8>> {
     const TABLE: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
     let mut val = [0u8; 256];
+    let mut valid = [false; 256];
     for (i, b) in TABLE.iter().enumerate() {
         val[*b as usize] = i as u8;
+        valid[*b as usize] = true;
     }
     let cleaned: Vec<u8> = s
         .bytes()
@@ -4063,7 +4198,14 @@ pub fn base64_decode(s: &str) -> Result<Vec<u8>> {
         .collect();
     let mut out = Vec::with_capacity(cleaned.len() * 3 / 4);
     for chunk in cleaned.chunks(4) {
-        let b = |i: usize| -> Option<u8> { chunk.get(i).map(|c| val[*c as usize]) };
+        // 字母表外字符显式报错（评审 G-9）：值表把非法字符静默映射成
+        // 'A'（0），`# Errors` 的承诺不实——先按 valid 表过滤
+        let b = |i: usize| -> Option<u8> {
+            chunk
+                .get(i)
+                .filter(|c| valid[**c as usize])
+                .map(|c| val[*c as usize])
+        };
         let n = ((b(0).ok_or_else(|| anyhow!("base64 非法输入"))? as u32) << 18)
             | ((b(1).ok_or_else(|| anyhow!("base64 非法输入"))? as u32) << 12)
             | (b(2).unwrap_or(0) as u32) << 6

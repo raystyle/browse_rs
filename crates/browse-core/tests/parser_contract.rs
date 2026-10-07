@@ -221,3 +221,34 @@ fn template_dollar_matrix() {
         );
     }
 }
+
+/// 关键字词边界（评审 F-4）：`letter = 5` 是表达式语句形（方言不支持
+/// 赋值，如实报错），不得被 `let` 吃前缀静默改写成声明 `ter = 5`；
+/// 声明关键字的正常形态不受影响。
+#[test]
+fn keyword_prefix_not_eaten() {
+    for src in ["letter = 5", "variance = 3", "constable = 1"] {
+        assert!(
+            parse_script(src).is_err(),
+            "{src} 应解析期报错（不支持赋值），不该静默成声明"
+        );
+    }
+    // 正常声明与 return/await 不受词边界影响
+    assert!(matches!(
+        parse_script("let x = 1").unwrap().first(),
+        Some(Stmt::Let { name, .. }) if name == "x"
+    ));
+    assert!(matches!(
+        parse_script("letter").unwrap().first(),
+        Some(Stmt::Expr(_))
+    ));
+    assert!(parse_script("return letx").is_ok());
+}
+
+/// 截断输入在标识符位报错（评审 G-35）：`x.` 的 EOF 不再产出空名
+/// `Member{prop:""}`。
+#[test]
+fn truncated_member_props_error() {
+    assert!(parse_script("return x.").is_err());
+    assert!(parse_script("return x").is_ok());
+}

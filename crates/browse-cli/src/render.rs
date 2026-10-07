@@ -57,7 +57,10 @@ pub fn render_or_drop_sync(v: &Value) -> std::io::Result<String> {
         Value::Object(_) | Value::Array(_) => "json",
         _ => "txt",
     };
-    let path = dir.join(format!("value-{ts}.{ext}"));
+    // 同毫秒两次落盘不互覆（评审 G-20）：毫秒时间戳后挂进程内单调序
+    static DROP_SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let seq = DROP_SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let path = dir.join(format!("value-{ts}-{seq}.{ext}"));
     // 文件是工件不是展示（#25.4 评审 F2）：两类都落原值——字符串落原文，
     // 容器落未脱敏的 JSON 序列化（rendered 已过面具，不能当工件）
     let raw = match v {

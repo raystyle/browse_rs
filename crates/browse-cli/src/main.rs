@@ -204,7 +204,16 @@ async fn main() -> Result<()> {
             // #48：引擎附加旗标直通 spawn（可叠加），值以 -- 开头也原样收
             "--engine-arg" => engine_args.push(args.next("--engine-arg")),
             "--isolated" => isolated = true,
-            "--idle-timeout" => idle_timeout = Some(args.next("--idle-timeout")),
+            "--idle-timeout" => {
+                // 正整数毫秒门禁（评审 G-17）：坏值不再静默回落缺省，
+                // 「连错实例/回收不生效」难归因
+                let raw = args.next("--idle-timeout");
+                if raw.parse::<u64>().map_or(true, |v| v == 0) {
+                    eprintln!("browse: --idle-timeout 要正整数毫秒（当前 {raw}；用法错，退出 2）");
+                    std::process::exit(2);
+                }
+                idle_timeout = Some(raw);
+            }
             // 统一兜底硬界（REQ-027）：执行道（rune 与 --js/方言求值）的
             // 请求级覆写秒，>=1000 按毫秒误写换算并告警；与 wait 族等待
             // 窗正交（等待窗是命中型参数，本界是到期即退的硬指标）
@@ -218,6 +227,12 @@ async fn main() -> Result<()> {
                 let (ms, warn) = browse_core::js_host::secs_to_ms(raw);
                 if let Some(w) = warn {
                     eprintln!("browse: --timeout {w}");
+                }
+                // 0 秒即「即刻超时」病态值（评审 G-17）：显式拒，不静默成
+                // 每次调用必超时
+                if ms == 0 {
+                    eprintln!("browse: --timeout 要正秒数（0 即刻超时；用法错，退出 2）");
+                    std::process::exit(2);
                 }
                 cli_timeout_s = Some(ms / 1000);
             }
@@ -259,7 +274,18 @@ async fn main() -> Result<()> {
                     "update" => mode = Mode::ChromeUpdate,
                     "install" => {
                         let version = args.next("chrome install <版本>");
-                        let from_dir = args.next_opt().filter(|s| !s.starts_with('-'));
+                        // 可选位不吃旗标（评审 G-15）：旧 filter 静默吞掉
+                        // 尾置全局旗标（--json 被消费后丢弃），改显式报位
+                        let from_dir = match args.next_opt() {
+                            Some(s) if !s.starts_with('-') => Some(s),
+                            Some(flag) => {
+                                eprintln!(
+                                    "browse: chrome install 的部署目录位收到旗标 {flag}（全局旗标要前置；用法错，退出 2）"
+                                );
+                                std::process::exit(2);
+                            }
+                            None => None,
+                        };
                         mode = Mode::ChromeInstall { version, from_dir };
                     }
                     other => {
@@ -293,9 +319,16 @@ async fn main() -> Result<()> {
                             if let Some(w) = warn {
                                 eprintln!("browse: --timeout {w}");
                             }
+                            // 0 秒病态值显式拒（评审 G-17，与全局 --timeout 同律）
+                            if ms == 0 {
+                                eprintln!(
+                                    "browse: --timeout 要正秒数（0 即刻超时；用法错，退出 2）"
+                                );
+                                std::process::exit(2);
+                            }
                             timeout_s = ms / 1000;
                         }
-                        other2 => bail_arg(other2),
+                        other2 => bail_flag_in_subcommand(other2),
                     }
                 }
                 mode = Mode::Fetch {
@@ -345,7 +378,7 @@ async fn main() -> Result<()> {
                                 Some(f) if f == "--git-sha" => {
                                     git_sha = Some(args.next("--git-sha"))
                                 }
-                                Some(f) => bail_arg(&f),
+                                Some(f) => bail_flag_in_subcommand(&f),
                                 None => break,
                             }
                         }
@@ -399,7 +432,7 @@ async fn main() -> Result<()> {
                             match args.next_opt() {
                                 Some(f) if f == "--type" => ev_type = args.next("--type"),
                                 Some(f) if f == "--note" => note = Some(args.next("--note")),
-                                Some(f) => bail_arg(&f),
+                                Some(f) => bail_flag_in_subcommand(&f),
                                 None => break,
                             }
                         }
@@ -412,7 +445,7 @@ async fn main() -> Result<()> {
                             match args.next_opt() {
                                 Some(f) if f == "--current" => current = true,
                                 Some(f) if f == "--env" => env_f = Some(args.next("--env")),
-                                Some(f) => bail_arg(&f),
+                                Some(f) => bail_flag_in_subcommand(&f),
                                 None => break,
                             }
                         }
@@ -433,7 +466,7 @@ async fn main() -> Result<()> {
                         while let Some(f) = args.next_opt() {
                             match f.as_str() {
                                 "--force" => force = true,
-                                other2 => bail_arg(other2),
+                                other2 => bail_flag_in_subcommand(other2),
                             }
                         }
                         mode = Mode::LedgerKeygen { force };
@@ -584,7 +617,7 @@ async fn main() -> Result<()> {
                                     acceptance = args.next("--acceptance")
                                 }
                                 Some(f) if f == "--dry-run" => dry = true,
-                                Some(f) => bail_arg(&f),
+                                Some(f) => bail_flag_in_subcommand(&f),
                                 None => break,
                             }
                         }
@@ -624,7 +657,7 @@ async fn main() -> Result<()> {
                                         std::process::exit(2);
                                     })
                                 }
-                                other2 => bail_arg(other2),
+                                other2 => bail_flag_in_subcommand(other2),
                             }
                         }
                         mode = Mode::IssueList { limit, before };
@@ -642,7 +675,18 @@ async fn main() -> Result<()> {
                 eprintln!("browse: 未知参数 {other}（用法错，退出 2）");
                 std::process::exit(2);
             }
-            snippet => snippets.push(snippet.to_string()),
+            snippet => {
+                // 尾随裸词守卫（评审 G-14）：非求值形态（up/status/chrome
+                // 等子命令已定）下的裸词是误用，静默丢进 snippets 再无声
+                // 丢弃＝零报错；子命令自己的实参在各自臂内收，不走本臂
+                if !mode_is_eval(&mode) {
+                    eprintln!(
+                        "browse: {snippet} 不是当前子命令的实参（尾随裸词不收；用法错，退出 2）"
+                    );
+                    std::process::exit(2);
+                }
+                snippets.push(snippet.to_string());
+            }
         }
     }
 
@@ -938,8 +982,22 @@ async fn main() -> Result<()> {
             dry,
         } => {
             let mut body = body;
+            // 管道读腿有界（评审 F-9，复用 #69 的 read_stdin_bounded）：裸
+            // read_to_string 在「开着不关」的 agent 壳管道形态无上界挂死，
+            // 且把 --dry-run 的零网络快验也挡在读腿后面
             if body.is_empty() && !std::io::stdin().is_terminal() {
-                tokio::io::AsyncReadExt::read_to_string(&mut tokio::io::stdin(), &mut body).await?;
+                match read_stdin_bounded() {
+                    StdinRead::Data(s) => body = s,
+                    StdinRead::Failed(e) => {
+                        eprintln!("browse: issue new 读管道失败：{e}（退出 2）");
+                        std::process::exit(2);
+                    }
+                    StdinRead::Silent => {
+                        eprintln!(
+                            "browse: 提示：stdin 3 秒内未完成读入（无 EOF；agent 壳常开管道形），按空 body 继续；要传正文用 --body 或完整写入并关闭管道"
+                        );
+                    }
+                }
             }
             // --dry-run（#57 G6）：本地同规校验加载荷与签名基预览，零网络
             // 零签名——账本只增不可撤，误发测试单比旧面更贵

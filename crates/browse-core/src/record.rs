@@ -70,18 +70,21 @@ pub async fn start(s: Arc<Session>, opts: &Value) -> Result<Recorder> {
             params[k] = v.clone();
         }
     }
-    s.call("Page.startScreencast", params).await?;
-    // 钉住录制 session（#33）：换靶不 detach，帧流跨 tab 切换存活
-    let recorded_sid = s.get_active_session().await;
-    if let Some(sid) = &recorded_sid {
-        s.pin_session(sid).await;
-    }
+    // 落盘目录先建（评审 G-31）：startScreencast 成功后 create_dir_all 才
+    // 失败的话录制开着、pin 未解、无人收场——先建目录再开录制，失败面
+    // 留在「什么都没开」的干净态
     let ts = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_millis())
         .unwrap_or(0);
     let dir = crate::paths::state_dir().join(format!("record-{ts}"));
     tokio::fs::create_dir_all(&dir).await?;
+    s.call("Page.startScreencast", params).await?;
+    // 钉住录制 session（#33）：换靶不 detach，帧流跨 tab 切换存活
+    let recorded_sid = s.get_active_session().await;
+    if let Some(sid) = &recorded_sid {
+        s.pin_session(sid).await;
+    }
     let frames = Arc::new(AtomicU64::new(0));
     let bytes = Arc::new(AtomicU64::new(0));
     let stop = Arc::new(AtomicBool::new(false));
@@ -170,15 +173,21 @@ pub async fn stop(s: &Session, rec: Recorder) -> Result<Value> {
     }))
 }
 
-/// 收一拍：drain 帧事件 -> 写盘 -> 按帧自带 sessionId ack。
+/// 收一拍：drain 帧事件 -> 写盘 -> 按帧自带帧号 ack。
+///
+/// 两档 sessionId 不同物（评审 F-2）：事件**顶层** `sessionId` 是 CDP 路由
+/// 串（打哪路 session 用它），`params.sessionId` 才是帧号（integer，
+/// `screencastFrameAck` 的实参取它）；拿串当帧号回传被协议校验拒，ack
+/// 永不成功，在飞帧计数不归零，Chrome 停发帧。
 ///
 /// 单帧失败只丢那一帧（计数不增），不倒整场录制。
 async fn pump_once(s: &Session, c: &mut Counters) {
     for ev in s.drain_events("Page.screencastFrame").await {
-        let from = ev
+        let route = ev
             .get("sessionId")
             .and_then(Value::as_str)
             .map(str::to_string);
+        let frame_sid = ev.pointer("/params/sessionId").cloned();
         let data = ev
             .pointer("/params/data")
             .and_then(Value::as_str)
@@ -194,9 +203,11 @@ async fn pump_once(s: &Session, c: &mut Counters) {
                 c.bytes.fetch_add(bytes.len() as u64, Ordering::Relaxed);
             }
         }
-        if let Some(sid) = from {
+        if let Some(r) = route.as_deref()
+            && let Some(frame) = frame_sid
+        {
             let _ = s
-                .call_on("Page.screencastFrameAck", json!({ "sessionId": sid }), &sid)
+                .call_on("Page.screencastFrameAck", json!({ "sessionId": frame }), r)
                 .await;
         }
     }

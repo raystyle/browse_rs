@@ -366,6 +366,23 @@ impl<'a> Parser<'a> {
         }
     }
 
+    /// 关键字带词边界吃（评审 F-4）：前缀后随标识符字符（与
+    /// [`is_ident_continue`] 同源）不算命中——`letter = 5` 不被 `let`
+    /// 吃前缀成声明 `ter = 5`（零报错静默改写变量名），落回表达式路径
+    /// 如实报「不支持赋值」。return/await 前缀形（`returns()`）同收。
+    fn eat_kw(&mut self, s: &str) -> bool {
+        self.skip_ws();
+        let rest = &self.src[self.pos..];
+        if let Some(after) = rest.strip_prefix(s)
+            && !after.chars().next().is_some_and(is_ident_continue)
+        {
+            self.pos += s.len();
+            true
+        } else {
+            false
+        }
+    }
+
     fn parse_script(&mut self) -> Result<Vec<Stmt>> {
         let mut out = Vec::new();
         loop {
@@ -389,14 +406,14 @@ impl<'a> Parser<'a> {
         {
             bail!("{UNSUPPORTED_HINT}（发现 {kw}，{}）", self.here());
         }
-        if self.eat("return") {
+        if self.eat_kw("return") {
             self.skip_ws();
             if self.peek() == Some(';') || self.pos >= self.src.len() {
                 return Ok(Stmt::Return(Expr::Lit(Value::Null)));
             }
             return Ok(Stmt::Return(self.parse_expr()?));
         }
-        if self.eat("const") || self.eat("let") || self.eat("var") {
+        if self.eat_kw("const") || self.eat_kw("let") || self.eat_kw("var") {
             let name = self.parse_ident()?;
             if !self.eat("=") {
                 bail!(
@@ -430,7 +447,7 @@ impl<'a> Parser<'a> {
 
     fn parse_expr(&mut self) -> Result<Expr> {
         self.skip_ws();
-        if self.eat("await") {
+        if self.eat_kw("await") {
             return Ok(Expr::Await(Box::new(self.parse_expr()?)));
         }
         self.parse_member()
@@ -596,15 +613,21 @@ impl<'a> Parser<'a> {
     fn parse_ident(&mut self) -> Result<String> {
         self.skip_ws();
         let start = self.pos;
-        if let Some(c) = self.peek() {
-            if !is_ident_start(c) {
-                bail!(
-                    "期望标识符（{}）；下一步：成员访问写 .prop，属性名限字母数字下划线",
-                    self.here()
-                );
-            }
-            self.pos += c.len_utf8();
+        // 截断输入在解析期报错（评审 G-35）：`x.` 的 EOF 不再静默产出
+        // 空名 `Member{prop:""}`（求值期得 null，错因失焦）
+        let Some(c) = self.peek() else {
+            bail!(
+                "期望标识符（{}）；下一步：成员访问写 .prop，属性名限字母数字下划线",
+                self.here()
+            );
+        };
+        if !is_ident_start(c) {
+            bail!(
+                "期望标识符（{}）；下一步：成员访问写 .prop，属性名限字母数字下划线",
+                self.here()
+            );
         }
+        self.pos += c.len_utf8();
         while let Some(c) = self.peek() {
             if is_ident_continue(c) {
                 self.pos += c.len_utf8();

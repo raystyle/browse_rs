@@ -374,20 +374,27 @@ async fn run_eval_code(host: &JsHost, code: &str, js: bool) -> anyhow::Result<Va
 }
 
 /// 三支柱同源宿主函数束（#68 修复批）：闭包桥 js_host `global_json`，
-/// rune 面与方言面同一实现。
-fn host_fns(host: &std::sync::Arc<JsHost>) -> browse_rune::HostFns {
+/// rune 面与方言面同一实现。`bridge_deadline` 是同源腿的单调用上界，
+/// 取请求级兜底硬界（评审 kimi G-6：恒 60 秒把
+/// `dialect("fetch", [url, {timeout: 300}])` 这类长预算方言腿在 60 秒
+/// 截死；缺省仍 60 秒，`--timeout` 覆写时同随——rune 整体界封顶总预算）。
+fn host_fns(host: &std::sync::Arc<JsHost>, bridge_deadline: Duration) -> browse_rune::HostFns {
     let wrap = |name: &'static str| -> browse_rune::module::HostFn {
         let h = std::sync::Arc::clone(host);
+        let bound = bridge_deadline;
         std::sync::Arc::new(move |args: Value| {
             let h = std::sync::Arc::clone(&h);
             Box::pin(async move {
                 let argv: Vec<Value> = args.as_array().cloned().unwrap_or_default();
-                // #68:js_host 腿自身无逐调用 deadline,闭包层整体 60s 上界
-                // (同源三支柱的最坏复合调用面也远低于此)
-                tokio::time::timeout(Duration::from_secs(60), h.global_json(name, &argv))
+                // #68:js_host 腿自身无逐调用 deadline,闭包层整体上界
+                // (同源三支柱的最坏复合调用面也远低于缺省 60s)
+                tokio::time::timeout(bound, h.global_json(name, &argv))
                     .await
                     .map_err(|_| {
-                        format!("{name} 同源调用超时（60 秒上界）；下一步:browse status 看引擎态")
+                        format!(
+                            "{name} 同源调用超时（{} 秒上界）；下一步:browse status 看引擎态",
+                            bound.as_secs()
+                        )
                     })?
                     .map_err(|e| format!("{e:#}"))
             })
@@ -401,10 +408,11 @@ fn host_fns(host: &std::sync::Arc<JsHost>) -> browse_rune::HostFns {
         requests: Some(wrap("requests")),
         request_detail: Some(wrap("requestDetail")),
         // 方言全量桥通用腿（issue #75）：载荷 {name, args} 解包转
-        // global_json 按名派发——方言面全部全局函数一条通道；60 秒界
-        // 与三支柱同律
+        // global_json 按名派发——方言面全部全局函数一条通道；上界
+        // 与三支柱同律（随请求级界）
         dialect: Some({
             let h = std::sync::Arc::clone(host);
+            let bound = bridge_deadline;
             std::sync::Arc::new(move |v: Value| {
                 let h = std::sync::Arc::clone(&h);
                 Box::pin(async move {
@@ -421,11 +429,13 @@ fn host_fns(host: &std::sync::Arc<JsHost>) -> browse_rune::HostFns {
                         .and_then(Value::as_array)
                         .cloned()
                         .unwrap_or_default();
-                    tokio::time::timeout(Duration::from_secs(60), h.global_json(&name, &argv))
+                    tokio::time::timeout(bound, h.global_json(&name, &argv))
                         .await
                         .map_err(|_| {
-                            "dialect 同源调用超时（60 秒上界）；下一步：browse status 看引擎态"
-                                .to_string()
+                            format!(
+                                "dialect 同源调用超时（{} 秒上界）；下一步：browse status 看引擎态",
+                                bound.as_secs()
+                            )
                         })?
                         .map_err(|e| format!("{e:#}"))
                 })
@@ -435,6 +445,21 @@ fn host_fns(host: &std::sync::Arc<JsHost>) -> browse_rune::HostFns {
             })
         }),
     }
+}
+
+/// 丢弃在飞执行体后的 pending 僵尸回收（评审 G-3）：超时/停止丢弃
+/// future 时，内层调用的清登记路径被一并丢弃，在飞 CDP 调用登记成僵尸
+/// ——32 秒后扫 30 秒以上老项（与 skills.rs 的 probe 超时臂同款；正常
+/// 调用早已应答出表，reaper 只扫真僵尸）。
+fn spawn_pending_reaper(session: &std::sync::Arc<cdp::Session>) {
+    let ses = std::sync::Arc::clone(session);
+    tokio::spawn(async move {
+        tokio::time::sleep(Duration::from_secs(32)).await;
+        let n = ses.reap_pending_older_than(Duration::from_secs(30)).await;
+        if n > 0 {
+            eprintln!("[browse] 执行超时/停止回收 pending 僵尸 {n} 条");
+        }
+    });
 }
 
 /// POST /rune（账本 #67）：Rune 编排脚本执行。与 /eval 同槽串行、同
@@ -477,7 +502,8 @@ async fn rune_handler(
     let opts = browse_rune::RunOpts {
         snippets_root: root,
         stdin: req.stdin.clone().unwrap_or_default(),
-        host_fns: host_fns(&d.host),
+        // 桥上界随请求级兜底硬界（评审 kimi G-6）
+        host_fns: host_fns(&d.host, rune_timeout_for(req.timeout_s)),
         // v0.26.1 超时 CTA：探针克隆自持，超时丢弃执行 future 后读在飞面
         op_probe: browse_rune::OpProbe::default(),
         // 模板定界（0.30.3 缺省 ERB）：CLI 旗标/件指令收口后随请求递入
@@ -494,6 +520,16 @@ async fn rune_handler(
     let (cancel_tx, mut cancel_rx) = tokio::sync::watch::channel(false);
     *d.rune_cancel.lock().unwrap_or_else(|e| e.into_inner()) = Some(cancel_tx);
     d.rune_running.store(true, Ordering::Relaxed);
+    // 恐慌滞留守卫（评审 G-41）：store(true) 与 store(false) 之间处理器
+    // panic 时旗标永滞 true（stop 道拒绝服务）；Drop 守卫在 unwind 与
+    // 正常返回两道都复位
+    struct RunningGuard(std::sync::Arc<AtomicBool>);
+    impl Drop for RunningGuard {
+        fn drop(&mut self) {
+            self.0.store(false, Ordering::Relaxed);
+        }
+    }
+    let _running_guard = RunningGuard(std::sync::Arc::clone(&d.rune_running));
     let watch_session = d.host.session();
     enum Outcome {
         Done(anyhow::Result<Value>),
@@ -531,6 +567,8 @@ async fn rune_handler(
                     "boundS": bound.as_secs(),
                 }})
             );
+            // 丢弃执行体后 pending 登记成僵尸（评审 G-3，与 probe 臂同款）
+            spawn_pending_reaper(&watch_session);
             return rune_timeout_response(op, bound);
         }
         Outcome::Stopped | Outcome::EngineLost => {
@@ -553,6 +591,8 @@ async fn rune_handler(
                     "cause": cause,
                 }})
             );
+            // 停止道同丢弃执行体（评审 G-3）
+            spawn_pending_reaper(&watch_session);
             return rune_stopped_response(op, elapsed, cause);
         }
     };
@@ -620,36 +660,35 @@ async fn eval_handler(
     let value = match outcome {
         Ok(Ok(v)) => v,
         Ok(Err(e)) => {
-            // 撞上「还没连」的片段：兜底拉引擎重试一次；重试腿同受兜底
-            // 硬界约束（全量审 M3：按剩余时间包一层，不再脱界裸跑占槽）
+            // 撞上「还没连」的片段：兜底拉引擎重试一次；重试腿整段
+            // （ensure 冷拉 + 重求值）同受兜底硬界约束（全量审 M3 按
+            // 剩余时间包一层；评审 G-1：ensure 冷 spawn 最坏数十秒
+            // ——等口 15s+connect+握手——在界外裸跑同样脱界占槽）
             if format!("{e:#}").contains("Not connected") {
                 let remaining = bound.saturating_sub(eval_started.elapsed());
                 let spec = d.spec.lock().unwrap_or_else(|e| e.into_inner()).clone();
-                match d.engine.ensure(&spec).await {
-                    Ok(_) => {
-                        match tokio::time::timeout(
-                            remaining,
-                            run_eval_code(&d.host, &req.code, req.js),
-                        )
-                        .await
-                        {
-                            Ok(Ok(v)) => v,
-                            Ok(Err(e2)) => return err_response(e2),
-                            Err(_) => {
-                                let op = d.host.current_op_snapshot();
-                                eprintln!(
-                                    "{}",
-                                    json!({ "evalTimeout": {
-                                        "op": op,
-                                        "elapsedMs": bound.as_millis() as u64,
-                                        "boundS": bound.as_secs(),
-                                    }})
-                                );
-                                return eval_timeout_response(op, bound);
-                            }
-                        }
+                match tokio::time::timeout(remaining, async {
+                    d.engine.ensure(&spec).await?;
+                    run_eval_code(&d.host, &req.code, req.js).await
+                })
+                .await
+                {
+                    Ok(Ok(v)) => v,
+                    Ok(Err(e2)) => return err_response(e2),
+                    Err(_) => {
+                        let op = d.host.current_op_snapshot();
+                        eprintln!(
+                            "{}",
+                            json!({ "evalTimeout": {
+                                "op": op,
+                                "elapsedMs": bound.as_millis() as u64,
+                                "boundS": bound.as_secs(),
+                            }})
+                        );
+                        // 丢弃执行体后 pending 登记成僵尸（评审 G-3）
+                        spawn_pending_reaper(&d.host.session());
+                        return eval_timeout_response(op, bound);
                     }
-                    Err(e2) => return err_response(e2),
                 }
             } else {
                 return err_response(e);
@@ -668,6 +707,8 @@ async fn eval_handler(
                     "boundS": bound.as_secs(),
                 }})
             );
+            // 丢弃执行体后 pending 登记成僵尸（评审 G-3）
+            spawn_pending_reaper(&d.host.session());
             return eval_timeout_response(op, bound);
         }
     };

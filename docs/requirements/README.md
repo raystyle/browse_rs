@@ -34,6 +34,7 @@
 | REQ-028 | implemented | must | fetch 渲染 DOM HTML 与 mdka markdown，方言全局化（rn 经桥直达） | fetch_core 单测加 e2e 双件加 CLI 实弹；mdka 3.2 |
 | REQ-029 | implemented | must | 页面特征判据 rn 脚本化（workspace scripts 隐式加载）与 workspace 收窄两层 | 加载器单测加 e2e 特征页过 rn 路径；workspace 81cbf14 |
 | REQ-030 | implemented | must | 封版 v0.30.8（fetch 渲染 DOM 与判据 rn 脚本化两批，总台令 patch 从令留痕） | 判据偏差同 REQ-024 先例形；release.ps1 发布道 |
+| REQ-031 | implemented | must | 全量 code review 修复批（grok+kimi 双工位评审 F14/P6/G47，总台复核零误报后修） | 双工位交叉复核轮 F 清零双 CONFIRM 闭环；回归锁五件（userinfo/词边界/截断标识符/null 占位/版本尾数序） |
 
 ## Roadmap（issue 台账批次规划）
 

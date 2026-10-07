@@ -129,9 +129,14 @@ async fn fetch_engine_leg(
     client: &reqwest::Client,
 ) -> Result<Value> {
     let extract = fetch_core::extract_js(shape.need_html);
+    // 引擎腿 goto 预算随 --timeout 走（评审 G5/kimi G-5）：写死 20 秒让
+    // `--timeout 300` 的导航腿先撞 20 秒墙、`--timeout 5` 又等满 20 秒；
+    // 页内抽取回整 evaluate 回执（评审 grok P1）：exceptionDetails 在
+    // Rust 侧显式上抛，不再吞成「成功空回执」
     let code = format!(
-        "await goto({url}, {{timeout: 20}}); return (await session.Runtime.evaluate({{expression: {expr}, returnByValue: true}})).result.value",
+        "await goto({url}, {{timeout: {to}}}); return await session.Runtime.evaluate({{expression: {expr}, returnByValue: true}})",
         url = serde_json::to_string(url)?,
+        to = timeout_s,
         expr = serde_json::to_string(extract)?,
     );
     // G1：复用 CLI 求值面的 daemon 发现（含 BROWSE_NAME 派生端口），
@@ -141,7 +146,7 @@ async fn fetch_engine_leg(
     let bind = crate::client::daemon_bind();
     let resp = client
         .post(format!("http://{bind}/eval"))
-        .json(&serde_json::json!({ "code": code }))
+        .json(&serde_json::json!({ "code": code, "timeout_s": timeout_s }))
         .timeout(std::time::Duration::from_secs(timeout_s + 60))
         .send()
         .await
@@ -164,8 +169,22 @@ async fn fetch_engine_leg(
             v.get("error").and_then(Value::as_str).unwrap_or("?")
         );
     }
-    let inner = v
+    let ev = v
         .get("value")
+        .and_then(Value::as_str)
+        .and_then(|s| serde_json::from_str::<Value>(s).ok())
+        .unwrap_or(json!({}));
+    if let Some(exc) = ev.pointer("/exceptionDetails/text").and_then(Value::as_str) {
+        let detail = ev
+            .pointer("/exceptionDetails/exception/description")
+            .and_then(Value::as_str)
+            .unwrap_or(exc);
+        bail!(
+            "引擎腿页内抽取失败：{detail}；下一步：--html 看渲染 DOM、加大 --timeout，或 goto 后手动 evaluate 定位"
+        );
+    }
+    let inner = ev
+        .pointer("/result/value")
         .and_then(Value::as_str)
         .and_then(|s| serde_json::from_str::<Value>(s).ok())
         .unwrap_or(json!({}));
@@ -203,10 +222,11 @@ fn shape_engine_receipt(
         r["httpStatus"] = json!(st);
     }
     let html_src = inner.get("html").and_then(Value::as_str);
+    // 求了没取到给 null 占位（评审 G-8）：键缺席只表「没求」
     fetch_core::attach_optional_fields(
         &mut r,
-        if shape.include_html { html_src } else { None },
-        if shape.markdown { html_src } else { None },
+        shape.include_html.then_some(html_src),
+        shape.markdown.then_some(html_src),
     );
     skills(url, &mut r);
     r

@@ -70,15 +70,34 @@ pub async fn clone_domains(dst: &Session, domains: &[String]) -> Result<Value> {
     for c in &picked {
         let mut p = json!({});
         for k in [
-            "name", "value", "domain", "path", "secure", "httpOnly", "sameSite", "expires",
+            "name", "value", "domain", "path", "secure", "httpOnly", "sameSite",
         ] {
             if let Some(v) = c.get(k) {
                 p[k] = v.clone();
             }
         }
-        // 失败可见（评审 G1）：cloned 小于 matched 时给 failed 计数与首错
+        // 会话 cookie 的 expires 双端口径不同（评审 F-5）：getCookies 回 -1，
+        // setCookie **省略**才是会话态；-1 逐字透传成 1969 年过期时刻，
+        // Chrome 拒设或接受为已过期（克隆即失效）。正数 expires 才透传。
+        if c.get("expires")
+            .and_then(Value::as_f64)
+            .is_some_and(|e| e > 0.0)
+        {
+            p["expires"] = c["expires"].clone();
+        }
+        // 失败可见（评审 G1 + F-5）：协议调用 Ok 不等于真设上——setCookie
+        // 回 `success:false`（域/secure 约束拒设）也计 failed，计数不虚报
         match dst.call("Network.setCookie", p).await {
-            Ok(_) => ok += 1,
+            Ok(resp) if resp.get("success") == Some(&json!(true)) => ok += 1,
+            Ok(resp) => {
+                failed += 1;
+                if first_err.is_none() {
+                    first_err = Some(format!(
+                        "{}: 浏览器拒设（success 非 true，检查 domain/secure/httpOnly 约束）：{resp}",
+                        c.get("name").and_then(Value::as_str).unwrap_or("?")
+                    ));
+                }
+            }
             Err(e) => {
                 failed += 1;
                 if first_err.is_none() {

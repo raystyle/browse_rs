@@ -114,8 +114,9 @@ fn http_get(
     Ok(r)
 }
 
-/// 点分数版本比较（`0.7.0`、`0.7.0-r2` 形；数值段逐位比，后缀按字典序
-/// 兜底）。返回 candidate 是否比 current 新。
+/// 点分数版本比较（`0.7.0`、`0.7.0-r2` 形；数值段逐位比，后缀同前缀
+/// 时按尾数数值序——字典序会让 `r10` 输给 `r2`（评审 G-40），两位数修订
+/// 即中——前缀不同退字典序兜底）。返回 candidate 是否比 current 新。
 fn version_newer(candidate: &str, current: &str) -> bool {
     let parse = |v: &str| -> (Vec<u64>, String) {
         let (nums, suf) = match v.split_once('-') {
@@ -129,12 +130,27 @@ fn version_newer(candidate: &str, current: &str) -> bool {
             suf,
         )
     };
+    /// 后缀切前缀/尾数（`r10` -> ("r", 10)；闭包形借期推不直，嵌套 fn 收口）
+    fn split_suf(s: &str) -> (&str, Option<u64>) {
+        let idx = s.find(|c: char| c.is_ascii_digit()).unwrap_or(s.len());
+        let (pre, rest) = s.split_at(idx);
+        (pre, rest.parse().ok())
+    }
     let (a, asuf) = parse(candidate);
     let (b, bsuf) = parse(current);
     if a != b {
         return a > b;
     }
-    asuf > bsuf
+    let (ap, an) = split_suf(&asuf);
+    let (bp, bn) = split_suf(&bsuf);
+    if ap == bp {
+        match (an, bn) {
+            (Some(x), Some(y)) => x > y,
+            _ => asuf > bsuf,
+        }
+    } else {
+        asuf > bsuf
+    }
 }
 
 /// 自更新 HTTP 客户端（镜像域恒 HTTP/1.1，总台令 2026-09-23）：镜像前置链
@@ -532,6 +548,9 @@ pub fn extract_binary(archive: &[u8], staging: &Path) -> Result<PathBuf> {
     };
     let dst = staging.join("new-browse");
     let mut hits: Vec<Vec<u8>> = Vec::new();
+    // 解压侧大小上界（评审 G-40，与下载侧 64MB 预分配对称）：边车锚挡
+    // 传输损坏，挡不了「sha 边车与资产同源的恶意大条目」，内存读入无界
+    const EXTRACT_CAP: u64 = 64 * 1024 * 1024;
     if cfg!(target_os = "windows") {
         let cursor = std::io::Cursor::new(archive);
         let mut z =
@@ -546,6 +565,14 @@ pub fn extract_binary(archive: &[u8], staging: &Path) -> Result<PathBuf> {
                 .and_then(|n| n.to_str())
                 .is_some_and(|n| n == bin_name);
             if is_bin && !f.is_dir() && f.size() > 0 {
+                if f.size() > EXTRACT_CAP {
+                    bail!(
+                        "zip 条目 {} 超 {} 上界（{:.0}MB），拒解",
+                        name,
+                        EXTRACT_CAP,
+                        f.size() as f64 / 1048576.0
+                    );
+                }
                 let mut buf = Vec::new();
                 std::io::Read::read_to_end(&mut f, &mut buf)?;
                 hits.push(buf);
@@ -566,6 +593,14 @@ pub fn extract_binary(archive: &[u8], staging: &Path) -> Result<PathBuf> {
             let is_bin = path.file_name().and_then(|n| n.to_str()) == Some(bin_name);
             let is_regular = e.header().entry_type().is_file();
             if is_bin && is_regular {
+                let declared = e.header().size().unwrap_or(0);
+                if declared > EXTRACT_CAP {
+                    bail!(
+                        "tar 条目 {:?} 超 {} 上界（{declared}B），拒解",
+                        path,
+                        EXTRACT_CAP
+                    );
+                }
                 let mut buf = Vec::new();
                 std::io::Read::read_to_end(&mut e, &mut buf)?;
                 if !buf.is_empty() {
@@ -788,12 +823,20 @@ fn acquire_lock(exe: &Path) -> Result<LockGuard> {
             }
         }
         Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
-            // 陈旧判据：锁内 pid 已死即收割重取一次
+            // 陈旧判据：锁内 pid 已死即收割重取一次。收割道同首取道的
+            // 回读校验（评审 P-5）：两进程同抢一把死锁时，remove 与 take
+            // 之间对方可能刚建新锁——B 的 remove 会摘掉 A 的新锁、take
+            // 双持；重取成功后回读 pid 是自己才算拿到
             let stale = std::fs::read_to_string(&lock)
                 .ok()
                 .and_then(|t| t.trim().parse::<u32>().ok())
                 .is_some_and(|pid| !pid_alive(pid));
-            if stale && std::fs::remove_file(&lock).is_ok() && take().is_ok() {
+            if stale
+                && std::fs::remove_file(&lock).is_ok()
+                && take().is_ok()
+                && std::fs::read_to_string(&lock).unwrap_or_default().trim()
+                    == std::process::id().to_string()
+            {
                 return Ok(LockGuard { path: lock });
             }
             bail!(
@@ -1400,6 +1443,17 @@ mod tests {
     }
 
     /// 文案锁（评审 G 尾项）：心跳与 stall 行的措辞由纯函数锁形。
+    /// 后缀尾数数值序（评审 G-40 回归锁）：`r10` 新于 `r2`（字典序曾判反）。
+    #[test]
+    fn version_suffix_numeric_order() {
+        assert!(version_newer("0.30.8-r10", "0.30.8-r2"));
+        assert!(!version_newer("0.30.8-r2", "0.30.8-r10"));
+        assert!(version_newer("0.30.9", "0.30.8-r10"));
+        assert!(version_newer("0.31.0", "0.30.8"));
+        // 前缀不同的后缀仍按字典序兜底
+        assert!(version_newer("0.30.8-rc2", "0.30.8-beta9"));
+    }
+
     #[test]
     fn progress_line_wording_locked() {
         assert_eq!(

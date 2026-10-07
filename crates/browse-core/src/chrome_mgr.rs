@@ -174,12 +174,23 @@ pub fn manifest_path(root: &Path) -> PathBuf {
     root.join("manifest.json")
 }
 
-/// 读登记册；根目录不存在或 manifest 缺失视为空册。
+/// 读登记册；根目录不存在或 manifest 缺失视为空册（首装形）。损坏
+/// （半写/手改坏 JSON）一次性留痕后按空册继续（评审 G-26：静默蒸发 pin
+/// 与已装清单无感，doctor 会再报，这里先给 daemon 日志一线索）。
 pub fn read_manifest(root: &Path) -> ChromeManifest {
-    std::fs::read_to_string(manifest_path(root))
-        .ok()
-        .and_then(|t| serde_json::from_str(&t).ok())
-        .unwrap_or_default()
+    match std::fs::read_to_string(manifest_path(root)) {
+        Err(_) => ChromeManifest::default(),
+        Ok(t) => match serde_json::from_str(&t) {
+            Ok(m) => m,
+            Err(e) => {
+                static WARNED: std::sync::OnceLock<()> = std::sync::OnceLock::new();
+                if WARNED.set(()).is_ok() {
+                    eprintln!("[browse] chromium manifest 损坏（按空册继续，doctor 可复核）：{e}");
+                }
+                ChromeManifest::default()
+            }
+        },
+    }
 }
 
 /// 写登记册（先建根目录）。
@@ -360,6 +371,9 @@ pub fn install_from_mirror_with(
     let base = format!("{mirror}/{version}/{asset}");
     let client = reqwest::blocking::Client::builder()
         .connect_timeout(std::time::Duration::from_secs(30))
+        // 总体超时（评审 G-25）：零字节断流不无限挂（连接活着但不出数据
+        // 的死流 connect_timeout 抓不到）；chrome 资产百 MB 级给宽界
+        .timeout(std::time::Duration::from_secs(600))
         .build()
         .map_err(|e| anyhow::anyhow!("构建 http client 失败：{e}"))?;
 
@@ -607,6 +621,8 @@ pub fn latest_version() -> Result<String> {
     let url = format!("{mirror}/latest");
     let client = reqwest::blocking::Client::builder()
         .connect_timeout(std::time::Duration::from_secs(30))
+        // 总体超时（评审 G-25，同道；latest 探针是小请求给常规界）
+        .timeout(std::time::Duration::from_secs(60))
         .build()
         .map_err(|e| anyhow::anyhow!("构建 http client 失败：{e}"))?;
     let body = client

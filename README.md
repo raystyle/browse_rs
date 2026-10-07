@@ -76,14 +76,14 @@ docs/diary/2026-09-16-doc-system.md），修复自起引擎被 Google 登录
 | --- | --- |
 | `BROWSE_PORT` | daemon 端口（默认 9880） |
 | `BROWSE_NAME` | 命名实例：状态目录加派生端口 9900-9999（ADR-0006） |
-| `BROWSE_CHROME` | chrome 路径（缺省走发现序：显式 -> 托管 pin -> 祖先部署 -> 常规路径） |
+| `BROWSE_CHROME` | chrome 路径（缺省走发现序：显式 -> 托管 pin -> 祖先部署 -> 常规路径；指向的文件不在时静默跳过续走后序，不回落托管 pin） |
 | `BROWSE_PROFILE` | spawn 引擎自定义 user-data-dir（默认固定 engine-profile 持久会话） |
 | `BROWSE_CDP_WS` | 钉死连接的 WS URL |
 | `BROWSE_NO_ATTACH=1` | 跳过附着探测，强制 spawn 隔离实例 |
 | `BROWSE_ENGINE_ARGS` | 引擎附加旗标，空格分隔直通 spawn argv；无显示会话（无 `DISPLAY`/`WAYLAND_DISPLAY`，如 ssh）下有头 spawn 自动补 `--headless`（#57，显式旗标优先） |
 | `BROWSE_ENGINE_CONTEXT` | 操作回执显引擎紧凑行（默认关；指纹变化与跨宿主告警恒开） |
 | `BROWSE_NO_AUTO_DIALOG=1` | 关掉 alert 自动接受 |
-| `BROWSE_EVAL_TIMEOUT` | 单次求值超时秒数（默认 300） |
+| `BROWSE_EVAL_TIMEOUT` | 单次求值超时秒数（默认 60，ADR-0012 统一兜底硬界；`--timeout` 请求级覆写） |
 | `BROWSE_DENY_DOMAINS` / `BROWSE_ALLOW_DOMAINS` | 域策略（后缀匹配，deny 优先） |
 | `BROWSE_CHROME_MIRROR` / `BROWSE_CHROME_ASSET` | 版本管理器镜像与资产名覆写 |
 | `BROWSE_CHROME_LATEST` | `chrome update` 发现源钉（缺省读镜像 `latest` 指针） |

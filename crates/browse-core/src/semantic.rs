@@ -12,6 +12,7 @@
 use anyhow::{Result, anyhow, bail};
 use cdp::Session;
 use serde_json::{Value, json};
+use std::collections::HashSet;
 use std::time::Duration;
 
 /// 新开 tab 并设为活动路由。给了 `url` 则先建 about:blank 附着后再导航
@@ -295,8 +296,13 @@ pub async fn grant_permissions(
                     .and_then(Value::as_str)
                     .map(str::to_string)
             });
-        if let Some(u) = url {
-            params["origin"] = json!(u);
+        match url {
+            Some(u) => params["origin"] = json!(u),
+            // 取不到 origin 就拒（评审 G-30）：协议缺省 origin 是全源授权，
+            // 静默放大面不做——显式传参或先 goto 再来
+            None => bail!(
+                "取当前页 origin 失败（不传 origin 的缺省语义是全源授权，不静默放大）；下一步：显式传 origin 参数，或先 goto 到目标页再授权"
+            ),
         }
     }
     let origin_out = params.get("origin").cloned();
@@ -1518,7 +1524,10 @@ pub async fn export_storage_state(s: &Session) -> Result<Value> {
 
 /// 导入会话态（#25.3）：吃 [`export_storage_state`] 的返回值或其落盘
 /// 文件路径串；cookies 走 `Network.setCookies`，localStorage 走
-/// `DOMStorage.setDOMStorageItem`。回执带两边计数。
+/// `DOMStorage.setDOMStorageItem`。回执带两边计数与 failed/firstError
+/// 失败面（评审 G-34，对齐 cookie_clone 范式）。会话 cookie 的
+/// `expires:-1` 在 setCookies 侧省略归一（评审 F-5 同根：导出口径的 -1
+/// 透传成 1969 年过期时刻，导入即失效）。
 ///
 /// # Errors
 ///
@@ -1535,17 +1544,34 @@ pub async fn import_storage_state(s: &Session, arg: &Value) -> Result<Value> {
         other => other.clone(),
     };
     let mut cookie_n = 0u64;
+    let mut item_n = 0u64;
+    let mut failed = 0u64;
+    let mut first_err: Option<String> = None;
     if let Some(cookies) = state.get("cookies").and_then(Value::as_array) {
         for c in cookies {
-            if s.call("Network.setCookies", json!({ "cookies": [c] }))
-                .await
-                .is_ok()
+            let mut norm = c.clone();
+            if norm
+                .get("expires")
+                .and_then(Value::as_f64)
+                .is_some_and(|e| e <= 0.0)
+                && let Some(obj) = norm.as_object_mut()
             {
-                cookie_n += 1;
+                obj.remove("expires");
+            }
+            match s
+                .call("Network.setCookies", json!({ "cookies": [norm] }))
+                .await
+            {
+                Ok(_) => cookie_n += 1,
+                Err(e) => {
+                    failed += 1;
+                    if first_err.is_none() {
+                        first_err = Some(format!("cookie: {e:#}"));
+                    }
+                }
             }
         }
     }
-    let mut item_n = 0u64;
     if let Some(origins) = state.get("origins").and_then(Value::as_array) {
         for o in origins {
             let Some(origin) = o.get("origin").and_then(Value::as_str) else {
@@ -1560,20 +1586,30 @@ pub async fn import_storage_state(s: &Session, arg: &Value) -> Result<Value> {
                     if k.is_empty() {
                         continue;
                     }
-                    if s.call(
-                        "DOMStorage.setDOMStorageItem",
-                        json!({ "storageId": { "securityOrigin": origin, "isLocalStorage": true }, "key": k, "value": v }),
-                    )
-                    .await
-                    .is_ok()
+                    match s
+                        .call(
+                            "DOMStorage.setDOMStorageItem",
+                            json!({ "storageId": { "securityOrigin": origin, "isLocalStorage": true }, "key": k, "value": v }),
+                        )
+                        .await
                     {
-                        item_n += 1;
+                        Ok(_) => item_n += 1,
+                        Err(e) => {
+                            failed += 1;
+                            if first_err.is_none() {
+                                first_err = Some(format!("localStorage[{origin}] {k}: {e:#}"));
+                            }
+                        }
                     }
                 }
             }
         }
     }
-    Ok(json!({ "cookies": cookie_n, "items": item_n }))
+    let mut out = json!({ "cookies": cookie_n, "items": item_n, "failed": failed });
+    if let Some(e) = first_err {
+        out["firstError"] = json!(e);
+    }
+    Ok(out)
 }
 
 /// 从 URL 取 securityOrigin（`scheme://host[:port]`，CDP DOMStorage
@@ -1669,10 +1705,16 @@ pub async fn wait_load(s: &Session, ms: u64) -> Result<Value> {
     }
 }
 
-/// 等 network 静默：从调用时刻起观察 `Network.requestWillBeSent` 与
-/// `loadingFinished/loadingFailed` 的差值，连续两拍在飞为 0 即静默。
+/// 等 network 静默：从调用时刻起观察 `requestWillBeSent` 与
+/// `loadingFinished/loadingFailed` 的 **requestId 集合差**，连续两拍在飞
+/// 为空即静默。
 ///
-/// 起点之前挂着的请求不在观察内（窗口语义，同 bh wait_for_network_idle）。
+/// 集合对账不是裸条数差（评审 F-3）：301/302 重定向对同一 requestId 重发
+/// `requestWillBeSent`（带 redirectResponse）而 `loadingFinished` 只发一次，
+/// 条数差恒不正数；WebSocket 握手没有 loadingFinished 对（终态是
+/// webSocketClosed 族），从在飞集合剔除。事件缓冲是连接级共享，附着态下
+/// 只认活动 session 的请求（口径同 requests() 族）。起点之前挂着的请求
+/// 不在观察内（窗口语义，同 bh wait_for_network_idle）。
 ///
 /// # Errors
 ///
@@ -1685,23 +1727,41 @@ pub async fn wait_idle(s: &Session, ms: u64) -> Result<Value> {
     let mut quiet = 0;
     loop {
         tokio::time::sleep(Duration::from_millis(400)).await;
-        let sent = s
+        let active = s.get_active_session().await;
+        let in_active = |e: &Value| crate::js_host::from_active_session(&active, e);
+        let rid_of = |e: &Value| {
+            e.pointer("/params/requestId")
+                .and_then(Value::as_str)
+                .map(str::to_string)
+        };
+        let sent_evs = s
             .peek_events_since("Network.requestWillBeSent", since, 100_000)
-            .await
-            .len();
-        let fin = s
+            .await;
+        // WebSocket 握手无 loadingFinished 对（webSocketClosed 是另一事件族）
+        let sent: HashSet<String> = sent_evs
+            .iter()
+            .filter(|e| in_active(e))
+            .filter(|e| e.pointer("/params/type").and_then(Value::as_str) != Some("WebSocket"))
+            .filter_map(rid_of)
+            .collect();
+        let fin: HashSet<String> = s
             .peek_events_since("Network.loadingFinished", since, 100_000)
             .await
-            .len()
-            + s.peek_events_since("Network.loadingFailed", since, 100_000)
-                .await
-                .len();
-        let in_flight = sent.saturating_sub(fin);
+            .iter()
+            .chain(
+                s.peek_events_since("Network.loadingFailed", since, 100_000)
+                    .await
+                    .iter(),
+            )
+            .filter(|e| in_active(e))
+            .filter_map(rid_of)
+            .collect();
+        let in_flight = sent.difference(&fin).count();
         quiet = if in_flight == 0 { quiet + 1 } else { 0 };
         if quiet >= 2 {
             return Ok(json!({
-                "requests": sent,
-                "finished": fin,
+                "requests": sent.len(),
+                "finished": fin.len(),
                 "elapsedMs": t0.elapsed().as_millis() as u64,
             }));
         }

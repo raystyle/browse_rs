@@ -42,6 +42,9 @@ impl VarsSyntax {
 /// 指令（走缺省/旗标）。指令行本身保持原样进渲染（注释惰性化道会圈它，
 /// 对 Jinja 无害）。
 pub fn directive_of(source: &str) -> Option<VarsSyntax> {
+    // BOM 剥离（评审 G-41）：编辑器常给件头留 BOM，不剥则首行指令静默
+    // 失效（load_secrets 有剥 BOM 先例）
+    let source = source.strip_prefix('\u{feff}').unwrap_or(source);
     let first = source.lines().next()?.trim();
     let rest = first.strip_prefix("// browse-vars:")?;
     VarsSyntax::parse(rest)

@@ -77,11 +77,14 @@ pub fn domain_hint(segment: &str) -> String {
 
 /// #51 页面特征探测 JS：自包含 IIFE，恒返合法 JSON 字符串（连异常
 /// 路径都返 `{framework:null,slugs:[]}` 骨架，Rust 侧静默降级零键）。
-/// 何时用：仅 goto 后的技能附加入口发一次（Runtime.evaluate
-/// returnByValue，8 秒超时兜底）。边界：TreeWalker 前 800 元素封顶、
-/// iframe 判定源封顶 50、不用 getComputedStyle（大页防卡顿）；正文单引号
-/// 字串，`r##` 是防御性嵌法（评审 G9：现正文无 `"#` 序列，将来引入
-/// 双引号字串也不会提前终结 `r#`）。
+/// 何时用：作为内置缺省判据的唯一函数体——由私有的 `default_probe_rn`
+/// 包进 `cdp::js`（**主世界** returnByValue：框架全局与元素 expando
+/// 隔离世界不可见，评审 F-1）在 goto 后的技能附加入口跑一次；workspace
+/// `page-skills/scripts/probe.rn` 命中时整段被覆写（本常量不执行，
+/// REQ-029）。外层 8 秒界在私有的 `run_probe_rn`。边界：TreeWalker 前
+/// 800 元素封顶、iframe 判定源封顶 50、不用 getComputedStyle（大页防
+/// 卡顿）；正文单引号字串，`r##` 是防御性嵌法（评审 G9：现正文无 `"#`
+/// 序列，将来引入双引号字串也不会提前终结 `r#`）。
 ///
 /// slug 与置信档（#51 冻结清单，检出序恒定）：spa（框架容器键或全局，
 /// CONFIRMED）、hydration（`__next_f`/`__NUXT_DATA__`/astro-island/
@@ -498,7 +501,22 @@ async fn run_probe_rn(s: &std::sync::Arc<cdp::Session>) -> Option<Value> {
     )
     .await;
     match probe {
-        Ok(Ok(receipt)) => receipt.get("ok").cloned(),
+        Ok(Ok(receipt)) => {
+            // 脚本可见失败（评审 G-2）：main 返 Err 走 {"error": …} 回执面，
+            // 与 run 层 Err 同款首败留痕（workspace 自定义判据的运行期失败
+            // 不再完全无感），之后同样静默降级零键
+            if receipt.get("error").is_some() {
+                static WARNED_RUN: std::sync::OnceLock<()> = std::sync::OnceLock::new();
+                if WARNED_RUN.set(()).is_ok() {
+                    eprintln!(
+                        "[browse] page 判据脚本可见失败（receipt.error；后续静默降级零键；检查 workspace page-skills/scripts/probe.rn）：{}",
+                        serde_json::to_string(&receipt["error"]).unwrap_or_default()
+                    );
+                }
+                return None;
+            }
+            receipt.get("ok").cloned()
+        }
         Ok(Err(_e)) => {
             // 编译/VM/环境错（评审 G-C）：坏 workspace 脚本首败留痕，之后
             // 静默（判据脚本不许拖 goto，也不许刷日志）
@@ -538,13 +556,22 @@ fn load_probe_rn() -> String {
 }
 
 /// [`load_probe_rn`] 的多根纯函数形（单测用）：序首命中根的
-/// `page-skills/scripts/probe.rn` 覆写，全根未命中回内置缺省。
+/// `page-skills/scripts/probe.rn` 覆写，全根未命中回内置缺省。文件在而
+/// 不可读（权限/半写，评审 G-7）一次性告警——静默回缺省会让每条 goto
+/// 用旧判据且无感。
 fn load_probe_rn_multi(roots: &[std::path::PathBuf]) -> String {
     for root in roots {
-        if let Ok(body) =
-            std::fs::read_to_string(root.join("page-skills").join("scripts").join("probe.rn"))
-        {
-            return body;
+        let p = root.join("page-skills").join("scripts").join("probe.rn");
+        match std::fs::read_to_string(&p) {
+            Ok(body) => return body,
+            Err(e) if p.is_file() => {
+                static WARNED: std::sync::OnceLock<()> = std::sync::OnceLock::new();
+                if WARNED.set(()).is_ok() {
+                    eprintln!("[browse] probe.rn 在而不可读（{e}），该根按未命中处理");
+                }
+            }
+            // 不在：正常未命中，试下一根
+            Err(_) => {}
         }
     }
     default_probe_rn()

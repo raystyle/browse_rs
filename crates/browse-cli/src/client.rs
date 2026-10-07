@@ -200,7 +200,11 @@ pub async fn eval(code: &str, new_tab: bool, js: bool, timeout_s: Option<u64>) -
         rq = rq.timeout(std::time::Duration::from_secs(s + 60));
     }
     let resp = rq.send().await.context("POST /eval")?;
-    let body: Value = resp.json().await.context("解析 /eval 响应")?;
+    let status = resp.status();
+    let body: Value = resp
+        .json()
+        .await
+        .with_context(|| format!("解析 /eval 响应（HTTP {status}）"))?;
     if body.get("ok").and_then(Value::as_bool) == Some(true) {
         // #60 操作时刻引擎上下文：正常态安静；异常（指纹变化、跨宿主）
         // 出 stderr 告警行；BROWSE_ENGINE_CONTEXT 非 0/false 显紧凑行
@@ -209,6 +213,14 @@ pub async fn eval(code: &str, new_tab: bool, js: bool, timeout_s: Option<u64>) -
         }
         Ok(body.get("value").cloned().unwrap_or(Value::Null))
     } else {
+        // 结构化 timeout/stopped 面一行 JSON 进 stderr（评审 G-16，与
+        // rune 腿同律）：上层 agent 可直接解析换通道重试，不依赖人读错误行
+        let detail = body.get("timeout").or(body.get("stopped"));
+        if let Some(t) = detail
+            && let Ok(line) = serde_json::to_string(t)
+        {
+            eprintln!("{line}");
+        }
         // 前缀由 daemon 侧统一加（防双重 browse:）
         Err(anyhow!(
             "{}",
@@ -243,7 +255,11 @@ pub async fn rune(
         rq = rq.timeout(std::time::Duration::from_secs(s + 60));
     }
     let resp = rq.send().await.context("POST /rune")?;
-    let body: Value = resp.json().await.context("解析 /rune 响应")?;
+    let status = resp.status();
+    let body: Value = resp
+        .json()
+        .await
+        .with_context(|| format!("解析 /rune 响应（HTTP {status}）"))?;
     if body.get("ok").and_then(Value::as_bool) == Some(true) {
         if let Some(ctx) = body.get("engineContext") {
             render_engine_context(ctx);
@@ -779,7 +795,11 @@ pub async fn engine_up(p: UpParams) -> Result<Value> {
         .send()
         .await
         .context("POST /engine/up")?;
-    let body: Value = resp.json().await.context("解析 /engine/up 响应")?;
+    let status = resp.status();
+    let body: Value = resp
+        .json()
+        .await
+        .with_context(|| format!("解析 /engine/up 响应（HTTP {status}）"))?;
     if body.get("ok").and_then(Value::as_bool) == Some(true) {
         Ok(body)
     } else {

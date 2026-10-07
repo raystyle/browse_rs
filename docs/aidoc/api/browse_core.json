@@ -80,7 +80,7 @@
     {
       "path": "browse_core::chrome_mgr::read_manifest",
       "kind": "function",
-      "docs": "读登记册；根目录不存在或 manifest 缺失视为空册。"
+      "docs": "读登记册；根目录不存在或 manifest 缺失视为空册（首装形）。损坏\n（半写/手改坏 JSON）一次性留痕后按空册继续（评审 G-26：静默蒸发 pin\n与已装清单无感，doctor 会再报，这里先给 daemon 日志一线索）。"
     },
     {
       "path": "browse_core::chrome_mgr::remove_version",
@@ -170,7 +170,7 @@
     {
       "path": "browse_core::fetch_core::attach_optional_fields",
       "kind": "function",
-      "docs": "fetch 回执的可选字段拼装（两道编排共用）：`html_enroll` 是 `html`\n字段的入册源（`None` 不入册），`markdown_src` 是 `markdown` 字段的\n转换源（`None` 不入册）。两参独立（评审二轮 F-1：`--markdown` 单置\n不连带 html 字段入册；升级腿的转换源已取到但不必入册，杜绝拿\n「转换源」顶「入册开关」把 markdown 悄悄转成空串）。"
+      "docs": "fetch 回执的可选字段拼装（两道编排共用）：外层 `None` 不入册；\n`Some(None)` 是「显式求了但抽取没带回」——`null` 占位入册（评审\nG-8：消费方分得清「没求」与「求了没取到」，键缺席不做双义）；\n`Some(Some(v))` 是真值。`html_enroll` 是 `html` 字段的入册源，\n`markdown_src` 是 `markdown` 字段的转换源。两参独立（评审二轮 F-1：\n`--markdown` 单置不连带 html 字段入册；升级腿的转换源已取到但不必\n入册，杜绝拿「转换源」顶「入册开关」把 markdown 悄悄转成空串）。"
     },
     {
       "path": "browse_core::fetch_core::extract_js",
@@ -600,7 +600,7 @@
     {
       "path": "browse_core::semantic::import_storage_state",
       "kind": "function",
-      "docs": "导入会话态（#25.3）：吃 [`export_storage_state`] 的返回值或其落盘\n文件路径串；cookies 走 `Network.setCookies`，localStorage 走\n`DOMStorage.setDOMStorageItem`。回执带两边计数。\n\n# Errors\n\n未连接、路径读不了或 JSON 解析失败。"
+      "docs": "导入会话态（#25.3）：吃 [`export_storage_state`] 的返回值或其落盘\n文件路径串；cookies 走 `Network.setCookies`，localStorage 走\n`DOMStorage.setDOMStorageItem`。回执带两边计数与 failed/firstError\n失败面（评审 G-34，对齐 cookie_clone 范式）。会话 cookie 的\n`expires:-1` 在 setCookies 侧省略归一（评审 F-5 同根：导出口径的 -1\n透传成 1969 年过期时刻，导入即失效）。\n\n# Errors\n\n未连接、路径读不了或 JSON 解析失败。"
     },
     {
       "path": "browse_core::semantic::key_raw",
@@ -690,7 +690,7 @@
     {
       "path": "browse_core::semantic::wait_idle",
       "kind": "function",
-      "docs": "等 network 静默：从调用时刻起观察 `Network.requestWillBeSent` 与\n`loadingFinished/loadingFailed` 的差值，连续两拍在飞为 0 即静默。\n\n起点之前挂着的请求不在观察内（窗口语义，同 bh wait_for_network_idle）。\n\n# Errors\n\n`ms` 内未静默。"
+      "docs": "等 network 静默：从调用时刻起观察 `requestWillBeSent` 与\n`loadingFinished/loadingFailed` 的 **requestId 集合差**，连续两拍在飞\n为空即静默。\n\n集合对账不是裸条数差（评审 F-3）：301/302 重定向对同一 requestId 重发\n`requestWillBeSent`（带 redirectResponse）而 `loadingFinished` 只发一次，\n条数差恒不正数；WebSocket 握手没有 loadingFinished 对（终态是\nwebSocketClosed 族），从在飞集合剔除。事件缓冲是连接级共享，附着态下\n只认活动 session 的请求（口径同 requests() 族）。起点之前挂着的请求\n不在观察内（窗口语义，同 bh wait_for_network_idle）。\n\n# Errors\n\n`ms` 内未静默。"
     },
     {
       "path": "browse_core::semantic::wait_load",
@@ -750,7 +750,7 @@
     {
       "path": "browse_core::skills::PAGE_PROBE_JS",
       "kind": "constant",
-      "docs": "#51 页面特征探测 JS：自包含 IIFE，恒返合法 JSON 字符串（连异常\n路径都返 `{framework:null,slugs:[]}` 骨架，Rust 侧静默降级零键）。\n何时用：仅 goto 后的技能附加入口发一次（Runtime.evaluate\nreturnByValue，8 秒超时兜底）。边界：TreeWalker 前 800 元素封顶、\niframe 判定源封顶 50、不用 getComputedStyle（大页防卡顿）；正文单引号\n字串，`r##` 是防御性嵌法（评审 G9：现正文无 `\"#` 序列，将来引入\n双引号字串也不会提前终结 `r#`）。\n\nslug 与置信档（#51 冻结清单，检出序恒定）：spa（框架容器键或全局，\nCONFIRMED）、hydration（`__next_f`/`__NUXT_DATA__`/astro-island/\n`[q:container]`，CONFIRMED）、shadow-dom（前 800 节点 shadowRoot，\nCONFIRMED）、iframe（清单非空，CONFIRMED）、iframe-cross-origin\n（源比对，CONFIRMED）、lazy-scroll（页高 >= 8 倍视口加滚动容器，\nPLAUSIBLE）、bot-shield（cf-chl DOM CONFIRMED / CF cookie\nPLAUSIBLE）、login-wall（可见 password 框，PLAUSIBLE）、captcha\n（recaptcha/hcaptcha/turnstile 特征，CONFIRMED）、service-worker\n（controller 非空，CONFIRMED）。framework 是 info 字段不占 slug。"
+      "docs": "#51 页面特征探测 JS：自包含 IIFE，恒返合法 JSON 字符串（连异常\n路径都返 `{framework:null,slugs:[]}` 骨架，Rust 侧静默降级零键）。\n何时用：作为内置缺省判据的唯一函数体——由私有的 `default_probe_rn`\n包进 `cdp::js`（**主世界** returnByValue：框架全局与元素 expando\n隔离世界不可见，评审 F-1）在 goto 后的技能附加入口跑一次；workspace\n`page-skills/scripts/probe.rn` 命中时整段被覆写（本常量不执行，\nREQ-029）。外层 8 秒界在私有的 `run_probe_rn`。边界：TreeWalker 前\n800 元素封顶、iframe 判定源封顶 50、不用 getComputedStyle（大页防\n卡顿）；正文单引号字串，`r##` 是防御性嵌法（评审 G9：现正文无 `\"#`\n序列，将来引入双引号字串也不会提前终结 `r#`）。\n\nslug 与置信档（#51 冻结清单，检出序恒定）：spa（框架容器键或全局，\nCONFIRMED）、hydration（`__next_f`/`__NUXT_DATA__`/astro-island/\n`[q:container]`，CONFIRMED）、shadow-dom（前 800 节点 shadowRoot，\nCONFIRMED）、iframe（清单非空，CONFIRMED）、iframe-cross-origin\n（源比对，CONFIRMED）、lazy-scroll（页高 >= 8 倍视口加滚动容器，\nPLAUSIBLE）、bot-shield（cf-chl DOM CONFIRMED / CF cookie\nPLAUSIBLE）、login-wall（可见 password 框，PLAUSIBLE）、captcha\n（recaptcha/hcaptcha/turnstile 特征，CONFIRMED）、service-worker\n（controller 非空，CONFIRMED）。framework 是 info 字段不占 slug。"
     },
     {
       "path": "browse_core::skills::domain_hint",

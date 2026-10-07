@@ -41,6 +41,22 @@ pub fn state_dir_for(name: &Option<String>) -> PathBuf {
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from("."));
     match name {
+        // 实例名净化（评审 G-33，env 自控面的 footgun 收口）：相对形里
+        // 的 `..`/`.` 组件会逃逸状态目录命名空间，拒之并按缺省实例；
+        // 绝对路径是既有能力（测试用 join 语义整体改向状态目录），放行
+        Some(n)
+            if n.is_empty()
+                || (!std::path::Path::new(n).is_absolute()
+                    && std::path::Path::new(n).components().any(|c| {
+                        matches!(
+                            c,
+                            std::path::Component::ParentDir | std::path::Component::CurDir
+                        )
+                    })) =>
+        {
+            eprintln!("[browse] BROWSE_NAME 含相对穿越组件（{n:?}），按缺省实例目录处理");
+            home.join(".browse-rs")
+        }
         Some(n) => home.join(".browse-rs").join(n),
         None => home.join(".browse-rs"),
     }
@@ -89,10 +105,17 @@ pub fn derived_port(name: &str) -> u16 {
 /// }
 /// ```
 pub fn daemon_port() -> u16 {
-    if let Some(p) =
-        std::env::var_os("BROWSE_PORT").and_then(|v| v.to_string_lossy().parse::<u16>().ok())
-    {
-        return p;
+    if let Some(v) = std::env::var_os("BROWSE_PORT") {
+        let s = v.to_string_lossy();
+        if let Ok(p) = s.parse::<u16>() {
+            return p;
+        }
+        // 坏值留痕（评审 G-32）：静默回落派生/缺省端口让「连错实例」难
+        // 归因——一次性告警后再回落
+        static WARNED: std::sync::OnceLock<()> = std::sync::OnceLock::new();
+        if WARNED.set(()).is_ok() {
+            eprintln!("[browse] BROWSE_PORT 非 0-65535 整数（当前 {s}），回落实例名派生/缺省端口");
+        }
     }
     instance_name().as_deref().map(derived_port).unwrap_or(9880)
 }

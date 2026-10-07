@@ -68,6 +68,10 @@ pub(crate) struct CdpState {
     /// addScriptToEvaluateOnNewDocument 的注册 identifier（收尾注销用，
     /// 评审 #67 一轮 G1）。独立 std 锁：Drop 兜底道不可 await/blocking_lock。
     script_id: std::sync::Mutex<Option<i64>>,
+    /// 世界/注册所在的会话 id（评审 G-41：换靶后收尾清账要打回原会话，
+    /// 打当前活动 session 会把 releaseObjectGroup/removeScript 发到新
+    /// tab 静默失手，旧 tab 的注册留到会话终）。
+    world_sid: std::sync::Mutex<Option<String>>,
     /// `js_lib` 的片段库根。
     snippets_root: std::path::PathBuf,
     /// 管道参数道捕获串。
@@ -252,12 +256,33 @@ impl CdpState {
             .and_then(Value::as_i64)
             .ok_or_else(|| cdp_err("ensure_world", "取 executionContextId 失败"))?;
         w.context_id = id;
+        // 记世界所在会话（评审 G-41）：收尾清账按此路由回原 tab
+        let sid = self.session.get_active_session().await;
+        if let Ok(mut g) = self.world_sid.lock() {
+            *g = sid;
+        }
         Ok(id)
     }
 
     /// 隔离世界求值（本模块所有碰页面的道都收在这）：`awaitPromise` 加
     /// `returnByValue`；`handle` 形不取值只取 `objectId` 入对象组。
+    ///
+    /// 死 context 自愈（评审 F-1/F-10 治本）：隐式导航（js 跳转、clickRef
+    /// 致跳转）结构性绕过 raw/dialect 的置空名单，缓存 contextId 成死引用
+    /// 后撞 "Cannot find context with specified id"——撞该错即置空世界
+    /// 重建一次重试，名单维护从必答降为减噪。
     async fn eval_in_world(&self, expr: &str, handle: bool) -> Result<Value, CdpError> {
+        match self.eval_in_world_once(expr, handle).await {
+            Err(e) if e.message.contains("Cannot find context with specified id") => {
+                self.world.lock().await.context_id = 0;
+                self.eval_in_world_once(expr, handle).await
+            }
+            other => other,
+        }
+    }
+
+    /// [`CdpState::eval_in_world`] 的单发腿（自愈重试的落点）。
+    async fn eval_in_world_once(&self, expr: &str, handle: bool) -> Result<Value, CdpError> {
         let ctx = self.ensure_world().await?;
         let mut params = json!({
             "expression": expr,
@@ -470,6 +495,7 @@ pub fn cdp_module(ctx: ModuleCtx) -> Result<(Module, Cleanup), rune::ContextErro
         world: tokio::sync::Mutex::new(WorldCtx::default()),
         object_group: format!("browse-rune-{}", next_group_seq()),
         script_id: std::sync::Mutex::new(None),
+        world_sid: std::sync::Mutex::new(None),
         snippets_root,
         stdin,
         host_fns,
@@ -484,6 +510,9 @@ pub fn cdp_module(ctx: ModuleCtx) -> Result<(Module, Cleanup), rune::ContextErro
             async move {
                 st.set_op("goto");
                 let out = async {
+                    // 提交水位在 navigate 前取（评审 P-2）：回执可先于提交事件
+                    // 到达，send 后取会把已到的 commit 盖在水位下
+                    let mark = st.session.last_seq().await;
                     let nav = st
                         .session
                         .call_with_deadline("Page.navigate", json!({ "url": url }), CALL_DEADLINE)
@@ -494,6 +523,31 @@ pub fn cdp_module(ctx: ModuleCtx) -> Result<(Module, Cleanup), rune::ContextErro
                     }
                     // 导航即废世界：置空待下次 ensure_world 重建
                     st.world.lock().await.context_id = 0;
+                    // 有界提交等待（评审 P-2）：rn 道不经 Session::call 的提交
+                    // 屏障，navigate 回执只证发起；跨文档（回执带 loaderId）先
+                    // 等主框架 frameNavigated 越过水位再轮询 readyState，否则
+                    // 首拍在旧文档上重建世界、读到旧 complete 假就绪。10 秒内
+                    // 提交未到（极慢服务端）放行退回轮询兜底，不比旧差
+                    let cross_doc = nav
+                        .get("loaderId")
+                        .and_then(Value::as_str)
+                        .is_some_and(|s| !s.is_empty());
+                    if cross_doc {
+                        let cap = tokio::time::Instant::now() + std::time::Duration::from_secs(10);
+                        loop {
+                            let committed = st
+                                .session
+                                .peek_events_since("Page.frameNavigated", mark, 10)
+                                .await
+                                .iter()
+                                .filter(|e| e.pointer("/params/frame/parentId").is_none())
+                                .count();
+                            if committed > 0 || tokio::time::Instant::now() >= cap {
+                                break;
+                            }
+                            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+                        }
+                    }
                     // 有界等加载：readyState 脱 loading（上限 15s，百毫秒步进；
                     // 更细的超时由脚本 select 自包）
                     for _ in 0..150 {
@@ -691,9 +745,14 @@ pub fn cdp_module(ctx: ModuleCtx) -> Result<(Module, Cleanup), rune::ContextErro
                         .call_with_deadline(&method, params, CALL_DEADLINE)
                         .await
                         .map_err(|e| cdp_err("raw", format!("{method}: {e:#}")))?;
-                    // 导航类经 raw 触发即废世界（评审 G-6）：与 goto 同款
-                    // 置空待重建，否则后续 eval 撞死 context
-                    if matches!(method.as_str(), "Page.navigate" | "Page.reload") {
+                    // 导航类经 raw 触发即废世界（评审 G-6；F-10 补
+                    // navigateToHistoryEntry——语义层 go_back/go_forward 在用，
+                    // 与 navigate 同为换文档）：与 goto 同款置空待重建，否则
+                    // 后续 eval 撞死 context（撞死后由 eval_in_world 自愈兜底）
+                    if matches!(
+                        method.as_str(),
+                        "Page.navigate" | "Page.reload" | "Page.navigateToHistoryEntry"
+                    ) {
                         st.world.lock().await.context_id = 0;
                     }
                     CdpState::bridge_no_result_check(&r, "raw")
@@ -735,8 +794,10 @@ pub fn cdp_module(ctx: ModuleCtx) -> Result<(Module, Cleanup), rune::ContextErro
                         .await
                         .map_err(|e| cdp_err("dialect", format!("{fn_name}: {e}")))?;
                     // 导航/换靶族经桥真执行即废世界或换活动 tab（全量审 M1，
-                    // 与 raw 的 G-6 同律）：世界置空待重建，否则后续 eval 撞
-                    // 死 context 或静默落旧 tab
+                    // 与 raw 的 G-6 同律；评审 F-1 补 fetch——方言 fetch 的
+                    // 引擎腿直接 navigate 活动 tab，漏名单则桥后 eval 撞死
+                    // context）：世界置空待重建，否则后续 eval 撞死 context
+                    // 或静默落旧 tab（撞死后由 eval_in_world 自愈兜底）
                     if matches!(
                         fn_name.as_str(),
                         "goto"
@@ -746,6 +807,7 @@ pub fn cdp_module(ctx: ModuleCtx) -> Result<(Module, Cleanup), rune::ContextErro
                             | "newTab"
                             | "switchTab"
                             | "closeTab"
+                            | "fetch"
                     ) {
                         st.world.lock().await.context_id = 0;
                     }
@@ -976,6 +1038,26 @@ pub struct Cleanup {
     settled: std::sync::atomic::AtomicBool,
 }
 
+/// 清账单发腿（评审 G-41）：有世界会话记录按该 session 路由（换靶后
+/// 打当前活动 session 会失手），无记录按当前路由（零碰页面执行的原行为）。
+async fn cleanup_call(
+    session: &cdp::Session,
+    world_sid: Option<&str>,
+    method: &str,
+    params: Value,
+) {
+    match world_sid {
+        Some(sid) => {
+            let _ = session.call_on(method, params, sid).await;
+        }
+        None => {
+            let _ = session
+                .call_with_deadline(method, params, CALL_DEADLINE)
+                .await;
+        }
+    }
+}
+
 impl Cleanup {
     /// 显式清账腿：`Runtime.releaseObjectGroup`（本执行随机组）与
     /// `Page.removeScriptToEvaluateOnNewDocument`（本次注册的引导）。
@@ -987,26 +1069,28 @@ impl Cleanup {
     }
 
     async fn cleanup_inner(&self) {
-        let _ = self
-            .session
-            .call_with_deadline(
-                "Runtime.releaseObjectGroup",
-                json!({ "objectGroup": self.state.object_group }),
-                CALL_DEADLINE,
-            )
-            .await;
+        // 打回世界所在的原会话（评审 G-41）：换靶（switchTab/closeTab）后
+        // 当前活动 session 是新 tab，按当前路由发会静默失手；无世界记录
+        // （零碰页面执行）按当前路由，原行为
+        let world_sid = self.state.world_sid.lock().ok().and_then(|g| g.clone());
+        cleanup_call(
+            &self.session,
+            world_sid.as_deref(),
+            "Runtime.releaseObjectGroup",
+            json!({ "objectGroup": self.state.object_group }),
+        )
+        .await;
         // 先取出 id 即弃守卫：std 锁守卫不可跨 await（跨即 future !Send，
         // axum Handler 界破）
         let script_id = self.state.script_id.lock().ok().and_then(|mut g| g.take());
         if let Some(id) = script_id {
-            let _ = self
-                .session
-                .call_with_deadline(
-                    "Page.removeScriptToEvaluateOnNewDocument",
-                    json!({ "identifier": id }),
-                    CALL_DEADLINE,
-                )
-                .await;
+            cleanup_call(
+                &self.session,
+                world_sid.as_deref(),
+                "Page.removeScriptToEvaluateOnNewDocument",
+                json!({ "identifier": id }),
+            )
+            .await;
         }
     }
 }
@@ -1024,26 +1108,28 @@ impl Drop for Cleanup {
         let session = self.session.clone();
         let group = self.state.object_group.clone();
         let script_id = self.state.script_id.lock().ok().and_then(|mut g| g.take());
+        // 打回世界所在原会话（评审 G-41，与 cleanup_inner 同律）
+        let world_sid = self.state.world_sid.lock().ok().and_then(|g| g.clone());
         if let Ok(handle) = tokio::runtime::Handle::try_current() {
             // #67 G7 收口：drop 兜底清账整体 10 秒上界（两调用各自 30 秒
             // deadline 的最坏 60 秒收进一条，防极端下清账任务滞留）
             handle.spawn(async move {
                 let _ = tokio::time::timeout(std::time::Duration::from_secs(10), async {
-                    let _ = session
-                        .call_with_deadline(
-                            "Runtime.releaseObjectGroup",
-                            json!({ "objectGroup": group }),
-                            CALL_DEADLINE,
+                    cleanup_call(
+                        &session,
+                        world_sid.as_deref(),
+                        "Runtime.releaseObjectGroup",
+                        json!({ "objectGroup": group }),
+                    )
+                    .await;
+                    if let Some(id) = script_id {
+                        cleanup_call(
+                            &session,
+                            world_sid.as_deref(),
+                            "Page.removeScriptToEvaluateOnNewDocument",
+                            json!({ "identifier": id }),
                         )
                         .await;
-                    if let Some(id) = script_id {
-                        let _ = session
-                            .call_with_deadline(
-                                "Page.removeScriptToEvaluateOnNewDocument",
-                                json!({ "identifier": id }),
-                                CALL_DEADLINE,
-                            )
-                            .await;
                     }
                 })
                 .await;

@@ -57,6 +57,19 @@ pub fn find_chrome(explicit: Option<&Path>) -> Option<PathBuf> {
 }
 
 fn newest_chromium_under(root: &Path) -> Option<PathBuf> {
+    /// 版本数值键（`chromium-152.0.7xxx.y` -> (152, 0, 7xxx, y)）：字典序
+    /// 会让 `chromium-99.x` 赢过 `chromium-152.x`（评审 G-24），按数值序
+    const VER_KEY: fn(&PathBuf) -> (u64, u64, u64, u64) = |p: &PathBuf| {
+        let name = p
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or_default()
+            .trim_start_matches("chromium-");
+        let mut it = name.split('.');
+        let seg =
+            |i: &mut std::str::Split<'_, char>| i.next().and_then(|s| s.parse().ok()).unwrap_or(0);
+        (seg(&mut it), seg(&mut it), seg(&mut it), seg(&mut it))
+    };
     let mut hits: Vec<PathBuf> = std::fs::read_dir(root)
         .ok()?
         .filter_map(|e| e.ok())
@@ -68,7 +81,7 @@ fn newest_chromium_under(root: &Path) -> Option<PathBuf> {
         })
         .filter(|p| chrome_binary_in_dir(p).is_some())
         .collect();
-    hits.sort();
+    hits.sort_by_key(VER_KEY);
     hits.pop()
 }
 
@@ -131,12 +144,22 @@ fn engine_stdio(profile_dir: &Path) -> std::process::Stdio {
         .parent()
         .map(|p| p.join("engine.log"))
         .unwrap_or_else(|| PathBuf::from("engine.log"));
-    std::fs::OpenOptions::new()
+    match std::fs::OpenOptions::new()
         .create(true)
         .append(true)
         .open(&log)
-        .map(std::process::Stdio::from)
-        .unwrap_or_else(|_| std::process::Stdio::null())
+    {
+        Ok(f) => std::process::Stdio::from(f),
+        // 开不了就留痕（评审 G-28）：静默退 null 会让「engine.log 里什么
+        // 都没有」与「日志腿没开成」不可分辨
+        Err(e) => {
+            eprintln!(
+                "[browse] engine.log 开不了（{}：{e}），引擎 stderr 置空",
+                log.display()
+            );
+            std::process::Stdio::null()
+        }
+    }
 }
 
 /// #57 无显示会话的 headless 自动回退判定（纯函数）：有头意图下，若
@@ -299,6 +322,12 @@ pub fn spawn_engine_pipes(
         let (out_r, out_w) = anon_pair().context("pipe(out)")?;
         let in_fd = in_r.h as i32;
         let out_fd = out_w.h as i32;
+        // 泄漏面收口（评审 P-1）：本侧写端 in_w 与读端 out_r 的子进程副本
+        // 必须在 exec 前关掉——chrome 读 fd 3 要见 EOF 需全部写端关闭，
+        // 子进程自持 in_w 副本则 daemon 崩溃/SIGKILL 后 chrome 永不见
+        // EOF，「断管即关浏览器」的承诺失效（孤儿 chrome 锁死 profile）
+        let close_in_w = in_w.h as i32;
+        let close_out_r = out_r.h as i32;
 
         let mut cmd = Command::new(chrome);
         cmd.arg(format!("--user-data-dir={}", profile_dir.display()))
@@ -318,8 +347,9 @@ pub fn spawn_engine_pipes(
             cmd.arg(h);
         }
         cmd.args(extra_args);
-        // fork 后 exec 前：把两端布到固定 fd 3/4（clean-chrome POSIX 契约）。
-        // 闭包里只有 dup2/close（async-signal-safe）
+        // fork 后 exec 前：把两端布到固定 fd 3/4（clean-chrome POSIX 契约），
+        // 并关掉本侧两端在子进程的副本（评审 P-1）。闭包里只有
+        // dup2/close（async-signal-safe）
         unsafe {
             cmd.pre_exec(move || {
                 // 外层 unsafe 已覆盖（edition 2024 的 unsafe_op_in_unsafe_fn 不适用于
@@ -334,6 +364,9 @@ pub fn spawn_engine_pipes(
                     libc::close(src);
                     Ok(())
                 };
+                // 先关泄漏端再 wire：wire 会移动 fd，先关防 3/4 撞号时序歧义
+                libc::close(close_in_w);
+                libc::close(close_out_r);
                 wire(in_fd, 3)?;
                 wire(out_fd, 4)?;
                 Ok(())
@@ -405,11 +438,14 @@ pub fn spawn_engine_pipes(
     }
 }
 
-/// 强杀进程树（优雅退出 `Browser.close` 失败后的兜底）。
+/// 强杀引擎进程（优雅退出 `Browser.close` 失败后的兜底）：Windows
+/// `taskkill /T /F` 带子树；unix 对主 pid 发 SIGKILL——chrome 主进程退出
+/// 后子进程随退，历史注释「进程树」在 unix 侧收窄为单 pid 口径（评审
+/// G-23）。目标恰在杀前退出（kill 竞速 ESRCH）不算失败。
 ///
 /// # Errors
 ///
-/// Windows `taskkill` 或 unix `kill` 失败。
+/// 杀失败且目标仍存活（unix 经信号 0 复核）。
 pub fn terminate_pid(pid: u32) -> Result<()> {
     let st = if cfg!(windows) {
         Command::new("taskkill")
@@ -426,8 +462,21 @@ pub fn terminate_pid(pid: u32) -> Result<()> {
     };
     match st {
         Ok(s) if s.success() => Ok(()),
-        Ok(s) => Err(anyhow!("terminate {pid}: exit {}", s.code().unwrap_or(-1))),
-        Err(e) => Err(anyhow!("terminate {pid}: {e}")),
+        other => {
+            // 已死即成功（评审 G-23）：shutdown 的 try_wait 轮询与 terminate
+            // 之间进程恰退，ESRCH 不是「杀不掉」
+            #[cfg(unix)]
+            if unsafe { libc::kill(pid as i32, 0) } != 0 {
+                return Ok(());
+            }
+            match other {
+                Ok(s) => Err(anyhow!(
+                    "terminate {pid}: exit {}（进程仍在）",
+                    s.code().unwrap_or(-1)
+                )),
+                Err(e) => Err(anyhow!("terminate {pid}: {e}")),
+            }
+        }
     }
 }
 

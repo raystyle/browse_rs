@@ -36,7 +36,9 @@ impl CmdKind {
 pub struct ArgSpec {
     /// 参数名。
     pub name: &'static str,
-    /// `string` / `number` / `boolean` / `object` / `any`。
+    /// `string` / `number` / `boolean` / `object` / `any` / `id` /
+    /// `int` / `array`（在册全集，评审 G-37：声明面与实参面曾漂移，
+    /// 派生 schema 按此出 JSON Schema type）。
     pub ty: &'static str,
     /// 是否必填。
     pub required: bool,
@@ -174,6 +176,7 @@ pub const COMMANDS: &[CmdSpec] = &[
             arg!("engine-arg", "string", false, "无"),
             arg!("isolated", "boolean", false, "false"),
             arg!("idle-timeout", "number", false, "3600000"),
+            arg!("cookies", "string", false, "无（不给即不热迁）"),
         ],
         description: "显式起引擎（附着优先，缺则 spawn clean-chrome 隔离实例；--profile 自定义 user-data-dir，默认固定 profile 持久保存站点会话；--proxy/--proxy-bypass 直通 chrome 代理旗标；--engine-arg 引擎附加旗标（可叠加，spawn 时 argv 原样直通，BROWSE_ENGINE_ARGS 同道；与 browse 自身 spawn 旗标撞车时后值胜，慎叠；无显示会话如 ssh 未给 headless 时 spawn 自动补 --headless，显式旗标优先）；--isolated 隔离态 profile 引擎退出即删（给了 --profile 时 isolated 优先；显式 up 定义引擎意外退出后自动重拉的形态：最近一次 up 的意图生效（裸 up 即复位为有头缺省）；形态记忆是 daemon 进程态，重启回环境缺省；附着意图不记忆，重拉走发现序）；--idle-timeout 闲置回收毫秒只对新拉起的 daemon 生效）；--cookies 域 csv 起引擎后从附着浏览器只读热迁指定域登录态（源零写回，无附着源即报错指 storageState 整包往返）。",
         example: "browse up --headless --profile ~/profiles/proj-a",
@@ -300,7 +303,7 @@ pub const COMMANDS: &[CmdSpec] = &[
             ),
             arg!("timeout", "number", false, "15"),
         ],
-        description: "一次性只读抓取：HTTP 直取零浏览器成本；三条件升级引擎（正文空、墙词、少于 20 词）走 goto 加页内抽取（懒拉起）；回 {via, title, text, markdown?, html?, upgradedFrom?}；--html 恒走引擎腿回渲染后 DOM HTML（documentElement.outerHTML，JS 执行后的面）；--markdown 经 mdka 把本腿 html（渲染形为渲染 DOM、HTTP 直通为 raw body）转 markdown 字段（v1 同 text 的 no-op 已升真转换）；两腿都按 URL 做 goto 同口径的 workspace 站点知识点名（命中附 domain_skills 与 hint，不依赖引擎）。对照 waitForResponse：这是无会话一次性抓取。",
+        description: "一次性只读抓取：HTTP 直取零浏览器成本；三条件升级引擎（正文空、墙词、少于 20 词）走 goto 加页内抽取（懒拉起）；回 {via, title, text} 加可选键（HTTP 腿：status/bytes/markdown?；引擎升级腿：upgradedFrom/httpStatus/markdown?/html?；--html 直取形：html/markdown?）；--html 恒走引擎腿回渲染后 DOM HTML（documentElement.outerHTML，JS 执行后的面）；--markdown 经 mdka 把本腿 html（渲染形为渲染 DOM、HTTP 直通为 raw body）转 markdown 字段（v1 同 text 的 no-op 已升真转换；求了没取到给 null 占位）；两腿都按 URL 做 goto 同口径的 workspace 站点知识点名（命中附 domain_skills 与 hint，不依赖引擎）；页内抽取异常显式报错不带空回执。对照 waitForResponse：这是无会话一次性抓取。",
         example: "browse fetch https://example.com",
     },
     CmdSpec {
@@ -608,6 +611,12 @@ pub const COMMANDS: &[CmdSpec] = &[
         args: &[
             arg!("ref", "string", false, "单元素子树（部分展开）"),
             arg!("depth", "number", false, "限深层数（可见树根为第 1 层）"),
+            arg!(
+                "pierce",
+                "boolean",
+                false,
+                "false（穿透 iframe/shadow/OOPIF）"
+            ),
         ],
         description: "AX 树快照：nodes 带 role/name/value/childIds/短 ref（e1、e2…），引用表的唯一来源；url/title 走 CDP 查询面，页面主世界零写入（无注入痕）。opts（捕获与检索分离）：ref 取该元素子树（snapshot(e34) 部分展开），depth 限深（大页先浅扫再部分展开省 token）；ref 只盖过滤后的可见集；pierce：同源 iframe 与 shadow DOM 内容走 DOM.getDocument pierce，跨域 iframe（OOPIF）走子 session AX 树合并（发现加显式 attach；节点带 oopif 标与 ownerSession），都进同一 ref 表可直接 clickRef/fillRef（跨 frame 与跨 OOPIF 坐标已提升；嵌套 OOPIF 只提升一层）；pierce 清单与 AX 投影有结构节点重复（html/body 双份，ref 各自唯一同 backendNodeId），pierce 节点的 name 取 aria-label 或 id（非可见文本），pierce 与 ref 子树组合受限（pierce 节点无 childIds）。",
         example: "const s = await snapshot({depth: 2})",
@@ -1216,7 +1225,7 @@ pub const COMMANDS: &[CmdSpec] = &[
                 "{html: false, markdown: false, timeout: 15}"
             ),
         ],
-        description: "一次性只读抓取（方言全局；rn 经 cdp::dialect 桥直达）：HTTP 直取零浏览器成本，三条件升级（正文空、墙词、少于 20 词）走 goto 加页内抽取；html:true 恒走引擎腿回渲染后 DOM HTML（html 字段），markdown:true 经 mdka 转本腿 html 回 markdown 字段；回 {via, title, text, html?, markdown?, status?}；与 CLI browse fetch 同语义（纯函数单源，腿编排双轨）。",
+        description: "一次性只读抓取（方言全局；rn 经 cdp::dialect 桥直达）：HTTP 直取零浏览器成本，三条件升级（正文空、墙词、少于 20 词）走 goto 加页内抽取；html:true 恒走引擎腿回渲染后 DOM HTML（html 字段），markdown:true 经 mdka 转本腿 html 回 markdown 字段；回 {via, title, text} 加可选键（HTTP 腿：status/bytes/markdown?；引擎升级腿：upgradedFrom/httpStatus/markdown?/html?；html:true 直取形：html/markdown?；求了没取到给 null 占位）；页内抽取异常显式报错；与 CLI browse fetch 同语义（纯函数单源，腿编排双轨）。",
         example: r#"return await fetch("https://example.com", {markdown: true})"#,
     },
     CmdSpec {

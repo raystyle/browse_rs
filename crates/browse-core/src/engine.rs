@@ -551,15 +551,32 @@ impl Engine {
                 // （测试确定性 / 「别碰我正开着的浏览器」的显式意图）
                 let no_attach =
                     std::env::var_os("BROWSE_NO_ATTACH").is_some_and(|v| v == "1" || v == "true");
-                if !no_attach && let Some(ws) = discovery::probe_default().await {
-                    self.session
+                // 幻影探测兜底（评审 F-7）：DevToolsActivePort 残留文件
+                // （浏览器被 kill -9 不删，探测腿无活性校验）让探测恒中
+                // 死端口，attach 硬错会击穿 ADR-0003 的「缺则自起」——连接
+                // 失败视探测未中，落回 spawn 分支；探测层不修，修回落
+                let attached = if !no_attach && let Some(ws) = discovery::probe_default().await {
+                    match self
+                        .session
                         .connect_opts(ConnectOptions {
                             ws_url: Some(ws.clone()),
                             ..Default::default()
                         })
                         .await
-                        .context("attach 已探测到的浏览器")?;
-                    EngineSource::Attached { ws_url: ws }
+                    {
+                        Ok(()) => Some(EngineSource::Attached { ws_url: ws }),
+                        Err(e) => {
+                            eprintln!(
+                                "browse: 附着探测到的浏览器连接失败（{e:#}），回落自起引擎；若系残留 DevToolsActivePort 所致，可删该文件恢复附着"
+                            );
+                            None
+                        }
+                    }
+                } else {
+                    None
+                };
+                if let Some(src) = attached {
+                    src
                 } else if *pipe {
                     return self
                         .spawn_pipes(
@@ -589,7 +606,13 @@ impl Engine {
             child: None,
             isolated_dir: None,
         };
-        self.attach_first_page().await?;
+        // 半态收口（评审 G-27）：attach 首页失败不复留「已 Attached 无活动
+        // 路由」的半态（下一拍幂等短路永不补 attach）——复位 NotConnected
+        // 让重试走全流程，再上抛
+        if let Err(e) = self.attach_first_page().await {
+            self.inner.lock().await.source = EngineSource::NotConnected;
+            return Err(e);
+        }
         Ok(source)
     }
 
@@ -609,13 +632,15 @@ impl Engine {
             )
         })?;
         let profile = profile.unwrap_or_else(crate::paths::engine_profile_dir);
-        let child = cdp_spawn::spawn_engine(&chrome, &profile, headless, extra_args)?;
+        let mut child = cdp_spawn::spawn_engine(&chrome, &profile, headless, extra_args)?;
         let pid = child.id();
         // spawn 之后的任何失败都必须杀掉 child：std Child 的 Drop 不杀进程，
-        // 丢句柄 = 孤儿 chrome 锁死 profile，后续 spawn 全挂
+        // 丢句柄 = 孤儿 chrome 锁死 profile，后续 spawn 全挂；杀后 wait 收尸
+        // （评审 G-21：杀而不等留僵尸挂 daemon，失败一次积一个）
         macro_rules! bail_kill {
             ($e:expr) => {{
                 let _ = cdp_spawn::terminate_pid(pid);
+                let _ = child.wait();
                 return Err($e);
             }};
         }
@@ -740,21 +765,25 @@ impl Engine {
     /// （铁律：绝不关用户的浏览器）。
     ///
     /// 自起实例先 `Browser.close` 优雅退（走守卫旁路），5 秒内 `try_wait`
-    /// 轮询等退，不退兜底杀进程树。
+    /// 轮询等退，不退兜底强杀。慢段（等退/杀/隔离目录清理）不持 inner 锁
+    /// （评审 G-22）：`source()`/`health_json` 在 shutdown 窗口内照常应答；
+    /// 收尾按 pid 复核后复位，不误伤窗口内新拉起的引擎。
     ///
     /// # Errors
     ///
-    /// spawn 来源终结失败（杀不掉）。
+    /// spawn 来源终结失败（杀不掉且仍存活）。
     pub async fn shutdown(&self) -> Result<()> {
-        let mut inner = self.inner.lock().await;
-        let EngineSource::Spawned { pid, .. } = &inner.source else {
-            return Ok(());
+        let (pid, mut child, isolated_dir) = {
+            let mut inner = self.inner.lock().await;
+            let EngineSource::Spawned { pid, .. } = &inner.source else {
+                return Ok(());
+            };
+            (*pid, inner.child.take(), inner.isolated_dir.take())
         };
-        let pid = *pid;
         let _ = self.session.graceful_close_browser().await;
         let deadline = Instant::now() + Duration::from_secs(5);
         let mut exited = false;
-        if let Some(child) = inner.child.as_mut() {
+        if let Some(child) = child.as_mut() {
             while Instant::now() < deadline {
                 match child.try_wait() {
                     Ok(Some(_)) => {
@@ -766,11 +795,16 @@ impl Engine {
                 }
             }
         }
-        if !exited {
-            cdp_spawn::terminate_pid(pid)?;
+        if !exited
+            && let Err(e) = cdp_spawn::terminate_pid(pid)
+            && !child
+                .as_mut()
+                .is_some_and(|c| matches!(c.try_wait(), Ok(Some(_))))
+        {
+            return Err(e);
         }
         // 隔离态 profile 随引擎退场删除（#25.3 拆出），不留站点痕迹
-        if let Some(dir) = inner.isolated_dir.take() {
+        if let Some(dir) = isolated_dir {
             let res =
                 tokio::task::spawn_blocking(move || std::fs::remove_dir_all(&dir).map(|_| dir))
                     .await;
@@ -780,8 +814,14 @@ impl Engine {
                 eprintln!("[browse] 隔离目录清理失败（残留待手清，评审 G）：{e}");
             }
         }
-        inner.source = EngineSource::NotConnected;
-        inner.child = None;
+        // pid 复核后复位（评审 G-22/G-27）：窗口内若有新 ensure 拉起新引擎
+        // （不同 pid），不把它误标 NotConnected
+        let mut inner = self.inner.lock().await;
+        if let EngineSource::Spawned { pid: p, .. } = &inner.source
+            && *p == pid
+        {
+            inner.source = EngineSource::NotConnected;
+        }
         Ok(())
     }
 
