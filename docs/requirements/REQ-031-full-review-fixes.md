@@ -28,3 +28,4 @@ trace: 双工位评审（herdr browse-grok-review / browse-kimi-review，产物 
 - fetch 引擎腿 goto 预算随 --timeout（旧写死 20s）；/eval 请求体带 timeout_s（三轮起 +12s 余量：探针与抽取不吃导航预算）；dialect 桥上界随请求级兜底硬界（kimi G-5/G-6）
 - 二轮对线：grok 抓出修复自伤 F 一件（CLI 引擎腿信封类型链：片段回对象、CLI 按串解析必空，391048f 收口并提 parse_engine_eval_receipt 纯函数加回归锁）；kimi 抓出 F-6 修复不完整一件（WHATWG 解析分歧：special scheme 的 `\` 等同 `/` 终止权威段、Tab/LF/CR 解析前剔除，deny 仍可绕，三轮补 `\\` 分隔符与控制符剔除加回归锁）
 - 评审轮次：修复批提交后派两工位交叉复核（对方向为对方腿的修复面），F 清零且双 CONFIRM 才闭环（三方一致判据）
+- 四轮记档：R4-G-3 非 special scheme 的 `\` 一刀切分歧记档（影响面近零：allow 模式非 http(s) 恒拦、deny 模式 Chrome 对非 special 不导航 host，函数文档已载非 http(s) 调用方自判）；G-r11 引据小出入更正（Fetch 避让纪律实载 http-api.md，--llms/surface 面只载能力未载纪律）；四轮 F（pipe2 同位空转不清 CLOEXEC）与 G（url_host scheme 斜杠位、schema any 省键、watcher 连败节流挂起）随五刀收口

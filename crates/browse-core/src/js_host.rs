@@ -3518,12 +3518,17 @@ fn spawn_route_watcher(
         // 滞留 true 无告警——换代即按当前路由表重发（表空则复位旗标），
         // 与 dialog watcher 的纪元清账同呼吸
         let mut seen_epoch = session.connection_epoch();
+        // 连败计数（评审 R4-G-2）：回滚重试无节流会在滞留态 250ms 刷一行
+        // 日志；连败上界后挂起重同步（复位 fetch_by_us），重发 routeBlock
+        // 可再触发。初值在换代臂内先归零再读（definite-assignment）
+        let mut enable_fails: u32;
         loop {
             tokio::time::sleep(std::time::Duration::from_millis(250)).await;
             let epoch = session.connection_epoch();
             if epoch != seen_epoch {
                 let prev_epoch = seen_epoch;
                 seen_epoch = epoch;
+                enable_fails = 0;
                 if fetch_by_us.load(Ordering::Relaxed) {
                     let rules = routes.lock().await;
                     if rules.is_empty() {
@@ -3540,11 +3545,23 @@ fn spawn_route_watcher(
                             .call("Fetch.enable", json!({ "patterns": patterns }))
                             .await
                         {
-                            // 失败回滚纪元（评审 G-r2）：重连瞬间活动路由未
-                            // 就绪时 enable 会踩空——回滚让下一拍（250ms 后，
-                            // 路由通常已就位）重试，不静默死到下次换代
-                            seen_epoch = prev_epoch;
-                            eprintln!("[browse] 重连后重开 Fetch 拦截失败（250ms 后重试）：{e:#}");
+                            enable_fails += 1;
+                            if enable_fails >= 10 {
+                                // 挂起（评审 R4-G-2）：规则留册不删（重发
+                                // routeBlock 触发 sync_fetch_patterns 即恢复）
+                                fetch_by_us.store(false, Ordering::Relaxed);
+                                eprintln!(
+                                    "[browse] 重连后重开 Fetch 拦截连续 {enable_fails} 次失败，已挂起重同步（规则留册；重发 routeBlock/routeClear 可再触发）：{e:#}"
+                                );
+                            } else {
+                                // 失败回滚纪元（评审 G-r2）：重连瞬间活动路由
+                                // 未就绪时 enable 会踩空——回滚让下一拍
+                                // （250ms 后，路由通常已就位）重试
+                                seen_epoch = prev_epoch;
+                                eprintln!(
+                                    "[browse] 重连后重开 Fetch 拦截失败（250ms 后重试）：{e:#}"
+                                );
+                            }
                         }
                     }
                 }

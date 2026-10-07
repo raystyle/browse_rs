@@ -37,8 +37,9 @@ pub struct ArgSpec {
     /// 参数名。
     pub name: &'static str,
     /// `string` / `number` / `boolean` / `object` / `any` / `id` /
-    /// `int` / `array`（在册全集，评审 G-37：声明面与实参面曾漂移，
-    /// 派生 schema 按此出 JSON Schema type）。
+    /// `int` / `array`（在册全集，评审 G-37：声明面与实参面曾漂移）。
+    /// 派生 schema 的映射（私有 `schema_ty`）：`int` 出 `integer`、`id`
+    /// 出 `string`、`any` 与未知值不设 type 约束（省键），其余直通。
     pub ty: &'static str,
     /// 是否必填。
     pub required: bool,
@@ -1630,14 +1631,22 @@ pub fn catalog_json() -> Value {
     )
 }
 
-/// [`ArgSpec::ty`] 到 JSON Schema type 的映射（评审 G-r5）：方言目录
-/// 值域里的 `int`/`id` 不是合法 JSON Schema type，派生面映射到
-/// `integer`/`string`；其余直通。
-fn schema_ty(ty: &str) -> &str {
+/// [`ArgSpec::ty`] 到 JSON Schema type 的映射（评审 G-r5 + 四轮 G）：
+/// 方言目录值域里的 `int`/`id` 不是合法 JSON Schema type，派生面映射
+/// `integer`/`string`；`any` 是任意值（含 null），schema 面不设 type
+/// 约束（返回 `None` 省键）；其余直通。
+fn schema_ty(ty: &str) -> Option<&'static str> {
     match ty {
-        "int" => "integer",
-        "id" => "string",
-        other => other,
+        "int" => Some("integer"),
+        "id" => Some("string"),
+        "any" => None,
+        "string" => Some("string"),
+        "number" => Some("number"),
+        "boolean" => Some("boolean"),
+        "object" => Some("object"),
+        "array" => Some("array"),
+        // 目录外的未知值（防将来漂移）：不设约束，不产非法 type
+        _ => None,
     }
 }
 
@@ -1645,17 +1654,19 @@ fn input_schema(c: &CmdSpec) -> Value {
     let mut props = serde_json::Map::new();
     let mut required = Vec::new();
     for a in c.args {
-        props.insert(
-            a.name.to_string(),
-            json!({
-                "type": schema_ty(a.ty),
-                "description": if let Some(d) = a.default {
-                    format!("缺省 {d}")
-                } else {
-                    String::new()
-                },
-            }),
+        let mut prop = serde_json::Map::new();
+        if let Some(t) = schema_ty(a.ty) {
+            prop.insert("type".to_string(), json!(t));
+        }
+        prop.insert(
+            "description".to_string(),
+            if let Some(d) = a.default {
+                json!(format!("缺省 {d}"))
+            } else {
+                json!("")
+            },
         );
+        props.insert(a.name.to_string(), Value::Object(prop));
         if a.required {
             required.push(json!(a.name));
         }

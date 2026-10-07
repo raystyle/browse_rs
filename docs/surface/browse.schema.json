@@ -29,8 +29,7 @@
             "type": "integer"
           },
           "v": {
-            "description": "",
-            "type": "any"
+            "description": ""
           }
         },
         "required": [
@@ -586,8 +585,7 @@
             "type": "string"
           },
           "stdin": {
-            "description": "缺省 空实参时整段管道读",
-            "type": "any"
+            "description": "缺省 空实参时整段管道读"
           },
           "vars": {
             "description": "缺省 --vars 键=值 可重复；与 @ 实参同给即模板道",
@@ -1500,8 +1498,7 @@
             "type": "string"
           },
           "submit": {
-            "description": "缺省 false（true 或 {submit:true} 填完顺带 Enter）",
-            "type": "any"
+            "description": "缺省 false（true 或 {submit:true} 填完顺带 Enter）"
           },
           "text": {
             "description": "",
@@ -1527,8 +1524,7 @@
             "type": "string"
           },
           "submit": {
-            "description": "缺省 false（true 或 {submit:true} 填完顺带 Enter）",
-            "type": "any"
+            "description": "缺省 false（true 或 {submit:true} 填完顺带 Enter）"
           },
           "text": {
             "description": "",
@@ -1737,8 +1733,7 @@
       "input": {
         "properties": {
           "state": {
-            "description": "",
-            "type": "any"
+            "description": ""
           }
         },
         "required": [
@@ -2050,8 +2045,7 @@
       "input": {
         "properties": {
           "x": {
-            "description": "",
-            "type": "any"
+            "description": ""
           }
         },
         "required": [
@@ -2129,8 +2123,7 @@
       "input": {
         "properties": {
           "indexOrRequestId": {
-            "description": "",
-            "type": "any"
+            "description": ""
           },
           "since": {
             "description": "缺省 0（与 requests 同窗）",
@@ -2417,8 +2410,7 @@
             "type": "string"
           },
           "value": {
-            "description": "",
-            "type": "any"
+            "description": ""
           }
         },
         "required": [

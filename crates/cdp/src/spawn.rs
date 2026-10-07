@@ -349,13 +349,23 @@ pub fn spawn_engine_pipes(
         cmd.args(extra_args);
         // fork 后 exec 前：把两端布到固定 fd 3/4（clean-chrome POSIX 契约），
         // 并关掉本侧两端在子进程的副本（评审 P-1）。闭包里只有
-        // dup2/close（async-signal-safe）
+        // dup2/close/fcntl（async-signal-safe）
         unsafe {
             cmd.pre_exec(move || {
                 // 外层 unsafe 已覆盖（edition 2024 的 unsafe_op_in_unsafe_fn 不适用于
                 // 闭包体内的调用，这里嵌套块会被 clippy 判多余）
                 let wire = |src: i32, dst: i32| -> std::io::Result<()> {
                     if src == dst {
+                        // 同位空转也要清 CLOEXEC（评审四轮 F）：pipe2(O_CLOEXEC)
+                        // 后本位带 CLOEXEC，POSIX dup2(fd,fd) 不改标志——
+                        // 不清位则读端恰在 3（或写端在 4）时 exec 直接关掉
+                        // 这端，chrome 丢管道
+                        let flags = libc::fcntl(src, libc::F_GETFD);
+                        if flags >= 0
+                            && libc::fcntl(src, libc::F_SETFD, flags & !libc::FD_CLOEXEC) < 0
+                        {
+                            return Err(std::io::Error::last_os_error());
+                        }
                         return Ok(());
                     }
                     if libc::dup2(src, dst) < 0 {

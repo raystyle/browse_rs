@@ -166,12 +166,13 @@ pub fn anon_pair() -> Result<(PipeReader, PipeWriter)> {
 
 /// 建一对匿名管道：`(读端, 写端)`。
 ///
-/// POSIX fd 跨 fork/exec 继承（非 CLOEXEC），布线到固定 fd 由 spawn 侧的
-/// pre_exec 做。
+/// POSIX 走 `pipe2(O_CLOEXEC)`：fork 窗内他线程 spawn 的无关子进程不继承
+/// 这四端（评审 G-r1）；布线到固定 fd 3/4 由 spawn 侧的 pre_exec 做
+/// （`dup2` 会清目标位 CLOEXEC；同位空转分支显式清位，见 wire 注释）。
 ///
 /// # Errors
 ///
-/// `pipe(2)` 失败。
+/// `pipe2(2)` 失败。
 #[cfg(not(windows))]
 pub fn anon_pair() -> Result<(PipeReader, PipeWriter)> {
     let mut fds = [0i32; 2];
@@ -213,7 +214,7 @@ pub fn set_inheritable(h: usize, on: bool) -> Result<()> {
 
 /// POSIX 恒成功（Windows 对应物才可能失败）。
 ///
-/// fd 跨 fork/exec 默认继承（非 CLOEXEC），布到固定 fd 3/4 由 spawn 的
+/// fd 带 CLOEXEC（见 [`anon_pair`]），布到固定 fd 3/4（含清位）由 spawn 的
 /// pre_exec 负责。
 ///
 /// # Errors

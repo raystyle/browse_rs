@@ -1333,12 +1333,15 @@ fn domain_rules() -> (Vec<&'static str>, Vec<&'static str>) {
 /// assert_eq!(cdp::session::url_host("https://user:pass@EVIL.com:8443/x"), "evil.com");
 /// ```
 pub fn url_host(url: &str) -> String {
-    // WHATWG 预处理（评审 R2-F-1）：Chrome 解析前剔除 ASCII Tab/LF/CR——
-    // 不剔则 `https://ev\nil.com/` 守卫见到 ev\nil.com 而 Chrome 导航到
-    // evil.com，deny 可绕
+    // WHATWG 预处理（评审 R2-F-1 + 四轮 G）：Chrome 解析前剔除 ASCII
+    // Tab/LF/CR——不剔则 `https://ev\nil.com/` 守卫见到 ev\nil.com 而
+    // Chrome 导航到 evil.com；special scheme 的 `\` 在**所有斜杠位**等同
+    // `/`（不止权威段终止符）——scheme 段的 `https:\\` / `https:/\` 也要
+    // 归一，否则前缀认不出、host 取成 "https" 而 deny 脱靶
     let cleaned: String = url
         .chars()
         .filter(|c| !matches!(c, '\t' | '\r' | '\n'))
+        .map(|c| if c == '\\' { '/' } else { c })
         .collect();
     let rest = cleaned
         .strip_prefix("https://")
@@ -2014,6 +2017,9 @@ mod tests {
         // 反斜杠：Chrome 导航 evil.com（\@legit.com 落路径段），守卫同取
         assert_eq!(url_host("https://evil.com\\@legit.com/"), "evil.com");
         assert_eq!(url_host("https://legit.com/\\path"), "legit.com");
+        // scheme 斜杠位（四轮 G）：`\` 在所有斜杠位等同 `/`
+        assert_eq!(url_host("https:\\\\evil.com/"), "evil.com");
+        assert_eq!(url_host("https:/\\evil.com/"), "evil.com");
         // Tab/换行剔除：`ev\nil.com` 的真实 host 是 evil.com
         assert_eq!(url_host("https://ev\nil.com/"), "evil.com");
         assert_eq!(url_host("https://evil\t.com/"), "evil.com");
@@ -2023,6 +2029,7 @@ mod tests {
             &url_host("https://evil.com\\@legit.com/"),
             "evil.com"
         ));
+        assert!(host_matches(&url_host("https:\\\\evil.com/"), "evil.com"));
     }
 
     /// 守卫错误的 CTA 契约：给「下一步」，不只给原因。
