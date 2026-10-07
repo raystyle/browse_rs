@@ -9,7 +9,7 @@
 ## Functions
 
 - `is_browser_method` — 判断方法是否属于 browser 端点域（这类方法不附 `sessionId`）。
-- `url_host` — 裸 URL 的 host 提取（`http(s)://` 后的权威段剥 userinfo 与端口，小写），
+- `url_host` — 裸 URL 的 host 提取（`http(s):` scheme 段后的权威段剥 userinfo 与
 
 ## Types
 

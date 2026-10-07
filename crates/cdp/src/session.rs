@@ -1313,11 +1313,14 @@ fn domain_rules() -> (Vec<&'static str>, Vec<&'static str>) {
         .clone()
 }
 
-/// 裸 URL 的 host 提取（`http(s)://` 后的权威段剥 userinfo 与端口，小写），
-/// 不引 url crate。何时用：域策略匹配与技能触发层的域名分段。边界：非
-/// `http(s)://` 前缀的形（data:/about:/ftp:）返回的是首个 `:` 前段（即
+/// 裸 URL 的 host 提取（`http(s):` scheme 段后的权威段剥 userinfo 与
+/// 端口，小写；斜杠数不限——WHATWG special scheme 的 ignore-slashes 态，
+/// `https:evil.com` 与 `https:///evil.com` 同 `https://evil.com`），不引
+/// url crate。何时用：域策略匹配与技能触发层的域名分段。边界：非
+/// `http(s):` 前缀的形（data:/about:/ftp:）返回的是首个 `:` 前段（即
 /// scheme 名，如 `"data"`），不是空串，要 http(s) 门禁的调用方自判；IPv6
-/// 字面量不支撑（`[::1]` 取 `[`，历史口径，未接入面）。
+/// 字面量不支撑（`[::1]` 取 `[`，历史口径，未接入面）；非 special scheme
+/// 的 `\` 语义分歧不支撑（影响面近零，评审 R4-G-3 记档）。
 ///
 /// userinfo（`user[:pass]@`）必须剥掉再取 host（评审 F-6：不剥则
 /// `https://x@evil.com/` 的 host 取成 `x@evil.com`，后缀匹配被 `@` 卡住，
@@ -1343,9 +1346,15 @@ pub fn url_host(url: &str) -> String {
         .filter(|c| !matches!(c, '\t' | '\r' | '\n'))
         .map(|c| if c == '\\' { '/' } else { c })
         .collect();
+    // scheme 段剥离按「special authority ignore slashes」语义（评审
+    // R5-F-1，WHATWG 明文）：special scheme 后斜杠数不限——`https:evil.com`
+    //（零斜杠）与 `https:///evil.com`（多斜杠）Chrome 都导航到 evil.com，
+    // 恰剥两斜杠会取错权威段而 deny 脱靶。先剥 scheme 冒号段，再跳过
+    // **全部**前导斜杠（`\` 已在预处理归一为 `/`）
     let rest = cleaned
-        .strip_prefix("https://")
-        .or_else(|| cleaned.strip_prefix("http://"))
+        .strip_prefix("https:")
+        .or_else(|| cleaned.strip_prefix("http:"))
+        .map(|r| r.trim_start_matches('/'))
         .unwrap_or(&cleaned);
     // 权威段到首个 `/ \ ? #` 为止：不能按 `:` 切（userinfo 与 host:port
     // 都含冒号）；http(s) 是 special scheme，`\` 等同 `/` 做权威段终止符
@@ -2020,6 +2029,10 @@ mod tests {
         // scheme 斜杠位（四轮 G）：`\` 在所有斜杠位等同 `/`
         assert_eq!(url_host("https:\\\\evil.com/"), "evil.com");
         assert_eq!(url_host("https:/\\evil.com/"), "evil.com");
+        // 斜杠数不限（五轮 F）：special authority ignore slashes 态
+        assert_eq!(url_host("https:evil.com"), "evil.com");
+        assert_eq!(url_host("https:///evil.com"), "evil.com");
+        assert_eq!(url_host("http:/evil.com"), "evil.com");
         // Tab/换行剔除：`ev\nil.com` 的真实 host 是 evil.com
         assert_eq!(url_host("https://ev\nil.com/"), "evil.com");
         assert_eq!(url_host("https://evil\t.com/"), "evil.com");
