@@ -3,7 +3,7 @@ id: REQ-032
 title: 封版 v0.30.9（全量评审修复批，REQ-031 判据 patch）
 status: implemented
 priority: must
-trace: 封版树 c5ebd29（三方一致：grok/kimi 双工位七轮对线双 CONFIRM，F 清零）；门禁全套 exit 0（fmt/clippy -D warnings/test 305+doc 51/aidoc --check --strict/surface 契约/BROWSE_E2E=1 e2e 16 件 125s 含管道态实弹）；release.ps1 -Tag v0.30.9 发布流水回执
+trace: 封版树 2f30b0e（= ac20013 加 apple 补救一笔：libc 无 pipe2 绑定，anon_pair cfg 分流 pipe+fcntl 补 CLOEXEC；mac 构建实机绿）；三方一致：grok/kimi 双工位七轮对线双 CONFIRM，F 清零；门禁全套 exit 0（fmt/clippy -D warnings/test 305+doc 51/aidoc --check --strict/surface 契约/BROWSE_E2E=1 e2e 16 件 125s 含管道态实弹）；release.ps1 -Tag v0.30.9 发布毕（三平台包加 sha256 边车六件、三端解包冒烟、gh 直发 --latest，播种流水接力）
 ---
 
 # REQ-032：封版 0.30.9
