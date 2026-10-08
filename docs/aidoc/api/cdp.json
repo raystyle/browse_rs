@@ -95,7 +95,7 @@
     {
       "path": "cdp::pipe::anon_pair",
       "kind": "function",
-      "docs": "建一对匿名管道：`(读端, 写端)`。\n\nPOSIX 走 `pipe2(O_CLOEXEC)`：fork 窗内他线程 spawn 的无关子进程不继承\n这四端（评审 G-r1）；布线到固定 fd 3/4 由 spawn 侧的 pre_exec 做\n（`dup2` 会清目标位 CLOEXEC；同位空转分支显式清位，见 wire 注释）。\n\n# Errors\n\n`pipe2(2)` 失败。"
+      "docs": "建一对匿名管道：`(读端, 写端)`。\n\nPOSIX 建对即带 CLOEXEC：fork 窗内他线程 spawn 的无关子进程不继承\n这四端（评审 G-r1）；布线到固定 fd 3/4 由 spawn 侧的 pre_exec 做\n（`dup2` 会清目标位 CLOEXEC；同位空转分支显式清位，见 wire 注释）。\nLinux 走 `pipe2(O_CLOEXEC)` 原子形；apple 无 pipe2 绑定，`pipe` 加\n`fcntl` 逐端补 CLOEXEC（两系统调用间有一拍窗口，同收 fork 前泄 fd 面）。\n\n# Errors\n\n`pipe`/`pipe2` 建对失败。"
     },
     {
       "path": "cdp::pipe::set_inheritable",

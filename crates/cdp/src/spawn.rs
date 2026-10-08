@@ -198,6 +198,43 @@ fn display_present() -> bool {
         || std::env::var_os("WAYLAND_DISPLAY").is_some_and(|w| !w.is_empty())
 }
 
+/// headless 在 Linux 的自持加固组（clean-chrome 二分定案，油猴验收轮发现
+/// 一二同根）：裸 `--headless` 在 WSL/ssh 等环境会进 GPU 初始化崩溃环
+/// （EGL/Vulkan/SwANGLE 三连失败反复），消息泵被拖垮——timer/mojo 敏感
+/// 面（通知终态回调、注入调度）被饿死且非确定。已知好形长期靠调用方
+/// BROWSE_ENGINE_ARGS 兜底，pwsh 等不继承 bash rc env 的调用路径即裸奔
+/// ——收进二进制自持，不再赖调用方环境。`--disable-gpu` 无条件入组：
+/// DISPLAY 在不代表 GPU 栈可用（WSLg 恒供 DISPLAY 但图形通道可带伤，
+/// 本机实证），headless 自动化语义本就稳定优先于 GPU 渲染（screenshot
+/// 走软件光栅不受影响）。`extra_args` 已带同前缀旗标时不叠（用户显式
+/// 值优先）。Windows/macOS 的 headless 无此面，返回空。
+fn headless_hardening(extra_args: &[String]) -> Vec<&'static str> {
+    if cfg!(windows) || cfg!(target_os = "macos") {
+        return Vec::new();
+    }
+    let taken = |prefix: &str| {
+        extra_args
+            .iter()
+            .any(|a| a == prefix || a.starts_with(&format!("{prefix}=")))
+    };
+    let mut out = Vec::new();
+    for (flag, prefix) in [
+        ("--disable-gpu", "--disable-gpu"),
+        ("--noerrdialogs", "--noerrdialogs"),
+        ("--ozone-platform=headless", "--ozone-platform"),
+        (
+            "--ozone-override-screen-size=800,600",
+            "--ozone-override-screen-size",
+        ),
+        ("--use-angle=swiftshader-webgl", "--use-angle"),
+    ] {
+        if !taken(prefix) {
+            out.push(flag);
+        }
+    }
+    out
+}
+
 /// 拉起一个带调试口的专属引擎实例（独立 profile、端口自动分配）。
 ///
 /// 参数：可执行文件、独立 profile 目录、是否无头。
@@ -238,10 +275,12 @@ pub fn spawn_engine(
         .stderr(engine_stdio(profile_dir));
     if headless {
         cmd.arg("--headless");
+        cmd.args(headless_hardening(extra_args));
     } else if let Some(h) = headless_fallback(headless, extra_args, display_present()) {
         // #57：无显示会话有头必挂（ozone 初始化失败即退，DevToolsActivePort
-        // 永不落盘），自动回退无头
+        // 永不落盘），自动回退无头（回退形同享加固组）
         cmd.arg(h);
+        cmd.args(headless_hardening(extra_args));
     }
     cmd.args(extra_args);
     cmd.spawn()
@@ -342,9 +381,11 @@ pub fn spawn_engine_pipes(
             .stderr(engine_stdio(profile_dir));
         if headless {
             cmd.arg("--headless");
+            cmd.args(headless_hardening(extra_args));
         } else if let Some(h) = headless_fallback(headless, extra_args, display_present()) {
-            // #57：无显示会话自动回退（同端口态口径）
+            // #57：无显示会话自动回退（同端口态口径；同享加固组）
             cmd.arg(h);
+            cmd.args(headless_hardening(extra_args));
         }
         cmd.args(extra_args);
         // fork 后 exec 前：把两端布到固定 fd 3/4（clean-chrome POSIX 契约），
@@ -429,6 +470,7 @@ pub fn spawn_engine_pipes(
             .stderr(engine_stdio(profile_dir));
         if headless {
             cmd.arg("--headless");
+            cmd.args(headless_hardening(extra_args));
         } else if let Some(h) = headless_fallback(headless, extra_args, display_present()) {
             // #57：无显示会话自动回退（Windows 恒真不触发，口径同 unix 侧）
             cmd.arg(h);
@@ -493,6 +535,30 @@ pub fn terminate_pid(pid: u32) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// headless 加固组自持(clean-chrome 二分定案回归锁):Linux 非空、
+    /// 同前缀去重、用户显式值优先。
+    #[test]
+    fn headless_hardening_group() {
+        let full = headless_hardening(&[]);
+        if cfg!(windows) || cfg!(target_os = "macos") {
+            assert!(full.is_empty(), "win/mac 无此面");
+            return;
+        }
+        assert!(full.contains(&"--disable-gpu"), "无显示应叠: {full:?}");
+        assert!(full.contains(&"--ozone-platform=headless"), "{full:?}");
+        assert!(full.contains(&"--use-angle=swiftshader-webgl"), "{full:?}");
+        // 同前缀去重:用户已显式给 ozone 平台时不叠
+        let dedup = headless_hardening(&["--ozone-platform=x11".to_string()]);
+        assert!(!dedup.contains(&"--ozone-platform=headless"), "{dedup:?}");
+        assert!(
+            dedup.contains(&"--use-angle=swiftshader-webgl"),
+            "{dedup:?}"
+        );
+        // 等值形也不叠
+        let same = headless_hardening(&["--noerrdialogs".to_string()]);
+        assert!(!same.contains(&"--noerrdialogs"), "{same:?}");
+    }
 
     /// #57 回退判定四象限：已无头/显式旗标/有显示都 None，唯「有头意图
     /// 加无显示加无显式旗标」补 --headless。
