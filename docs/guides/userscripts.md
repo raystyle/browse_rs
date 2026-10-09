@@ -60,17 +60,19 @@ OS 效果（剪贴板真写入、通知真弹出）归带桌面端手验；无�
 ```js
 // ==UserScript==
 // @name         page-event-reporter
-// @match        http://127.0.0.1:8871/*
-// @connect      127.0.0.1          // GM xhr 目标授权,必带
+// @match        http://127.0.0.1:8871/*   // 端口级锚定,勿宽配到全部本机页
+// @connect      127.0.0.1          // 必须与上报 URL 的主机一致(127.0.0.1 ≠ localhost)
+// @grant        GM_xmlhttpRequest  // clean-chrome 运行时可省,移植到扩展管理器必带
 // @run-at       document-idle
 // ==/UserScript==
 (function () {
   function report(name, data) {
     GM_xmlhttpRequest({
       method: 'POST',
-      url: 'http://127.0.0.1:9880/us-event',
+      url: 'http://127.0.0.1:9880/us-event',   // 命名实例注意换派生端口,主机不变
       headers: { 'Content-Type': 'application/json' },
-      data: JSON.stringify({ name: name, url: location.href, data: data })
+      data: JSON.stringify({ name: name, url: location.href, data: data }),  // data 恒字符串
+      onerror: function () { /* daemon 不在跑时静默失败,需要感知就打 console */ }
     });
   }
   report('page-ready', { title: document.title });
@@ -79,6 +81,12 @@ OS 效果（剪贴板真写入、通知真弹出）归带桌面端手验；无�
   }, true);
 })();
 ```
+
+实践要点(X 上真实踩坑提炼，2026-10 调研)：
+
+- **探针选形**：耐用的形是「一次 `page-ready` + 钩 `fetch`/`XMLHttpRequest` + `MutationObserver`」,不是全页 click 捕获:环只有 1000 条/单条 32KB,高频事件会把旧记录挤掉；去重/节流放脚本侧做(本地缓存记已上报键)，消费端不设批量接口。
+- **通道纪律**：走 `GM_xmlhttpRequest` 不走页面 `fetch`(后者被 CORS 拦，给 daemon 加 CORS 头是错方);`@connect` 按主机授权，与 URL 主机不一致仍被拦；不要把本机回环配进 HTTP 代理(代理带走回环表现为「daemon 明明在却上报失败」)。
+- **Worker 边界**：Web Worker 里没有 GM 函数，要 `postMessage` 回主线程再上报。
 
 消费面：
 
