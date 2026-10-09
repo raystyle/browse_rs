@@ -3,7 +3,7 @@ id: REQ-037
 title: cta 安全收口（封 v0.33.1；自由串→动作枚举+daemon 模板闭集）
 status: implemented
 priority: must
-trace: 待封版树回填
+trace: 封版树 40dc966（门禁全套绿：303+50+clippy+aidoc+surface+PEVO 11）；release.ps1 -Tag v0.33.1 发布毕（dist 六件、三端解包冒烟、gh 直发 --latest）；E2E 七腿复绿；workspace 仓 R.see 收口 87193dc
 ---
 
 # REQ-037：cta 安全收口
