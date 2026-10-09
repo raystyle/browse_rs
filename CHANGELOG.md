@@ -4,8 +4,13 @@
 
 ## Unreleased
 
-- 探针框架起步件(用户令「开发庞大的油猴探针框架」+「油猴探针去启发式地触发 CTA」):事件流加 `cta` 字段(可选,截 512;探针按页况启发式给下一步动作,`browse events` 直读);`page_skills_hint` 双指(读+跑:`browse workspace page <slug>(跑:browse rune page-skills/<slug>/mech.rn)`);拼批包裹层 facts 改 var(prelude 自带 var 守卫撞 const 是 SyntaxError,整批零键,实测修)。
-- 探针运行时(probe-kit v1)落 workspace 仓 `_prelude.js`:window.__probe(see/stop/tap/route/onFlush;单包约定/节流去重/端口自替换/错误隔离),仓侧 README 载创作约定与装载时序。
+（无；最新封版 0.33.0）
+
+## 0.33.0 - 2026-10-10
+
+- **探针框架起步（REQ-036，用户令「开发庞大的油猴探针框架」+「油猴探针去启发式地触发 cta」）**：事件流加 `cta` 字段（可选,截 512;探针按页况启发式给下一步动作,`browse events` 直读,不是静态表）;`page_skills_hint` 双指（读+跑:`browse workspace page <slug>(跑:browse rune page-skills/<slug>/mech.rn)`,真仓实弹在回执）;拼批包裹层 facts 改 var（prelude 自带 var 守卫撞 const 是 SyntaxError,整批复解析失败表现为零键,真仓实测修;坑入册）。
+- **probe-kit v1 运行时落 workspace 仓**（c27354c）:`_prelude.js` 装 `window.__probe`（see/stop/tap/route/onFlush;fetch/XHR/history 单包约定、节流去重、%%BROWSE_PORT%% 自替换回落 9880、单探针错误隔离）+判定 facts 双职责;README 载创作约定与装载时序（document-start 探针用 waitProbe 等待形）。仓侧迭代零 browse 发版,新 slug 攒批进白名单才发版。
+- semver 判据:能力新增（cta 启发式面）取 minor（REQ-004）。
 
 ## 0.32.0 - 2026-10-09
 

@@ -39,6 +39,7 @@
 | REQ-033 | implemented | must | 油猴脚本帮助与文档面（封 v0.30.10，纯文档批；账本无单） | 五件：help 节/新指南/getting-started 第 11 节/CHANGELOG/REQ；门禁含 PEVO 路径对齐 |
 | REQ-034 | implemented | must | 油猴事件回调面与显式路径快败（封 v0.31.0；账本 #77/#76） | POST /us-event + GET/DELETE /events + browse events 三件；E2E reporter 脚本全链实弹；#76 跨宿主串扰定性+守卫 |
 | REQ-035 | implemented | must | workspace 双脚本对重建与 stop api（封 v0.32.0；snippets 剔除） | @detect 拼批判定+九对新白名单+/userscript/stop+API 标准形+snippets 全移除；E2E 七腿绿 |
+| REQ-036 | implemented | must | 探针框架起步（封 v0.33.0；cta 启发式 + probe-kit v1） | 事件 cta 字段+hint 双指+拼批 var 修；运行时 window.__probe 落 workspace 仓 |
 
 ## Roadmap（issue 台账批次规划）
 
