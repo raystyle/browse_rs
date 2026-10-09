@@ -1,6 +1,6 @@
 {
   "crate": "browse-cli",
-  "version": "0.30.9",
+  "version": "0.31.0",
   "items": [
     {
       "path": "browse_cli::client",
@@ -121,6 +121,16 @@
       "path": "browse_cli::client::state_dir",
       "kind": "function",
       "docs": "返回 daemon 日志与运行面目录（`%USERPROFILE%\\.browse-rs[\\<name>]`，多实例各一份）。"
+    },
+    {
+      "path": "browse_cli::client::us_events",
+      "kind": "function",
+      "docs": "消费油猴事件回调（#77）：`GET /events`，`since` 游标与 `last` 条数\n窗（都缺省取最近 20 条）。回 `{ok, events, nextSeq}`。\n\n# Errors\n\ndaemon 不在或响应坏。"
+    },
+    {
+      "path": "browse_cli::client::us_events_clear",
+      "kind": "function",
+      "docs": "清空油猴事件环（#77）：`DELETE /events`（序号不回卷，消费游标不失位）。\n\n# Errors\n\ndaemon 不在或响应坏。"
     },
     {
       "path": "browse_cli::fetch",

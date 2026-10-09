@@ -25,6 +25,8 @@ daemon 客户端：本地 HTTP 调用 + 首次使用自动拉起 detached daemon
 - `rune_stop` — 主动停止在跑的 rune 执行（批次二总台指令）：POST /rune/stop，回
 - `skills_passthrough_env` — 技能层透传环境（#50/#51）：拉起新 daemon 时把 CLI 进程里的 workspace
 - `state_dir` — 返回 daemon 日志与运行面目录（`%USERPROFILE%\.browse-rs[\<name>]`，多实例各一份）。
+- `us_events` — 消费油猴事件回调（#77）：`GET /events`，`since` 游标与 `last` 条数
+- `us_events_clear` — 清空油猴事件环（#77）：`DELETE /events`（序号不回卷，消费游标不失位）。
 
 ## Types
 

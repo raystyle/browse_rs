@@ -14,7 +14,7 @@
 //! 让 agent 一条命令即可 `session.Page.navigate(...)`（ADR-0004）；
 //! 片段里的显式 `session.connect` / `session.use` 仍然可覆盖。
 
-use anyhow::{Context, Result, anyhow};
+use anyhow::{Context, Result, anyhow, bail};
 use cdp::{ConnectOptions, Session, discovery, spawn as cdp_spawn};
 use serde::Serialize;
 use serde_json::json;
@@ -384,6 +384,26 @@ fn resolve_chrome(explicit: Option<PathBuf>) -> Option<PathBuf> {
     crate::chrome_mgr::pinned_chrome(&crate::chrome_mgr::chromium_root())
 }
 
+/// 显式引擎路径快败守卫（#76）：请求显式给的 chrome 路径在 daemon 侧
+/// 不存在时入口即报错，不当 ENOENT 留到 spawn 层裸报、更不隐入任何
+/// 回落慢路径。跨宿主场景（mirrored localhost 下 Windows CLI 打到 WSL
+/// daemon，或反之）异宿主路径恒不存在，错误带同宿主指引。env 形
+/// （`BROWSE_CHROME`）不走此守卫——env 的既有契约是「指向文件不在则
+/// 静默跳过续走发现序」（AGENTS 在册），只有请求显式值才硬错。
+fn ensure_explicit_chrome(chrome: &Option<PathBuf>) -> Result<()> {
+    if let Some(p) = chrome
+        && !p.is_file()
+    {
+        bail!(
+            "显式引擎路径 {} 在 daemon 侧不存在（跨宿主场景：mirrored localhost 会让 CLI \
+             连到另一台机的 daemon，异宿主路径互不可见；下一步：同宿主执行，或去掉显式\
+             路径走发现序）",
+            p.display()
+        );
+    }
+    Ok(())
+}
+
 impl Engine {
     /// 绑定一条会话建引擎；冷态是 [`EngineSource::NotConnected`]。
     ///
@@ -626,6 +646,7 @@ impl Engine {
         extra_args: &[String],
         isolated: bool,
     ) -> Result<EngineSource> {
+        ensure_explicit_chrome(&chrome)?;
         let chrome = cdp_spawn::find_chrome(resolve_chrome(chrome).as_deref()).ok_or_else(|| {
             anyhow!(
                 "browse: 找不到 chrome；下一步：browse chrome install <版本> <部署目录>（或 --chrome <path> / BROWSE_CHROME 显式指定）"
@@ -690,6 +711,7 @@ impl Engine {
         extra_args: &[String],
         isolated: bool,
     ) -> Result<EngineSource> {
+        ensure_explicit_chrome(&chrome)?;
         let chrome = cdp_spawn::find_chrome(resolve_chrome(chrome).as_deref()).ok_or_else(|| {
             anyhow!(
                 "browse: 找不到 chrome；下一步：browse chrome install <版本> <部署目录>（或 --chrome <path> / BROWSE_CHROME 显式指定）"
@@ -1035,5 +1057,21 @@ mod tests {
             .spawn_extra_args()
             .is_empty()
         );
+    }
+
+    /// #76 显式引擎路径快败：不存在即错且带跨宿主指引；存在与缺省放行。
+    /// env 形不归此守卫（BROWSE_CHROME 坏值静默跳过是既有契约）。
+    #[test]
+    fn explicit_chrome_fast_fail() {
+        let missing = Some(PathBuf::from("/nonexistent-76/chrome"));
+        let err = ensure_explicit_chrome(&missing).unwrap_err().to_string();
+        assert!(
+            err.contains("daemon 侧不存在") && err.contains("跨宿主"),
+            "{err}"
+        );
+        // 存在的文件放行（拿自身二进制当在位样本）
+        let exe = Some(std::env::current_exe().expect("current_exe"));
+        assert!(ensure_explicit_chrome(&exe).is_ok());
+        assert!(ensure_explicit_chrome(&None).is_ok());
     }
 }

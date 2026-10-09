@@ -147,6 +147,100 @@ impl DaemonDesc {
     }
 }
 
+/// 一条油猴（userscript）事件回调（#77）：脚本经 `GM_xmlhttpRequest`
+/// `POST /us-event` 上报的页面事件，agent 侧经 `browse events` 消费。
+/// 何时用：页面内事件要主动通知宿主（区别于轮询/快照拉取）的探针形
+/// 集成。边界：只承载上报与消费，脚本安装管理归引擎面（Userscript.\*
+/// CDP 域，clean-chrome 批 4），两者正交。
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct UsEvent {
+    /// 单调序号（daemon 生命周期内递增，`--since` 消费游标）。
+    pub seq: u64,
+    /// daemon 侧收到时刻（Unix 毫秒）。
+    pub ts_ms: u64,
+    /// 事件名（脚本自定义，如 `dom-click`）。
+    pub name: String,
+    /// 上报页面 URL（脚本自报的 `location.href`）。
+    pub url: Option<String>,
+    /// 任意载荷（超限序列化截断，见 [`UsEventRing::push`]）。
+    pub data: Option<Value>,
+}
+
+/// 事件环（#77）：容量有界的环形缓冲，满即丢最旧，序号单调递增。
+/// 纯同步逻辑（`std::sync::Mutex` 包裹进 [`Daemon`]），handler 层做
+/// 校验与截断后入环。
+#[derive(Debug, Default)]
+pub struct UsEventRing {
+    next_seq: u64,
+    buf: std::collections::VecDeque<UsEvent>,
+}
+
+/// 事件环容量：1000 条（页面侧失控上报也不打爆 daemon 内存）。
+const US_EVENT_RING_CAP: usize = 1000;
+/// 单条事件 `name`/`url` 截断上限（字符）。
+const US_EVENT_STR_CAP: usize = 512;
+/// 单条事件 `data` 序列化字节上限：超出截断并以 `__truncated` 标记。
+const US_EVENT_DATA_CAP: usize = 32 * 1024;
+
+impl UsEventRing {
+    /// 入环一条：`name` 必填非空（超限截断），`url` 截断同上，
+    /// `data` 序列化超上限字节截断成 `{__truncated: true, bytes: 原长}`。
+    /// 返回分配的序号。
+    pub fn push(
+        &mut self,
+        name: String,
+        url: Option<String>,
+        data: Option<Value>,
+        ts_ms: u64,
+    ) -> u64 {
+        let clamp = |s: String| s.chars().take(US_EVENT_STR_CAP).collect::<String>();
+        let data = data.map(|d| {
+            let full = serde_json::to_string(&d).unwrap_or_default();
+            if full.len() > US_EVENT_DATA_CAP {
+                json!({ "__truncated": true, "bytes": full.len() })
+            } else {
+                d
+            }
+        });
+        let seq = self.next_seq;
+        self.next_seq = self.next_seq.saturating_add(1);
+        self.buf.push_back(UsEvent {
+            seq,
+            ts_ms,
+            name: clamp(name),
+            url: url.map(clamp),
+            data,
+        });
+        while self.buf.len() > US_EVENT_RING_CAP {
+            self.buf.pop_front();
+        }
+        seq
+    }
+
+    /// 取序号严格大于 `since` 的全部事件（升序）。
+    pub fn since(&self, since: u64) -> Vec<UsEvent> {
+        self.buf.iter().filter(|e| e.seq > since).cloned().collect()
+    }
+
+    /// 取最近 `n` 条（升序返回；`n` 为 0 取全部）。
+    pub fn last(&self, n: usize) -> Vec<UsEvent> {
+        if n == 0 || n >= self.buf.len() {
+            return self.buf.iter().cloned().collect();
+        }
+        self.buf.iter().skip(self.buf.len() - n).cloned().collect()
+    }
+
+    /// 清空（序号继续递增不回卷，消费游标不失位）。
+    pub fn clear(&mut self) {
+        self.buf.clear();
+    }
+
+    /// 下一个将分配的序号（消费面回执的 `nextSeq`）。
+    pub fn next_seq(&self) -> u64 {
+        self.next_seq
+    }
+}
+
 /// HTTP daemon 的运行面聚合：宿主、引擎、缺省引擎意图、单飞槽与退出旗标。
 pub struct Daemon {
     /// 方言宿主（vars 跨请求持久）。
@@ -175,6 +269,9 @@ pub struct Daemon {
     pub rune_cancel: std::sync::Mutex<Option<tokio::sync::watch::Sender<bool>>>,
     /// rune 是否在跑（stop 回执的 running 判据）。
     pub rune_running: Arc<AtomicBool>,
+    /// 油猴事件回调环（#77）：`POST /us-event` 入环，`browse events`
+    /// 消费。锁形因 Daemon 在 Arc 后共享。
+    pub us_events: std::sync::Mutex<UsEventRing>,
 }
 
 impl Daemon {
@@ -205,6 +302,7 @@ impl Daemon {
             last_activity: std::sync::Mutex::new(Instant::now()),
             rune_cancel: std::sync::Mutex::new(None),
             rune_running: Arc::new(AtomicBool::new(false)),
+            us_events: std::sync::Mutex::new(UsEventRing::default()),
         })
     }
 }
@@ -308,6 +406,8 @@ pub async fn serve(daemon: Arc<Daemon>, bind: &str) -> anyhow::Result<()> {
         .route("/rune/stop", post(rune_stop_handler))
         .route("/health", get(health_handler))
         .route("/engine/up", post(engine_up_handler))
+        .route("/us-event", post(us_event_handler))
+        .route("/events", get(events_handler).delete(events_clear_handler))
         .route("/quit", post(quit_handler))
         .with_state(state);
 
@@ -993,6 +1093,105 @@ async fn quit_handler(State(st): State<AppState>) -> impl IntoResponse {
     Json(json!({ "ok": true }))
 }
 
+/// `POST /us-event` 请求体（#77 油猴事件回调）：`name` 必填，`url`
+/// 缺省由脚本自报，`data` 任意 JSON。
+#[derive(Debug, Deserialize)]
+pub struct UsEventRequest {
+    /// 事件名（脚本自定义，如 `dom-click`）。
+    pub name: String,
+    /// 上报页面 URL。
+    #[serde(default)]
+    pub url: Option<String>,
+    /// 任意载荷（环侧截断）。
+    #[serde(default)]
+    pub data: Option<Value>,
+}
+
+/// Unix 毫秒钟（同 engine 侧面形）：取不到回 0（时间锚缺失比崩溃面轻）。
+fn now_ms() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0)
+}
+
+/// `POST /us-event`（#77）：油猴脚本经 `GM_xmlhttpRequest` 直达 daemon
+/// 的事件回调入口（GM 面绕 CORS，页面 `fetch` 直调会被 CORS 拦——脚
+/// 本侧用 GM 面是文档口径）。daemon 绑定 127.0.0.1（缺省）即天然只
+/// 收本机上报。回 `{ok, seq}`。
+async fn us_event_handler(
+    State(st): State<AppState>,
+    Json(req): Json<UsEventRequest>,
+) -> (axum::http::StatusCode, Json<Value>) {
+    if req.name.trim().is_empty() {
+        return err_response(anyhow::anyhow!(
+            "us-event 的 name 必填非空；下一步：脚本侧 JSON 带 name 字段"
+        ));
+    }
+    let mut ring = st
+        .daemon
+        .us_events
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
+    let seq = ring.push(req.name.trim().to_string(), req.url, req.data, now_ms());
+    (
+        axum::http::StatusCode::OK,
+        Json(json!({ "ok": true, "seq": seq })),
+    )
+}
+
+/// `GET /events` 查询参（#77 消费面）：`since` 序号游标与 `last`
+/// 条数窗二选一（都给以 `since` 优先），全缺省取最近 20 条。手解
+/// query 串（axum 裁了 default-features，`Query` 提取器不在；两个整
+/// 数参不需要百分号解码）。
+fn parse_events_query(q: &str) -> (Option<u64>, Option<usize>) {
+    let mut since = None;
+    let mut last = None;
+    for kv in q.split('&') {
+        let (k, v) = kv.split_once('=').unwrap_or((kv, ""));
+        match k {
+            "since" => since = v.parse().ok(),
+            "last" => last = v.parse().ok(),
+            _ => {}
+        }
+    }
+    (since, last)
+}
+
+/// `GET /events`（#77）：事件消费面，`browse events` 同源。回
+/// `{ok, events: [...], nextSeq}`（nextSeq 作下一轮 `since` 游标）。
+async fn events_handler(
+    State(st): State<AppState>,
+    uri: axum::http::Uri,
+) -> (axum::http::StatusCode, Json<Value>) {
+    let (since, last) = parse_events_query(uri.query().unwrap_or_default());
+    let ring = st
+        .daemon
+        .us_events
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
+    let events = match since {
+        Some(s) => ring.since(s),
+        None => ring.last(last.unwrap_or(20)),
+    };
+    let next = ring.next_seq();
+    (
+        axum::http::StatusCode::OK,
+        Json(json!({ "ok": true, "events": events, "nextSeq": next })),
+    )
+}
+
+/// `DELETE /events`（#77）：清环（`browse events --clear` 同源）；序号
+/// 不回卷，消费游标不失位。
+async fn events_clear_handler(State(st): State<AppState>) -> impl IntoResponse {
+    st.daemon
+        .us_events
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .clear();
+    Json(json!({ "ok": true }))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1027,6 +1226,48 @@ mod tests {
         );
         let (_, Json(v)) = eval_timeout_response(None, Duration::from_secs(60));
         assert_eq!(v["timeout"]["op"], json!(null), "执行间隙 null");
+    }
+
+    /// #77 事件环：序号单调、since/last 窗、容量截断、data 超限截断、
+    /// clear 不回卷序号。
+    #[test]
+    fn us_event_ring_semantics() {
+        let mut ring = UsEventRing::default();
+        for i in 0..5u64 {
+            assert_eq!(
+                ring.push(format!("e{i}"), None, None, 1_700_000_000_000 + i),
+                i
+            );
+        }
+        assert_eq!(ring.next_seq(), 5);
+        let since2 = ring.since(2);
+        assert_eq!(
+            since2.iter().map(|e| e.seq).collect::<Vec<_>>(),
+            vec![3, 4],
+            "since 严格大于"
+        );
+        assert_eq!(ring.last(2).len(), 2, "last 窗");
+        assert_eq!(ring.last(0).len(), 5, "last 0 = 全部");
+        // data 超限截断成 __truncated 标记
+        let big = Value::String("x".repeat(40 * 1024));
+        ring.push("big".into(), None, Some(big), 0);
+        let big_ev = ring.last(0).pop().expect("big 在环尾");
+        let d = big_ev.data.expect("截断标记仍在");
+        assert_eq!(d["__truncated"], json!(true), "{d}");
+        assert!(
+            d["bytes"].as_u64().unwrap_or_default() > US_EVENT_DATA_CAP as u64,
+            "{d}"
+        );
+        // 容量截断：灌满翻倍，只留尾部
+        for i in 0..(US_EVENT_RING_CAP as u64 * 2) {
+            ring.push(format!("f{i}"), Some("http://x/".into()), None, 0);
+        }
+        assert_eq!(ring.last(0).len(), US_EVENT_RING_CAP);
+        // clear 不回卷
+        let before = ring.next_seq();
+        ring.clear();
+        assert!(ring.last(0).is_empty());
+        assert_eq!(ring.next_seq(), before);
     }
 
     /// 错误前缀只加一次（#33 快核 G-lite）：cdp 守卫/引擎面文案自带

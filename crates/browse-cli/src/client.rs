@@ -747,6 +747,45 @@ pub async fn health() -> Result<Value> {
         .ok_or_else(|| anyhow!("browse: daemon 不在（先随便跑一条片段自动拉起，或 browse up）"))
 }
 
+/// 消费油猴事件回调（#77）：`GET /events`，`since` 游标与 `last` 条数
+/// 窗（都缺省取最近 20 条）。回 `{ok, events, nextSeq}`。
+///
+/// # Errors
+///
+/// daemon 不在或响应坏。
+pub async fn us_events(since: Option<u64>, last: Option<usize>) -> Result<Value> {
+    let mut url = format!("{}/events", http());
+    if let Some(s) = since {
+        url.push_str(&format!("?since={s}"));
+    } else if let Some(n) = last {
+        url.push_str(&format!("?last={n}"));
+    }
+    client()
+        .get(url)
+        .send()
+        .await?
+        .error_for_status()?
+        .json::<Value>()
+        .await
+        .map_err(|e| anyhow!("browse: events 拉取失败：{e}"))
+}
+
+/// 清空油猴事件环（#77）：`DELETE /events`（序号不回卷，消费游标不失位）。
+///
+/// # Errors
+///
+/// daemon 不在或响应坏。
+pub async fn us_events_clear() -> Result<Value> {
+    client()
+        .delete(format!("{}/events", http()))
+        .send()
+        .await?
+        .error_for_status()?
+        .json::<Value>()
+        .await
+        .map_err(|e| anyhow!("browse: events 清空失败：{e}"))
+}
+
 /// `engine_up` 的参数面：CLI up 旗标直通（字段名即 /engine/up 请求键）。
 pub struct UpParams {
     /// spawn 时无头。

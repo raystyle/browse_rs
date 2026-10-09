@@ -4,7 +4,14 @@
 
 ## Unreleased
 
-（无；最新封版 0.30.10）
+（无；最新封版 0.31.0）
+
+## 0.31.0 - 2026-10-09
+
+- **油猴事件回调面（账本 #77，用户令两连）**：daemon HTTP API 新增 `POST /us-event`（userscript 经 `GM_xmlhttpRequest` 上报 `{name, url, data}`，GM 面绕 CORS；name 必填，环容量 1000 满丢最旧，data 序列化超 32KB 截断成 `__truncated` 标记）与 `GET /events`（`since` 游标 / `last` 条数窗，回 `{ok, events, nextSeq}`）、`DELETE /events`（清环序号不回卷）；CLI 新命令 `browse events [--since <seq>] [--last <n>] [--clear]`（daemon 不在跑不算错，环随 daemon 生命周期）；指南 userscripts.md 第 6 节（完整可照抄 reporter 脚本 + 消费面 + 与 `Userscript.*` CDP 域的正交边界裁定：本面管事件上报消费，脚本安装管理归引擎面）。全链 E2E 实弹：reporter 脚本 page-ready/dom-click 双事件经 GM xhr 落环、CLI 双证收。
+- **显式引擎路径快败（账本 #76 修法）**：`up` 显式 `--chrome` 路径在 daemon 侧不存在时入口即报错（带跨宿主指引：mirrored localhost 下 Windows CLI 可连到 WSL daemon，异宿主路径互不可见），不再走到 ENOENT 裸报或更隐蔽的慢路径。#76 定性同步在册：所谓「0.30.10 win 制品缺陷」实为跨宿主 daemon 串扰（Windows CLI 命中 WSL 侧 daemon，引擎操作在异宿主路径上排队），rebuild==dist 字节证制品无辜；env 形（BROWSE_CHROME）不动，其「指向文件不在则静默跳过续走发现序」契约保留。
+- 手册帽收敛：`--llms` 常用例精选规则收紧（示例与命令显示名同文者零信息量不进，如 `browse chrome update`），events 新增两行后仍 119/120。
+- semver 判据：能力新增取 minor（REQ-004）。
 
 ## 0.30.10 - 2026-10-09
 

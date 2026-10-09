@@ -29,6 +29,16 @@ enum Mode {
     Down,
     /// `browse status`：看 daemon/引擎状态。
     Status,
+    /// `browse events [--since <seq>] [--last <n>] [--clear]`：消费油猴事件
+    /// 回调（#77；userscript 经 GM_xmlhttpRequest POST /us-event 上报）。
+    Events {
+        /// 序号游标（严格大于）。
+        since: Option<u64>,
+        /// 最近 N 条（0 = 全部）。
+        last: Option<usize>,
+        /// 先清环再回执。
+        clear: bool,
+    },
     /// `browse update`：browse 自更新（发现加锚校验加自替换；ark 管理拦）。
     Update,
     /// `browse chrome install <版本> [部署目录]`：镜像下载或本地导入安装 Chromium 版本。
@@ -264,6 +274,30 @@ async fn main() -> Result<()> {
             "up" if snippets.is_empty() && mode_is_eval(&mode) => mode = Mode::Up,
             "down" if snippets.is_empty() && mode_is_eval(&mode) => mode = Mode::Down,
             "status" if snippets.is_empty() && mode_is_eval(&mode) => mode = Mode::Status,
+            "events" if snippets.is_empty() && mode_is_eval(&mode) => {
+                let mut since = None;
+                let mut last = None;
+                let mut clear = false;
+                while let Some(f) = args.next_opt() {
+                    match f.as_str() {
+                        "--since" => {
+                            since = Some(args.next("--since <seq>").parse().unwrap_or_else(|_| {
+                                eprintln!("browse: --since 要序号整数（退出 2）");
+                                std::process::exit(2);
+                            }));
+                        }
+                        "--last" => {
+                            last = Some(args.next("--last <n>").parse().unwrap_or_else(|_| {
+                                eprintln!("browse: --last 要条数整数（退出 2）");
+                                std::process::exit(2);
+                            }));
+                        }
+                        "--clear" => clear = true,
+                        other2 => bail_flag_in_subcommand(other2),
+                    }
+                }
+                mode = Mode::Events { since, last, clear };
+            }
             "update" if snippets.is_empty() && mode_is_eval(&mode) => mode = Mode::Update,
             "chrome" if snippets.is_empty() && mode_is_eval(&mode) => {
                 match args.next("chrome").as_str() {
@@ -905,6 +939,29 @@ async fn main() -> Result<()> {
                 None => println!("daemon 不在跑（跑任意片段或 browse up 自动拉起）"),
             }
             Ok(())
+        }
+        // #77：油猴事件回调消费面。daemon 不在不算错（环随 daemon 生命周期，
+        // 没起过就没有事件），提示口径同 status
+        Mode::Events { since, last, clear } => {
+            if clear {
+                client::us_events_clear().await?;
+            }
+            match client::us_events(since, last).await {
+                Ok(v) => {
+                    println!("{}", serde_json::to_string_pretty(&v)?);
+                    Ok(())
+                }
+                Err(e) => {
+                    if client::daemon_alive().await.is_none() {
+                        println!(
+                            "daemon 不在跑（事件环随 daemon 生命周期；browse up 拉起后由脚本上报）"
+                        );
+                        Ok(())
+                    } else {
+                        Err(e)
+                    }
+                }
+            }
         }
         // Chromium 版本管理器：纯本地操作，不经 daemon（ADR-0007）。
         // 镜像腿的 blocking http client 必须在阻塞线程里生灭（async 上下文

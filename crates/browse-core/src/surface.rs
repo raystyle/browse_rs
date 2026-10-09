@@ -308,6 +308,28 @@ pub const COMMANDS: &[CmdSpec] = &[
         example: "browse fetch https://example.com",
     },
     CmdSpec {
+        name: "events",
+        kind: CmdKind::Cli,
+        signature: "browse events [--since <seq>] [--last <n>] [--clear]",
+        args: &[
+            arg!(
+                "since",
+                "number",
+                false,
+                "缺省不用游标（与 last 互斥优先）：只取序号严格大于它的（nextSeq 作下一轮游标）"
+            ),
+            arg!("last", "number", false, "20（最近 N 条；0 = 全部）"),
+            arg!(
+                "clear",
+                "boolean",
+                false,
+                "false（先清环再回执；序号不回卷，消费游标不失位）"
+            ),
+        ],
+        description: "消费油猴（userscript）事件回调：脚本经 GM_xmlhttpRequest POST /us-event 上报 {name, url, data}（daemon 端口默认 9880，BROWSE_PORT/命名实例派生端口注意），本命令读事件环（容量 1000 满丢最旧，data 超 32KB 截断）；回 {ok, events, nextSeq}。daemon 不在跑不算错（环随 daemon 生命周期）。事件面与引擎脚本管理面（Userscript.* CDP 域）正交。用法与示例见 docs/guides/userscripts.md。",
+        example: "browse events --since 41",
+    },
+    CmdSpec {
         name: "rune",
         kind: CmdKind::Cli,
         signature: "browse rune <script.rn|@名> [--vars k=v] [--root <dir>]",
@@ -1750,10 +1772,15 @@ pub fn render_manual() -> String {
     );
     out.push_str("\n## 常用例\n\n```bash\n");
     // 精选纪律（#63 批手册帽）：去重保序；--serve 是维护面不进常用例
-    // （目录与 --full 面仍全量在册）
+    // （目录与 --full 面仍全量在册）；示例与命令显示名同文者零信息量
+    // 不进（如 `browse chrome update`，子命令表签名即全貌）
     let mut seen: Vec<&str> = Vec::new();
     for c in COMMANDS.iter().filter(|c| c.kind == CmdKind::Cli) {
-        if !c.example.starts_with("browse --serve") && !seen.contains(&c.example) {
+        let display = help_display_name(c);
+        if !c.example.starts_with("browse --serve")
+            && c.example != display
+            && !seen.contains(&c.example)
+        {
             seen.push(c.example);
             out.push_str(&format!("{}\n", c.example));
         }
@@ -1861,6 +1888,7 @@ pub const HELP_GROUPS: &[(&str, &[&str])] = &[
             "browse < 文件",
             "browse rune <script.rn|@名>",
             "browse fetch <url>",
+            "browse events",
         ],
     ),
     (

@@ -53,7 +53,45 @@ OS 效果（剪贴板真写入、通知真弹出）归带桌面端手验；无�
 - **settle-单读铁律**：禁止高频 `browse --js` 轮询等注入，每次求值即 DevTools attach 自扰，拖慢 timer/mojo 与 document-idle 注入。settle 静默（约 3s）后单读，至多补读一次。
 - console 仅辅助（daemon 缓冲有开域前丢消息 caveat）。
 
-## 6. 边界与后续
+## 6. 事件回调（上报给 browse）
+
+脚本可以做页面内的**事件探针**：什么网页、什么 js 事件、什么请求载荷，主动回调通知 browse，agent 侧 `browse events` 消费（区别于轮询/快照拉取）。链路：脚本 `GM_xmlhttpRequest` POST daemon 的 `/us-event`（GM 面绕 CORS，页面 `fetch` 直调会被 CORS 拦，走 GM 是文档口径；daemon 缺省 `127.0.0.1:9880`，`BROWSE_PORT`/命名实例派生端口注意）。
+
+```js
+// ==UserScript==
+// @name         page-event-reporter
+// @match        http://127.0.0.1:8871/*
+// @connect      127.0.0.1          // GM xhr 目标授权,必带
+// @run-at       document-idle
+// ==/UserScript==
+(function () {
+  function report(name, data) {
+    GM_xmlhttpRequest({
+      method: 'POST',
+      url: 'http://127.0.0.1:9880/us-event',
+      headers: { 'Content-Type': 'application/json' },
+      data: JSON.stringify({ name: name, url: location.href, data: data })
+    });
+  }
+  report('page-ready', { title: document.title });
+  document.addEventListener('click', function (e) {
+    report('dom-click', { tag: e.target.tagName });
+  }, true);
+})();
+```
+
+消费面：
+
+```bash
+browse events                    # 最近 20 条(回 {ok, events, nextSeq})
+browse events --since 41         # 增量游标(nextSeq 作下一轮 since)
+browse events --last 0           # 全部
+browse events --clear            # 清环(序号不回卷,游标不失位)
+```
+
+事件形 `{seq, ts_ms, name, url, data}`；环容量 1000 满丢最旧，单条 data 超 32KB 截断（`__truncated` 标记），daemon 不在跑时 `browse events` 不算错（环随 daemon 生命周期）。**边界**：本面只承载事件上报与消费；脚本安装管理归引擎面（`Userscript.*` CDP 域，clean-chrome 批 4），两者正交不重复。
+
+## 7. 边界与后续
 
 - `browse userscript` 命令面**尚无**：挂引擎 `Userscript.*` CDP 协议域（clean-chrome 批 4 在账），域落地后 browse 开命令面 REQ 薄封装；当前脚本置场走上两道。
 - 脚本面随 profile 走：`--profile <dir>` 换 user-data-dir 时 Userscripts 目录随迁，固定引擎 profile 的脚本对自定义 profile 不生效。
