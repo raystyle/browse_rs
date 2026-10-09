@@ -13,7 +13,7 @@ Rust workspace（crates/cdp、browse-core、browse-cli）。公开契约以 `///
 - cargo run -p browse-cli -- --gen-surface docs/surface   # 命令面目录重生成（schema/llms；tests/surface_contract.rs 锁漂移；agent 发现通道 browse --llms 同源直出）
 - cargo install --path crates/browse-cli --force    # 本机装 browse 进 PATH
 - BROWSE_E2E=1 BROWSE_NO_ATTACH=1 cargo test -p browse-core --test e2e # 真 chrome 端到端（NO_ATTACH：本机 9222 开着用户浏览器时也要自起隔离实例；CI 跳过）
-- PEVO_CHECK_ALLOW="^docs/aidoc/" uv run ~/repos/project-evo/plugins/evo-adr/skills/code-kit/scripts/check.py .   # 文档骨架合规门禁（PE-01 至 PE-12，退出码 0；载体 project-evo 四插件市场仓 evo-adr:code-kit；豁免正则在册：aidoc 条目分隔符 em dash 是 cargo-aidoc 渲染格式，无开关，真门禁是 cargo aidoc --check --strict）
+- PEVO_CHECK_ALLOW="^docs/aidoc/" uv run ~/.claude/plugins/marketplaces/project-evo/.tools/check.py .   # 文档骨架合规门禁（PE-01 至 PE-12，退出码 0；载体 project-evo 市场仓活 checkout，旧 evo-adr 路径已随 0.5.x 重构迁 .tools/；豁免正则在册：aidoc 条目分隔符 em dash 是 cargo-aidoc 渲染格式，无开关，真门禁是 cargo aidoc --check --strict）
 
 ## Must
 

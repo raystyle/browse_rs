@@ -116,6 +116,13 @@ goto 会自动点名：命中站点知识或页面特征（iframe、验证码、
 challenged/login-wall 判读点名对应机制配方；两层可用
 `BROWSE_DOMAIN_SKILLS=0` / `BROWSE_PAGE_SKILLS=0` 独立关闭。
 
+## 11. 油猴脚本（引擎 155+）
+
+clean-chrome 155 起内置 userscript 运行时：装进引擎 profile 的 `.user.js` 按
+match 规则自动注入 browse 导航的页面，管理页 `chrome://userscripts`；存储、
+GM API 面与验收口径（探针 DOM 主断言 + settle-单读铁律）见
+[userscripts](userscripts.md)。
+
 ## 常见坑
 
 - 方言没有 `if/for/函数`：页面逻辑写进 `Runtime.evaluate` 的 `expression` 字符串（页内是真 V8）。模板字符串有：反引号 raw 语义，`\n`、`\d` 等逐字保留、可多行，页面代码直接内嵌。

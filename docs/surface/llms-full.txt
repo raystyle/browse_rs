@@ -1,6 +1,7 @@
 # browse-rs 命令清单
 
 给 agent 用的 clean-chrome browse CLI。方言片段形态：browse '<片段>'；错误一律带 CTA「下一步」。
+油猴脚本：引擎 clean-chrome 155+ 内置运行时，match 命中页面自动注入（指南 docs/guides/userscripts.md）。
 
 ## CLI
 

@@ -1947,8 +1947,9 @@ fn flag_row_desc(full: &str) -> String {
 /// name@版本加一句定位、Usage synopsis、Commands（[`COMMANDS`] 活树按
 /// [`HELP_GROUPS`] 分组派生，组内名对齐、描述走首子句短述）、Options
 /// （目录旗标加伴生旗标，字典序对齐、短述带默认值回填）、片段方言、
-/// 环境变量、退出码。`help_covers_catalog` 与 `help_groups_cover_
-/// catalog` 守卫测试锁命令树全覆盖、全归组与版本注入。
+/// 油猴脚本（引擎侧能力指路，无命令面）、环境变量、退出码。
+/// `help_covers_catalog` 与 `help_groups_cover_catalog` 守卫测试锁
+/// 命令树全覆盖、全归组与版本注入。
 ///
 /// # Panics
 ///
@@ -2028,6 +2029,9 @@ pub fn render_help() -> String {
         "\n片段方言：\n  const tabs = await listPageTargets()\n  await session.use(tabs[0].targetId)\n  await goto(\"https://example.com\", {waitIdle: true})\n  支持 await/const/return、字面量与成员下标；模板字符串 raw 可多行内嵌页面代码；函数与控制流走 --js；等加载用 goto()/waitLoad()。\n  完整语言面、全局函数与 session 方法清单：browse --llms\n",
     );
     out.push_str(
+        "\n油猴脚本：\n  引擎 clean-chrome 155+ 内置 userscript 运行时：装进引擎 profile 的 .user.js 按 match 规则自动注入导航页面，管理页 chrome://userscripts。\n  置位：browse chrome install <版本>；使用与验收指南：docs/guides/userscripts.md\n  （browse userscript 命令面待引擎 Userscript.* 协议域落地，当前置场走管理页或 clean-chrome 置场 CLI）\n",
+    );
+    out.push_str(
         "\nEnvironment Variables:\n  BROWSE_PORT              daemon 端口（default: 9880）\n  BROWSE_NAME              命名实例：状态目录加派生端口 9900-9999，多实例并行\n  BROWSE_CHROME            chrome 路径（default: 走发现序：显式、托管 pin、祖先部署、常规路径；指向的文件不在则静默跳过续走后序，不回落托管 pin）\n  BROWSE_PROFILE           spawn 引擎 user-data-dir（default: 固定 engine-profile，down 不删）\n  BROWSE_CDP_WS            钉死连接的 WS URL\n  BROWSE_NO_ATTACH=1       跳过附着探测，强制 spawn 隔离实例\n  BROWSE_NO_AUTO_DIALOG=1  关自动接受 alert/beforeunload（改对话为手动处置面）\n  BROWSE_EVAL_TIMEOUT      /eval 兜底硬界秒（default: 60；--timeout 请求级覆写）
   BROWSE_RUNE_TIMEOUT      rune 执行兜底硬界秒（default: 60；--timeout 请求级覆写；env 是实例内缺省）\n  BROWSE_IDLE_TIMEOUT      引擎闲置回收毫秒（default: 3600000，0 关闭）\n  BROWSE_PROXY/BYPASS      引擎代理与旁路 --proxy-server/--proxy-bypass-list（同值旗标）\n  BROWSE_ENGINE_ARGS       引擎附加旗标，空格分隔直通 spawn argv（--engine-arg 同道；无显示会话 spawn 自动补 --headless，显式旗标优先）\n  BROWSE_SECRETS           dotenv 密钥文件（--secrets 同值；输出回显脱敏）\n  BROWSE_WORKSPACE         技能仓根（default: ~/.browse-rs/workspace，跨实例共享）\n  BROWSE_SNIPPETS_ROOT     片段库根（default: 状态目录 snippets/；--root 旗标同值，旗标优先）\n  BROWSE_DOMAIN_SKILLS=0   关 goto/fetch 回执域名技能点名\n  BROWSE_PAGE_SKILLS=0     关 goto/detect 回执页面技能点名
   BROWSE_ENGINE_CONTEXT   操作回执显引擎紧凑行（default: 关；异常告警恒开）\n  内部/镜像类：BROWSE_CHROME_MIRROR、BROWSE_CHROME_ASSET、BROWSE_RELEASE_MIRROR（产物镜像源）、BROWSE_CHROME_LATEST（chrome update 发现钉）、BROWSE_LEDGER_PRIVATE_KEY（账本签名道私钥位）\n",
@@ -2039,7 +2043,9 @@ pub fn render_help() -> String {
 pub fn render_llms() -> String {
     let mut out = String::from(
         "# browse-rs 命令清单\n\n给 agent 用的 clean-chrome browse CLI。\
-         方言片段形态：browse '<片段>'；错误一律带 CTA「下一步」。\n\n",
+         方言片段形态：browse '<片段>'；错误一律带 CTA「下一步」。\n\
+         油猴脚本：引擎 clean-chrome 155+ 内置运行时，match 命中页面自动注入\
+         （指南 docs/guides/userscripts.md）。\n\n",
     );
     for kind in [CmdKind::Cli, CmdKind::Global, CmdKind::Session] {
         out.push_str(&format!(

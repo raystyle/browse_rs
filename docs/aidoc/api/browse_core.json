@@ -850,7 +850,7 @@
     {
       "path": "browse_core::surface::render_help",
       "kind": "function",
-      "docs": "渲染 `--help` 与裸调用共用的帮助面（cli-docs 标准节序）：头行\nname@版本加一句定位、Usage synopsis、Commands（[`COMMANDS`] 活树按\n[`HELP_GROUPS`] 分组派生，组内名对齐、描述走首子句短述）、Options\n（目录旗标加伴生旗标，字典序对齐、短述带默认值回填）、片段方言、\n环境变量、退出码。`help_covers_catalog` 与 `help_groups_cover_\ncatalog` 守卫测试锁命令树全覆盖、全归组与版本注入。\n\n# Panics\n\n分组表 [`HELP_GROUPS`] 含目录外显示名时（守卫测试前置拦截，正常\n构建不触达）。\n\n```\nlet help = browse_core::surface::render_help();\nassert!(help.contains(\"Usage:\"));\nassert!(help.contains(&format!(\"browse@{}\", env!(\"CARGO_PKG_VERSION\"))));\nassert!(help.contains(\"Commands:\"));\n```"
+      "docs": "渲染 `--help` 与裸调用共用的帮助面（cli-docs 标准节序）：头行\nname@版本加一句定位、Usage synopsis、Commands（[`COMMANDS`] 活树按\n[`HELP_GROUPS`] 分组派生，组内名对齐、描述走首子句短述）、Options\n（目录旗标加伴生旗标，字典序对齐、短述带默认值回填）、片段方言、\n油猴脚本（引擎侧能力指路，无命令面）、环境变量、退出码。\n`help_covers_catalog` 与 `help_groups_cover_catalog` 守卫测试锁\n命令树全覆盖、全归组与版本注入。\n\n# Panics\n\n分组表 [`HELP_GROUPS`] 含目录外显示名时（守卫测试前置拦截，正常\n构建不触达）。\n\n```\nlet help = browse_core::surface::render_help();\nassert!(help.contains(\"Usage:\"));\nassert!(help.contains(&format!(\"browse@{}\", env!(\"CARGO_PKG_VERSION\"))));\nassert!(help.contains(\"Commands:\"));\n```"
     },
     {
       "path": "browse_core::surface::render_llms",

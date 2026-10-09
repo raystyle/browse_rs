@@ -4,7 +4,11 @@
 
 ## Unreleased
 
-（无；最新封版 0.30.9）
+（无；最新封版 0.30.10）
+
+## 0.30.10 - 2026-10-09
+
+- **油猴脚本帮助与文档面（REQ-033，纯文档批）**：`--help` 与裸调用帮助面加「油猴脚本」节（引擎 clean-chrome 155+ 内置 userscript 运行时、match 自动注入、管理页 chrome://userscripts、置位 `browse chrome install`、指南指路；browse userscript 命令面待引擎 Userscript.\* 协议域落地）；新指南 docs/guides/userscripts.md（引擎置位、脚本安装两道、match 语法与注入档、GM API 面 155 验收基线、验收方法论：探针 DOM 主断言+盘上 values 比对+settle-单读铁律）；getting-started 第 11 节指路；`--llms` 索引引言补能力行（surface 投影重生成）。门禁文档对齐：PEVO 骨架门禁 check.py 路径随 project-evo 0.5.x 重构迁 marketplaces `.tools/`（AGENTS 与 docs/README 双处），消 CHANGELOG 既有 em-dash 禁字一处。无行为变化。
 
 ## 0.30.9 - 2026-10-08
 
@@ -17,7 +21,7 @@
 - spawn/chrome 面：chromium-* 版本数值序、下载腿总超时、manifest 损坏留痕、engine.log 开不了留痕、强杀收尸、shutdown 锁收窄加 pid 复核、grantPermissions 缺 origin 拒、实例名相对穿越拒、daemon 端口坏值留痕、connect 端口坏值留痕、自更新解压 64MB 上界加版本尾数数值序
 - rune 面：goto 提交等待（跨文档先等主框架 frameNavigated 越水位）；Cleanup 换靶回原会话清账；rune_running 恐慌守卫；vars_syntax BOM 剥离；probe 脚本可见失败首败留痕与不可读告警
 - 文档对齐：architecture 三层图收 browse-rune/fetch_core 与 /rune 路由、workspace 两层定位；AGENTS 发现序补托管 pin 档与附着回落语义；README EVAL_TIMEOUT 60 秒与 BROWSE_CHROME 坏值语义；ADR-0008 成本句 rn 化；schema 派生面消非法 type（int/id/any 映射与省键）
-- 记档不做六项与轮次账见 REQ-031 Notes（修复自伤三件留痕：信封类型链、G3 谎报、pipe2 空转臂——实证「每轮修复可能引入新缺陷，轮次到 CONFIRM 为止」）
+- 记档不做六项与轮次账见 REQ-031 Notes（修复自伤三件留痕：信封类型链、G3 谎报、pipe2 空转臂；实证「每轮修复可能引入新缺陷，轮次到 CONFIRM 为止」）
 
 ## 0.30.8 - 2026-10-03
 
