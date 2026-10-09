@@ -4,7 +4,8 @@
 
 ## Unreleased
 
-（无；最新封版 0.32.0）
+- 探针框架起步件(用户令「开发庞大的油猴探针框架」+「油猴探针去启发式地触发 CTA」):事件流加 `cta` 字段(可选,截 512;探针按页况启发式给下一步动作,`browse events` 直读);`page_skills_hint` 双指(读+跑:`browse workspace page <slug>(跑:browse rune page-skills/<slug>/mech.rn)`);拼批包裹层 facts 改 var(prelude 自带 var 守卫撞 const 是 SyntaxError,整批零键,实测修)。
+- 探针运行时(probe-kit v1)落 workspace 仓 `_prelude.js`:window.__probe(see/stop/tap/route/onFlush;单包约定/节流去重/端口自替换/错误隔离),仓侧 README 载创作约定与装载时序。
 
 ## 0.32.0 - 2026-10-09
 

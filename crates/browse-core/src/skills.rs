@@ -187,8 +187,11 @@ pub fn load_prelude_multi(roots: &[std::path::PathBuf]) -> String {
 /// （各块自带 `browseDetect` 作用域，互不撞名），块自调约定函数并把非空
 /// 返回收进 slugs；单块抛错只弃该块。恒返 `{framework, slugs}` 骨架。
 pub fn build_batch_js(prelude: &str, pairs: &[SkillPair]) -> String {
+    // facts 用 var 不用 const:prelude 自带 `var facts = (typeof…)?:…`
+    // 守卫(常驻语境),var 重声明 var 合法;const 撞 var 是 SyntaxError
+    // 会废掉整批复解析(实测零键,2026-10-10)
     let mut out = String::from(
-        "(() => {\n  const out = { framework: null, slugs: [] };\n  const facts = {};\n",
+        "(() => {\n  const out = { framework: null, slugs: [] };\n  var facts = {};\n",
     );
     if !prelude.is_empty() {
         out.push_str("  try {\n");
@@ -283,9 +286,14 @@ fn page_skills_keys(pairs: &[(&str, &str)]) -> Vec<(&'static str, Value)> {
         .iter()
         .map(|(s, c)| json!({ "slug": s, "confidence": c }))
         .collect();
+    // 双脚本对时代的触发矩阵:点名后不止「读」——同指编排跑道
+    // (browse rune page-skills/<slug>/mech.rn),探针常驻与 stop 由
+    // README/事件面承接(hint 只挂最短可照抄两形)
     let cmds: Vec<String> = pairs
         .iter()
-        .map(|(s, _)| format!("browse workspace page {s}"))
+        .map(|(s, _)| {
+            format!("browse workspace page {s}（跑:browse rune page-skills/{s}/mech.rn）")
+        })
         .collect();
     vec![
         ("page_skills", json!(kept)),

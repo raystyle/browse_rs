@@ -162,6 +162,10 @@ pub struct UserscriptEvent {
     pub r#type: String,
     /// 技能 slug（如 `challenge-stop`；裸事件无 slug 时为 `None`）。
     pub slug: Option<String>,
+    /// 探针启发式 CTA（可选,截 512）：按页况指下一步可照抄动作
+    /// （如 `browse rune page-skills/challenge-stop/mech.rn`）——由
+    /// probe.user.js 的启发式决定,不是静态表。
+    pub cta: Option<String>,
     /// 上报页面 URL（脚本自报的 `location.href`）。
     pub url: Option<String>,
     /// 任意载荷（超限序列化截断，见 [`EventRing::push`]）。
@@ -194,6 +198,7 @@ impl EventRing {
         slug: Option<String>,
         url: Option<String>,
         data: Option<Value>,
+        cta: Option<String>,
         ts_ms: u64,
     ) -> u64 {
         let clamp = |s: String| s.chars().take(EVENT_STR_CAP).collect::<String>();
@@ -214,6 +219,7 @@ impl EventRing {
             slug: slug.map(clamp),
             url: url.map(clamp),
             data,
+            cta: cta.map(clamp),
         });
         while self.buf.len() > EVENT_RING_CAP {
             self.buf.pop_front();
@@ -1152,6 +1158,9 @@ pub struct EventCreateRequest {
     /// 任意载荷（环侧截断）。
     #[serde(default)]
     pub data: Option<Value>,
+    /// 探针启发式 CTA（可选,截 512；消费面 `browse events` 直读）。
+    #[serde(default)]
+    pub cta: Option<String>,
 }
 
 /// 请求体到环字段的标准形收口：type 两档校验（非法 400 由调用方），旧
@@ -1215,7 +1224,7 @@ async fn events_create_handler(
         .events_ring
         .lock()
         .unwrap_or_else(|e| e.into_inner());
-    let seq = ring.push(r#type, slug, req.url, req.data, now_ms());
+    let seq = ring.push(r#type, slug, req.url, req.data, req.cta.clone(), now_ms());
     (
         axum::http::StatusCode::OK,
         Json(json!({ "ok": true, "seq": seq })),
@@ -1299,7 +1308,14 @@ async fn userscript_stop_handler(
             .events_ring
             .lock()
             .unwrap_or_else(|e| e.into_inner());
-        ring.push(r#type, slug.clone(), req.url, req.data, now_ms())
+        ring.push(
+            r#type,
+            slug.clone(),
+            req.url,
+            req.data,
+            req.cta.clone(),
+            now_ms(),
+        )
     };
     let d = &st.daemon;
     let running = d.rune_running.load(Ordering::Relaxed);
@@ -1376,6 +1392,7 @@ mod tests {
                     Some(format!("e{i}")),
                     None,
                     None,
+                    None,
                     1_700_000_000_000 + i
                 ),
                 i
@@ -1392,7 +1409,7 @@ mod tests {
         assert_eq!(ring.last(0).len(), 5, "last 0 = 全部");
         // data 超限截断成 __truncated 标记
         let big = Value::String("x".repeat(40 * 1024));
-        ring.push("see".into(), Some("big".into()), None, Some(big), 0);
+        ring.push("see".into(), Some("big".into()), None, Some(big), None, 0);
         let big_ev = ring.last(0).pop().expect("big 在环尾");
         let d = big_ev.data.expect("截断标记仍在");
         assert_eq!(d["__truncated"], json!(true), "{d}");
@@ -1406,6 +1423,7 @@ mod tests {
                 "see".into(),
                 Some(format!("f{i}")),
                 Some("http://x/".into()),
+                None,
                 None,
                 0,
             );
