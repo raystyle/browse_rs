@@ -3,7 +3,7 @@ id: REQ-038
 title: 探针事件 P1（封 v0.33.2；下限/驱逐律/next 冻结序/去重键升级）
 status: implemented
 priority: must
-trace: 待封版树回填
+trace: 封版树 7475e48（门禁 304+50+clippy+aidoc+PEVO 11）；release.ps1 -Tag v0.33.2 发布毕（dist 六件、三端解包冒烟、gh 直发 --latest）；E2E 七腿；workspace 仓 cca6f2e
 ---
 
 # REQ-038：探针事件 P1
