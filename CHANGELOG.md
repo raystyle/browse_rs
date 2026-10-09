@@ -4,7 +4,12 @@
 
 ## Unreleased
 
-- **cta 安全收口（P0，grok X 检索安全评审 2026-10-10，/tmp/grok-cta-review.md）**：自由串 cta 是页面可控注入面（间接提示注入向量，Chrome WebMCP 反面教材对照 Stagehand/UiPath/Slack action_id 的「受信侧定目录」先例）——请求体 `cta: String` 废弃，改 `action: 'read'|'rune'|'export'` 枚举；cta 句子由 daemon 模板生成（`FROZEN_PAGE_SLUGS` × 三动作 = 27 条闭集，`cta_for` 单源）；非法组合事件保留、cta 键不出现；stop 恒不带 cta；runtime `R.see` 参数同步收口（workspace 仓）；环单测锁闭集。零消费者窗口的契约更正（grok 代码审计证实无一探针发过自由串 cta）。
+（无；最新封版 0.33.1）
+
+## 0.33.1 - 2026-10-10
+
+- **cta 安全收口（REQ-037，P0，grok X 检索安全评审，/tmp/grok-cta-review.md）**：自由串 cta 是页面可控注入面（间接提示注入向量，Chrome WebMCP 反面教材对照 Stagehand/UiPath/Slack action_id 的「受信侧定目录」先例）:请求体 `cta: String` 废弃，改 `action: 'read'|'rune'|'export'` 枚举；cta 句子由 daemon 模板生成（`FROZEN_PAGE_SLUGS` × 三动作 = 27 条闭集，`cta_for` 单源）；非法组合事件保留、cta 键不出现；stop 恒不带 cta；runtime `R.see` 参数同步收口（workspace 仓 87193dc）；环单测锁闭集；E2E 7/7 复绿。零消费者窗口的契约更正（grok 代码审计证实无一探针发过自由串 cta）。评审其余裁定在册：轮询不做 ws、P1 候补（去重键 pathname/服务端下限/环 slug 封顶/events next 冻结序）、P2 宿主侧 ack；cta 永是建议不自动执行（混淆代理残余白名单消不掉）。
+- semver 判据：安全修复批取 patch（REQ-004）。
 
 ## 0.33.0 - 2026-10-10
 

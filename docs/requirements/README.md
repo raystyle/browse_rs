@@ -40,6 +40,7 @@
 | REQ-034 | implemented | must | 油猴事件回调面与显式路径快败（封 v0.31.0；账本 #77/#76） | POST /us-event + GET/DELETE /events + browse events 三件；E2E reporter 脚本全链实弹；#76 跨宿主串扰定性+守卫 |
 | REQ-035 | implemented | must | workspace 双脚本对重建与 stop api（封 v0.32.0；snippets 剔除） | @detect 拼批判定+九对新白名单+/userscript/stop+API 标准形+snippets 全移除；E2E 七腿绿 |
 | REQ-036 | implemented | must | 探针框架起步（封 v0.33.0；cta 启发式 + probe-kit v1） | 事件 cta 字段+hint 双指+拼批 var 修；运行时 window.__probe 落 workspace 仓 |
+| REQ-037 | implemented | must | cta 安全收口(封 v0.33.1;自由串换动作枚举+daemon 模板闭集) | cta_for 27 条闭集单源;R.see 收口;环单测+E2E 7/7 |
 
 ## Roadmap（issue 台账批次规划）
 
