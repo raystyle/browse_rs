@@ -3,7 +3,7 @@ id: REQ-033
 title: 油猴脚本帮助与文档面（封 v0.30.10，纯文档批）
 status: implemented
 priority: must
-trace: 待封版树回填
+trace: 封版树 10ea333（门禁全套绿：fmt/clippy -D warnings/test 306+doc 51/aidoc --check --strict/surface 契约/PEVO 骨架 11 过）；release.ps1 -Tag v0.30.10 发布毕（linux+win-gnu 交叉+mac 实机构建、dist 六件含 sha256 边车、三端解包冒烟、gh 直发 --latest，播种流水由 release published 事件接力）
 ---
 
 # REQ-033：油猴脚本帮助与文档面
