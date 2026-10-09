@@ -31,9 +31,11 @@ daemon 客户端：本地 HTTP 调用 + 首次使用自动拉起 detached daemon
 - `ensure_daemon` — daemon 不在跑时 detached 拉起 `browse --serve` 并探活到通；已在跑则直接返回。
 - `ensure_daemon_with_env` — 同 [`ensure_daemon`]，但给新拉起的 daemon 进程注入环境变量
 - `eval` — 把方言片段 POST 到 daemon 的 /eval 求值。
+- `events_clear` — 清空油猴事件环（#77）：`DELETE /events`（序号不回卷，消费游标不失位）。
+- `events_ring` — 消费油猴事件回调（#77）：`GET /events`，`since` 游标与 `last` 条数
 - `expand_at_args` — `@` 文件实参展开（#64）：片段实参以 `@` 开头即读文件内容为片段体，
 - `health` — GET /health 取 daemon 状态面；daemon 不在时报可照抄的拉起提示。
-- `load_template` — 模板源解析（#66）：`--vars` 模板道的 @ 实参解析序——snippets 根
+- `load_template` — 模板源解析（#66）：`--vars` 模板道的 @ 实参解析序——scripts 根
 - `load_template_ext` — [`load_template`] 的扩展名与语境标签变体（#67：Rune 脚本用 `.rn` 与
 - `parse_vars_arg` — 解析 `--vars` 单值（`键=值`）：键是标识符（字母或下划线开头，字母
 - `quit` — POST /quit 退 daemon，daemon 侧顺带只终结自起引擎（附着来源不动）。
@@ -45,8 +47,6 @@ daemon 客户端：本地 HTTP 调用 + 首次使用自动拉起 detached daemon
 - `rune_stop` — 主动停止在跑的 rune 执行（批次二总台指令）：POST /rune/stop，回
 - `skills_passthrough_env` — 技能层透传环境（#50/#51）：拉起新 daemon 时把 CLI 进程里的 workspace
 - `state_dir` — 返回 daemon 日志与运行面目录（`%USERPROFILE%\.browse-rs[\<name>]`，多实例各一份）。
-- `us_events` — 消费油猴事件回调（#77）：`GET /events`，`since` 游标与 `last` 条数
-- `us_events_clear` — 清空油猴事件环（#77）：`DELETE /events`（序号不回卷，消费游标不失位）。
 
 ## Types
 
@@ -187,9 +187,9 @@ assert_eq!(render(&stmts), "const tabs = await listPageTargets()");
 - [`self_update`](self_update.md): browse 自更新（用户令 2026-09-18；对齐 build-release 公共契约第六节
 - [`semantic`](semantic.md): 语义层近期面：tab 族、交互三件、等待判官。
 - [`server`](server.md): daemon 的 HTTP API：常驻会话 + 方言求值 + 引擎生命周期。
-- [`skills`](skills.md): 技能触发层（#50/#51/#56）：goto 导航回执与 fetch/detect 回执的条件
+- [`skills`](skills.md): 技能触发层（#50/#51/#56 + 清仓重建总台令 2026-10-09）：goto 导航回执
 - [`surface`](surface.md): 命令面目录（incur-rs 原则的方言版适配）：CLI 子命令、方言全局函数、
-- [`workspace`](workspace.md): workspace 单仓管理（#50/#51 配套）：站点与机制知识仓
+- [`workspace`](workspace.md): workspace 单仓管理（#50/#51 配套 + 清仓重建总台令 2026-10-09）：站点
 
 
 <!-- browse_core/chrome_mgr.md -->
@@ -374,8 +374,7 @@ browser-harness-js 片段方言的语法分析器（纯函数）。
 - `engine_profile_dir` — 返回本实例引擎 profile（`<state>/engine-profile`；命名实例各自独占，
 - `instance_name` — 返回实例名（`BROWSE_NAME` 的非空值）；未设即默认实例（`None`）。
 - `read_workspace_config` — 读多仓配置（JSON 字符串数组，序即优先序）；文件缺失或坏形回空清单
-- `snippets_root` — 返回片段库根（#65 可配置外部根）：[`snippets_root_explicit`] 的 env
-- `snippets_root_explicit` — 返回 env 显式片段根（#65）：`BROWSE_SNIPPETS_ROOT` 非空时的值。
+- `scripts_root` — 返回脚本根（总台令 2026-10-09 snippets 剔除淘汰）：只此一家 =
 - `state_dir` — 返回本实例状态目录（`%USERPROFILE%\.browse-rs[\<name>]`）。
 - `state_dir_for` — 把实例名映射到状态目录的纯函数（同输入恒同输出，可单测）。
 - `workspace_config_path` — 多仓配置文件位（应用状态目录共享根，不分 BROWSE_NAME，与仓本体
@@ -542,27 +541,32 @@ POST /quit 三端点保留），新增 `/engine/up` 与求值前的懒引擎策�
 - `DaemonDesc` — daemon 自描述（#59）：宿主与进程身份一次采值，status 与 /health 内嵌
 - `EngineUpRequest` — 描述 POST /engine/up 的请求体。
 - `EvalRequest` — 描述 POST /eval 的请求体。
+- `EventCreateRequest` — `POST /events` 请求体（#77 油猴事件回调，标准形）：`type` 两档
+- `EventRing` — 事件环（#77）：容量有界的环形缓冲，满即丢最旧，序号单调递增。
 - `RuneRequest` — 描述 POST /rune 的请求体（账本 #67：Rune 编排面）。
-- `UsEvent` — 一条油猴（userscript）事件回调（#77）：脚本经 `GM_xmlhttpRequest`
-- `UsEventRequest` — `POST /us-event` 请求体（#77 油猴事件回调）：`name` 必填，`url`
-- `UsEventRing` — 事件环（#77）：容量有界的环形缓冲，满即丢最旧，序号单调递增。
+- `UserscriptEvent` — 一条油猴（userscript）事件回调（#77）：脚本经 `GM_xmlhttpRequest`
 
 
 <!-- browse_core/skills.md -->
 # browse-core::skills
 
-技能触发层（#50/#51/#56）：goto 导航回执与 fetch/detect 回执的条件
-附加面。知识全文存 workspace 单仓（[`crate::workspace`]，
-github.com/raystyle/browse_workspace），本模块只做「点名」：命中附加
-清单与 hint（读全文命令），未命中或关闭时一键不加，回执与现状逐字节
-一致。
+技能触发层（#50/#51/#56 + 清仓重建总台令 2026-10-09）：goto 导航回执
+与 fetch/detect 回执的条件附加面。技能本体存 workspace 单仓
+（[`crate::workspace`]，github.com/raystyle/browse_workspace），形是
+「宿主侧 `mech.rn` + 页内侧 `probe.user.js`」**双脚本对**——本模块在
+回执里「点名」：热路径只消费各对 `probe.user.js` 的 `/* @detect */`
+块，按多根序收集拼成**一次**主世界求值，命中附加清单与 hint，未命中、
+无对或关闭时零键，回执不加页面技能键。
 
 ## Functions
 
+- `build_batch_js` — 拼批判定 JS（纯函数，单测锁形）：prelude 在 facts 上填事实（约定可写
+- `collect_pairs_multi` — 枚举各根 `page-skills/` 的成对目录（纯函数，单测用）：目录同时有
 - `domain_hint` — 域名层 hint 字段值（#50）：读全文命令字串。
 - `domain_segment` — URL 到域名段（#50，纯函数）：先做 http(s) 门禁（[`cdp::session::url_host`]
 - `domain_skills_enabled` — #50 域名层是否开启：`BROWSE_DOMAIN_SKILLS` 未设或非 0/false 即开。
-- `list_domain_skills` — 列 `<ws>/domain-skills/<段>/` 的技能文件名（#50，纯函数）：只收
+- `list_domain_skills` — 列 `<ws>/domain-skills/<段>/` 的对文件清单（纯函数）：成对（mech.rn
+- `load_prelude_multi` — 序首 `_prelude.js`（facts 游走脚本，page-skills 层）：先命中根整胜，
 - `page_fields` — 把探测结果变成回执附加键对（#51，纯函数）：framework 形合法出
 - `page_skills_enabled` — #51 页面层是否开启：`BROWSE_PAGE_SKILLS` 未设或非 0/false 即开。
 - `url_domain_fields` — URL 到域名层键对（#56，fetch 腿的口径源）：与 goto 同口径的域名段
@@ -570,10 +574,13 @@ github.com/raystyle/browse_workspace），本模块只做「点名」：命中�
 - `verdict_fields` — detect() 回执的技能附加入口（#56）：判读经 [`verdict_page_slugs`]
 - `verdict_page_slugs` — detect() 判读到 page-skill slug 的映射表（#56，纯函数）：challenged
 
+## Types
+
+- `SkillPair` — 一个成对的页面技能（清仓重建总台令 2026-10-09）：多根序首胜的原子
+
 ## Constants
 
-- `FROZEN_PAGE_SLUGS` — #51 冻结 slug 名单（探测与回执的合法值域；页面可控串注入面的
-- `PAGE_PROBE_JS` — #51 页面特征探测 JS：自包含 IIFE，恒返合法 JSON 字符串（连异常
+- `FROZEN_PAGE_SLUGS` — 清仓重建后的冻结 slug 名单（页面可控串注入面的白名单，评审 F3 律
 
 
 <!-- browse_core/surface.md -->
@@ -617,8 +624,11 @@ session 方法**只在这一处登记为数据**，JSON Schema 与 LLM 清单
 <!-- browse_core/workspace.md -->
 # browse-core::workspace
 
-workspace 单仓管理（#50/#51 配套）：站点与机制知识仓
-`github.com/raystyle/browse_workspace` 的安装、更新与仓内读取。
+workspace 单仓管理（#50/#51 配套 + 清仓重建总台令 2026-10-09）：站点
+与机制知识仓 `github.com/raystyle/browse_workspace` 的安装、更新与仓内
+读取。技能本体是「宿主侧 `mech.rn` + 页内侧 `probe.user.js`」双脚本对
+（`page-skills/<slug>/` 与 `domain-skills/<段>/` 同形），README 只作人读
+说明——list/site/page 只认成对目录，缺一的目录不算技能。
 
 何时用：`browse workspace` 命令族的全部后端（status/install/update/
 list/site/page）。git 维护走 shell-out `git`（不引 git crate）：install
@@ -627,12 +637,12 @@ list/site/page）。git 维护走 shell-out `git`（不引 git crate）：instal
 
 ## Functions
 
-- `domain_segment_files` — 列 `<root>/domain-skills/<段>/` 的技能文件名（排序，封顶
+- `domain_segment_files` — 列 `<root>/domain-skills/<段>/` 的对文件清单（成对才有,排序保回执
 - `domain_segment_files_multi` — #63 多根段文件列（技能点名口径）：序首有文件的根整胜（不跨根混拼，
 - `install` — `browse workspace install`：git clone 种子仓到 `root`。clone 不带
 - `list_json` — `browse workspace list` 的机器面：`{domains: [{segment, files}],
 - `list_json_multi` — #63 多根清单：domain 段与 page slug 跨根并集（首见序，段名重复以
-- `read_page` — `browse workspace page <slug>`：读 `page-skills/<slug>.md` 全文。
+- `read_page` — `browse workspace page <slug>`：交出该对（有 README 附全文，无给
 - `read_page_multi` — #63 多根 page 读：序首命中根优先。
 - `read_site` — `browse workspace site <段>[/<文件>]`：只给段时打该段清单（每行
 - `read_site_multi` — #63 多根 site 读：序首命中根优先（根内逻辑同 [`read_site`]）；全根
@@ -641,7 +651,6 @@ list/site/page）。git 维护走 shell-out `git`（不引 git crate）：instal
 
 ## Constants
 
-- `DOMAIN_FILES_CAP` — 域名层点名清单的封顶（#50 验收：回执文件列表封顶 10；list 同口径）。
 - `SEED_REMOTE` — 种子仓远端（install 的缺省源；本地修改 push 回推同一远端）。
 
 

@@ -55,7 +55,7 @@ OS 效果（剪贴板真写入、通知真弹出）归带桌面端手验；无�
 
 ## 6. 事件回调（上报给 browse）
 
-脚本可以做页面内的**事件探针**：什么网页、什么 js 事件、什么请求载荷，主动回调通知 browse，agent 侧 `browse events` 消费（区别于轮询/快照拉取）。链路：脚本 `GM_xmlhttpRequest` POST daemon 的 `/us-event`（GM 面绕 CORS，页面 `fetch` 直调会被 CORS 拦，走 GM 是文档口径；daemon 缺省 `127.0.0.1:9880`，`BROWSE_PORT`/命名实例派生端口注意）。
+脚本可以做页面内的**事件探针**：什么网页、什么 js 事件、什么请求载荷，主动回调通知 browse，agent 侧 `browse events` 消费（区别于轮询/快照拉取）。链路：脚本 `GM_xmlhttpRequest` POST daemon 的 `/events`（与读面 `GET /events` 同径对称的集合 create；GM 面绕 CORS，页面 `fetch` 直调会被 CORS 拦，走 GM 是文档口径；daemon 缺省 `127.0.0.1:9880`，`BROWSE_PORT`/命名实例派生端口注意）。
 
 ```js
 // ==UserScript==
@@ -69,9 +69,9 @@ OS 效果（剪贴板真写入、通知真弹出）归带桌面端手验；无�
   function report(name, data) {
     GM_xmlhttpRequest({
       method: 'POST',
-      url: 'http://127.0.0.1:9880/us-event',   // 命名实例注意换派生端口,主机不变
+      url: 'http://127.0.0.1:9880/events',     // 命名实例注意换派生端口,主机不变
       headers: { 'Content-Type': 'application/json' },
-      data: JSON.stringify({ name: name, url: location.href, data: data }),  // data 恒字符串
+      data: JSON.stringify({ type: 'see', slug: name, url: location.href, data: data }),  // 标准形 type 两档 see/stop
       onerror: function () { /* daemon 不在跑时静默失败,需要感知就打 console */ }
     });
   }
@@ -97,7 +97,24 @@ browse events --last 0           # 全部
 browse events --clear            # 清环(序号不回卷,游标不失位)
 ```
 
-事件形 `{seq, ts_ms, name, url, data}`；环容量 1000 满丢最旧，单条 data 超 32KB 截断（`__truncated` 标记），daemon 不在跑时 `browse events` 不算错（环随 daemon 生命周期）。**边界**：本面只承载事件上报与消费；脚本安装管理归引擎面（`Userscript.*` CDP 域，clean-chrome 批 4），两者正交不重复。
+事件形 `{seq, ts_ms, type, slug, url, data}`（type 两档 see/stop，slug 是技能名）；环容量 1000 满丢最旧，单条 data 超 32KB 截断（`__truncated` 标记），daemon 不在跑时 `browse events` 不算错（环随 daemon 生命周期）。**边界**：本面只承载事件上报与消费；脚本安装管理归引擎面（`Userscript.*` CDP 域，clean-chrome 批 4），两者正交不重复。
+
+### 条件停止（stop api）
+
+页内脚本检测到目标条件，`POST /userscript/stop`（标准形端点名，旧 `/us-stop` 弃用；body `{slug, url, data}`，type 恒 stop 由端点语义内定）：daemon 打断**当前正在跑的那次 rune**（`mech.rn` 编排），被停回执带 `stopped.capture`（脚本捕获的 what 与停在宿主哪一步）：
+
+```js
+function stop(data) {
+  GM_xmlhttpRequest({
+    method: 'POST',
+    url: 'http://127.0.0.1:9880/userscript/stop',
+    headers: { 'Content-Type': 'application/json' },
+    data: JSON.stringify({ name: 'stop.challenge-stop', url: location.href, data: data })
+  });
+}
+```
+
+被停回执：非零退出，`stopped: {op, elapsed_ms, cause: "userscript_stop", capture: {seq, type: "stop", slug, url, data}}`；脚本侧响应 `{ok, stopped: true, seq}`。**不停浏览器、不关 daemon、不清事件环**；无在跑 rune 时回 `stopped: false`（事件仍入环）；P0 只停 rune（方言 `/eval` 占槽时不停）。与 `browse rune stop`（人停，无 capture）并列，谁先到谁赢。
 
 ## 7. 边界与后续
 

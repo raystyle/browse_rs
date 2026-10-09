@@ -313,14 +313,9 @@
       "docs": "读多仓配置（JSON 字符串数组，序即优先序）；文件缺失或坏形回空清单\n（配置坏不致命，退单仓行为）。"
     },
     {
-      "path": "browse_core::paths::snippets_root",
+      "path": "browse_core::paths::scripts_root",
       "kind": "function",
-      "docs": "返回片段库根（#65 可配置外部根）：[`snippets_root_explicit`] 的 env\n显式值优先（指向外部仓，如 prs_c2coe 内片段目录；env 根刻意不分\n`BROWSE_NAME` 命名空间，与 `BROWSE_WORKSPACE` 同口径——外部仓是\n跨实例共享资产），缺省仍内置态 `<state_dir>/snippets`（随实例命名\n空间分舱，评审一轮 G4：与 workspace 缺省的不分舱不同，勿混读）。\n`browse snippets` 命令族从这定位片段库\n（`<site>/<task>.js` 分层与首行 `//` 摘要约定不变；越出库根的相对\n路径仍被 show 面拦截）。CLI `--root` 旗标在本函数之上再盖一层\n（旗标 > env > 内置缺省）。\n\n# Examples\n\n```\nif std::env::var_os(\"BROWSE_SNIPPETS_ROOT\").is_none() {\n    assert!(browse_core::paths::snippets_root().ends_with(\"snippets\"));\n}\n```"
-    },
-    {
-      "path": "browse_core::paths::snippets_root_explicit",
-      "kind": "function",
-      "docs": "返回 env 显式片段根（#65）：`BROWSE_SNIPPETS_ROOT` 非空时的值。\n「谁算显式配置」的唯一裁定点（评审二轮 G8：谓词单源，CLI 层不再\n自判 env 空串，防 list 配置错面与 show 路径面漂移）。\n\n# Examples\n\n```\nif std::env::var_os(\"BROWSE_SNIPPETS_ROOT\").is_none() {\n    assert!(browse_core::paths::snippets_root_explicit().is_none());\n}\n```"
+      "docs": "返回脚本根（总台令 2026-10-09 snippets 剔除淘汰）：只此一家 =\nworkspace 序首根的 `scripts/`（git 管理，`browse workspace update`\n连带更新）。何时用：`@实参` 模板道的具名解析与 rune `js_lib` 的\n缺省根；CLI `--root` 旗标在调用侧再盖一层（旗标 > workspace scripts）。\n旧 `BROWSE_SNIPPETS_ROOT` env 与 `<state_dir>/snippets` 内置态已退役。\n\n# Examples\n\n```\nassert!(browse_core::paths::scripts_root().ends_with(\"scripts\"));\n```"
     },
     {
       "path": "browse_core::paths::state_dir",
@@ -728,24 +723,24 @@
       "docs": "描述 POST /eval 的请求体。"
     },
     {
+      "path": "browse_core::server::EventCreateRequest",
+      "kind": "struct",
+      "docs": "`POST /events` 请求体（#77 油猴事件回调，标准形）：`type` 两档\n（`see` 观察 / `stop` 条件停止）加 `slug`（技能名，可空）；兼容旧\n`name` 前缀形（`see.<slug>` / `stop.<slug>`，前缀推导两字段）。"
+    },
+    {
+      "path": "browse_core::server::EventRing",
+      "kind": "struct",
+      "docs": "事件环（#77）：容量有界的环形缓冲，满即丢最旧，序号单调递增。\n纯同步逻辑（`std::sync::Mutex` 包裹进 [`Daemon`]），handler 层做\n校验与截断后入环。"
+    },
+    {
       "path": "browse_core::server::RuneRequest",
       "kind": "struct",
       "docs": "描述 POST /rune 的请求体（账本 #67：Rune 编排面）。"
     },
     {
-      "path": "browse_core::server::UsEvent",
+      "path": "browse_core::server::UserscriptEvent",
       "kind": "struct",
-      "docs": "一条油猴（userscript）事件回调（#77）：脚本经 `GM_xmlhttpRequest`\n`POST /us-event` 上报的页面事件，agent 侧经 `browse events` 消费。\n何时用：页面内事件要主动通知宿主（区别于轮询/快照拉取）的探针形\n集成。边界：只承载上报与消费，脚本安装管理归引擎面（Userscript.\\*\nCDP 域，clean-chrome 批 4），两者正交。"
-    },
-    {
-      "path": "browse_core::server::UsEventRequest",
-      "kind": "struct",
-      "docs": "`POST /us-event` 请求体（#77 油猴事件回调）：`name` 必填，`url`\n缺省由脚本自报，`data` 任意 JSON。"
-    },
-    {
-      "path": "browse_core::server::UsEventRing",
-      "kind": "struct",
-      "docs": "事件环（#77）：容量有界的环形缓冲，满即丢最旧，序号单调递增。\n纯同步逻辑（`std::sync::Mutex` 包裹进 [`Daemon`]），handler 层做\n校验与截断后入环。"
+      "docs": "一条油猴（userscript）事件回调（#77）：脚本经 `GM_xmlhttpRequest`\n`POST /events` 上报的页面事件，agent 侧经 `browse events` 消费。\n何时用：页面内事件要主动通知宿主（区别于轮询/快照拉取）的探针形\n集成。边界：只承载上报与消费，脚本安装管理归引擎面（Userscript.\\*\nCDP 域，clean-chrome 批 4），两者正交。"
     },
     {
       "path": "browse_core::server::serve",
@@ -755,17 +750,27 @@
     {
       "path": "browse_core::skills",
       "kind": "module",
-      "docs": "技能触发层（#50/#51/#56）：goto 导航回执与 fetch/detect 回执的条件\n附加面。知识全文存 workspace 单仓（[`crate::workspace`]，\ngithub.com/raystyle/browse_workspace），本模块只做「点名」：命中附加\n清单与 hint（读全文命令），未命中或关闭时一键不加，回执与现状逐字节\n一致。"
+      "docs": "技能触发层（#50/#51/#56 + 清仓重建总台令 2026-10-09）：goto 导航回执\n与 fetch/detect 回执的条件附加面。技能本体存 workspace 单仓\n（[`crate::workspace`]，github.com/raystyle/browse_workspace），形是\n「宿主侧 `mech.rn` + 页内侧 `probe.user.js`」**双脚本对**——本模块在\n回执里「点名」：热路径只消费各对 `probe.user.js` 的 `/* @detect */`\n块，按多根序收集拼成**一次**主世界求值，命中附加清单与 hint，未命中、\n无对或关闭时零键，回执不加页面技能键。"
     },
     {
       "path": "browse_core::skills::FROZEN_PAGE_SLUGS",
       "kind": "constant",
-      "docs": "#51 冻结 slug 名单（探测与回执的合法值域；页面可控串注入面的\n白名单，评审 F3）。种子仓 `page-skills/<slug>.md` 与此同名同序。"
+      "docs": "清仓重建后的冻结 slug 名单（页面可控串注入面的白名单，评审 F3 律\n沿承）：合法值域只含首批真正写进 workspace 的双脚本对名字（爬虫五对\n加安全四对，grok 检索轮定名）。换名单即发版判据，仓侧不新增名字点不\n出新键（要自动点名的新 slug 攒批发版进此表）。"
     },
     {
-      "path": "browse_core::skills::PAGE_PROBE_JS",
-      "kind": "constant",
-      "docs": "#51 页面特征探测 JS：自包含 IIFE，恒返合法 JSON 字符串（连异常\n路径都返 `{framework:null,slugs:[]}` 骨架，Rust 侧静默降级零键）。\n何时用：作为内置缺省判据的唯一函数体——由私有的 `default_probe_rn`\n包进 `cdp::js`（**主世界** returnByValue：框架全局与元素 expando\n隔离世界不可见，评审 F-1）在 goto 后的技能附加入口跑一次；workspace\n`page-skills/scripts/probe.rn` 命中时整段被覆写（本常量不执行，\nREQ-029）。外层 8 秒界在私有的 `run_probe_rn`。边界：TreeWalker 前\n800 元素封顶、iframe 判定源封顶 50、不用 getComputedStyle（大页防\n卡顿）；正文单引号字串，`r##` 是防御性嵌法（评审 G9：现正文无 `\"#`\n序列，将来引入双引号字串也不会提前终结 `r#`）。\n\nslug 与置信档（#51 冻结清单，检出序恒定）：spa（框架容器键或全局，\nCONFIRMED）、hydration（`__next_f`/`__NUXT_DATA__`/astro-island/\n`[q:container]`，CONFIRMED）、shadow-dom（前 800 节点 shadowRoot，\nCONFIRMED）、iframe（清单非空，CONFIRMED）、iframe-cross-origin\n（源比对，CONFIRMED）、lazy-scroll（页高 >= 8 倍视口加滚动容器，\nPLAUSIBLE）、bot-shield（cf-chl DOM CONFIRMED / CF cookie\nPLAUSIBLE）、login-wall（可见 password 框，PLAUSIBLE）、captcha\n（recaptcha/hcaptcha/turnstile 特征，CONFIRMED）、service-worker\n（controller 非空，CONFIRMED）。framework 是 info 字段不占 slug。"
+      "path": "browse_core::skills::SkillPair",
+      "kind": "struct",
+      "docs": "一个成对的页面技能（清仓重建总台令 2026-10-09）：多根序首胜的原子\n对——`page-skills/<slug>/` 下 `mech.rn` 与 `probe.user.js` 同时在才算。\n`detect_js` 是从 probe.user.js 抽出的 `/* @detect */` 块正文（无块为\n空串：对仍可被 page/list 读到，但热路径不拼批）。"
+    },
+    {
+      "path": "browse_core::skills::build_batch_js",
+      "kind": "function",
+      "docs": "拼批判定 JS（纯函数，单测锁形）：prelude 在 facts 上填事实（约定可写\n`facts.framework = {name, version}`），各对的检测块在独立 IIFE 里跑\n（各块自带 `browseDetect` 作用域，互不撞名），块自调约定函数并把非空\n返回收进 slugs；单块抛错只弃该块。恒返 `{framework, slugs}` 骨架。"
+    },
+    {
+      "path": "browse_core::skills::collect_pairs_multi",
+      "kind": "function",
+      "docs": "枚举各根 `page-skills/` 的成对目录（纯函数，单测用）：目录同时有\n`mech.rn` 与 `probe.user.js` 才算技能；同 slug 序首根整对胜（禁止跨根\n拼对，保回执确定性）；结果按 slug 排序。何时用：判定热路径拼批与\n`browse workspace list/page` 的对清册共用此口径。"
     },
     {
       "path": "browse_core::skills::domain_hint",
@@ -785,12 +790,17 @@
     {
       "path": "browse_core::skills::list_domain_skills",
       "kind": "function",
-      "docs": "列 `<ws>/domain-skills/<段>/` 的技能文件名（#50，纯函数）：只收\n.md/.txt，排序保回执确定（read_dir 顺序不保证），封顶\n[`crate::workspace::DOMAIN_FILES_CAP`]；目录缺失返回空 vec。\n\n# Examples\n\n```\n// 缺目录返回空（不报错：未装仓是常态）\nlet v = browse_core::skills::list_domain_skills(\n    std::path::Path::new(\"/nonexistent-browse-ws\"), \"x\");\nassert!(v.is_empty());\n```"
+      "docs": "列 `<ws>/domain-skills/<段>/` 的对文件清单（纯函数）：成对（mech.rn\n加 probe.user.js）才有，排序保回执确定（read_dir 顺序不保证）；目录\n缺失或不成对返回空 vec。\n\n# Examples\n\n```\n// 缺目录返回空（不报错：未装仓是常态）\nlet v = browse_core::skills::list_domain_skills(\n    std::path::Path::new(\"/nonexistent-browse-ws\"), \"x\");\nassert!(v.is_empty());\n```"
+    },
+    {
+      "path": "browse_core::skills::load_prelude_multi",
+      "kind": "function",
+      "docs": "序首 `_prelude.js`（facts 游走脚本，page-skills 层）：先命中根整胜，\n全根未命中回空串（拼批以空 facts 跑，检测块仍可只靠自己的\nquerySelector）。改游走不发版（判定正文全在仓里）。"
     },
     {
       "path": "browse_core::skills::page_fields",
       "kind": "function",
-      "docs": "把探测结果变成回执附加键对（#51，纯函数）：framework 形合法出\n`(\"framework\", {name,version})`；slugs 过滤后非空出 `page_skills` 与\n`page_skills_hint`（各 slug 的读全文命令用 `；` 连接）；全空返回\n空 vec（调用方零插入）。**白名单是硬边界（评审 F3）**：探测产自页内\n而页面可控（覆写全局或伪造判据脚本回执都做得到），故这里逐条校验\nslug 在 [`FROZEN_PAGE_SLUGS`]、confidence 是两档枚举、去重保序\n（天然封顶名单长），framework 的 name/version 形与长度也校验；\n非法条目静默丢弃，全非法即零键。\n\n# Examples\n\n```\nlet probe = serde_json::json!({\n    \"framework\": {\"name\": \"vue\", \"version\": \"3.5\"},\n    \"slugs\": [{\"slug\": \"spa\", \"confidence\": \"CONFIRMED\"}]\n});\nlet f = browse_core::skills::page_fields(&probe);\nassert_eq!(f.len(), 3, \"framework 加 page_skills 加 hint: {f:?}\");\n\n// 页面伪造形：名单外 slug 与非法 confidence 全被滤掉（评审 F3）\nlet forged = serde_json::json!({\n    \"framework\": {\"name\": \"pwn\"},\n    \"slugs\": [\n        {\"slug\": \"../../etc/passwd\", \"confidence\": \"CONFIRMED\"},\n        {\"slug\": \"spa\", \"confidence\": \"MAYBE\"},\n        {\"slug\": \"captcha\", \"confidence\": \"CONFIRMED\"}\n    ]\n});\nlet f = browse_core::skills::page_fields(&forged);\nlet skills = f.iter().find(|(k, _)| *k == \"page_skills\").unwrap();\nassert_eq!(skills.1, serde_json::json!([{\"slug\":\"captcha\",\"confidence\":\"CONFIRMED\"}]));\n```"
+      "docs": "把探测结果变成回执附加键对（#51，纯函数）：framework 形合法出\n`(\"framework\", {name,version})`；slugs 过滤后非空出 `page_skills` 与\n`page_skills_hint`（各 slug 的读全文命令用 `；` 连接）；全空返回\n空 vec（调用方零插入）。**白名单是硬边界（评审 F3）**：探测产自页内\n而页面可控（覆写全局或伪造判据脚本回执都做得到），故这里逐条校验\nslug 在 [`FROZEN_PAGE_SLUGS`]、confidence 是两档枚举、去重保序\n（天然封顶名单长），framework 的 name/version 形与长度也校验；\n非法条目静默丢弃，全非法即零键。\n\n# Examples\n\n```\nlet probe = serde_json::json!({\n    \"framework\": {\"name\": \"vue\", \"version\": \"3.5\"},\n    \"slugs\": [{\"slug\": \"challenge-stop\", \"confidence\": \"CONFIRMED\"}]\n});\nlet f = browse_core::skills::page_fields(&probe);\nassert_eq!(f.len(), 3, \"framework 加 page_skills 加 hint: {f:?}\");\n\n// 页面伪造形：名单外 slug 与非法 confidence 全被滤掉（评审 F3）\nlet forged = serde_json::json!({\n    \"framework\": {\"name\": \"pwn\"},\n    \"slugs\": [\n        {\"slug\": \"../../etc/passwd\", \"confidence\": \"CONFIRMED\"},\n        {\"slug\": \"challenge-stop\", \"confidence\": \"MAYBE\"},\n        {\"slug\": \"antibot-vendor\", \"confidence\": \"CONFIRMED\"}\n    ]\n});\nlet f = browse_core::skills::page_fields(&forged);\nlet skills = f.iter().find(|(k, _)| *k == \"page_skills\").unwrap();\nassert_eq!(skills.1, serde_json::json!([{\"slug\":\"antibot-vendor\",\"confidence\":\"CONFIRMED\"}]));\n```"
     },
     {
       "path": "browse_core::skills::page_skills_enabled",
@@ -800,7 +810,7 @@
     {
       "path": "browse_core::skills::url_domain_fields",
       "kind": "function",
-      "docs": "URL 到域名层键对（#56，fetch 腿的口径源）：与 goto 同口径的域名段\n匹配（[`domain_segment`] 加 [`list_domain_skills`]），但收 ws 目录\n与 url 显式入参——fetch 的两形态（HTTP 直出与引擎升级）都在 CLI 侧\n持 URL，点名不依赖引擎与 Session。何时用：回执含 url 且只想要域名\n层点名的调用方。边界：关闭（`BROWSE_DOMAIN_SKILLS`）或未命中返回\n空 vec，调用方零插入。\n\n# Examples\n\n```\nlet dir = std::env::temp_dir().join(format!(\"browse-sk56-{}\", std::process::id()));\nlet seg = dir.join(\"domain-skills\").join(\"x\");\nstd::fs::create_dir_all(&seg).unwrap();\nstd::fs::write(seg.join(\"notes.md\"), \"# x\").unwrap();\nlet f = browse_core::skills::url_domain_fields(&dir, \"https://www.x.com/a\");\nassert_eq!(f.len(), 2, \"命中出两键: {f:?}\");\nassert!(f.iter().all(|(k, _)| k.starts_with(\"domain_skills\")));\nassert!(browse_core::skills::url_domain_fields(&dir, \"data:text/html,x\").is_empty());\nlet _ = std::fs::remove_dir_all(&dir);\n```"
+      "docs": "URL 到域名层键对（#56，fetch 腿的口径源）：与 goto 同口径的域名段\n匹配（[`domain_segment`] 加 [`list_domain_skills`]），但收 ws 目录\n与 url 显式入参——fetch 的两形态（HTTP 直出与引擎升级）都在 CLI 侧\n持 URL，点名不依赖引擎与 Session。何时用：回执含 url 且只想要域名\n层点名的调用方。边界：关闭（`BROWSE_DOMAIN_SKILLS`）或未命中返回\n空 vec，调用方零插入。\n\n# Examples\n\n```\nlet dir = std::env::temp_dir().join(format!(\"browse-sk56-{}\", std::process::id()));\nlet seg = dir.join(\"domain-skills\").join(\"x\");\nstd::fs::create_dir_all(&seg).unwrap();\nstd::fs::write(seg.join(\"mech.rn\"), \"pub async fn main() {}\").unwrap();\nstd::fs::write(seg.join(\"probe.user.js\"), \"// probe\").unwrap();\nlet f = browse_core::skills::url_domain_fields(&dir, \"https://www.x.com/a\");\nassert_eq!(f.len(), 2, \"命中出两键: {f:?}\");\nassert!(f.iter().all(|(k, _)| k.starts_with(\"domain_skills\")));\nassert!(browse_core::skills::url_domain_fields(&dir, \"data:text/html,x\").is_empty());\nlet _ = std::fs::remove_dir_all(&dir);\n```"
     },
     {
       "path": "browse_core::skills::url_domain_fields_multi",
@@ -815,7 +825,7 @@
     {
       "path": "browse_core::skills::verdict_page_slugs",
       "kind": "function",
-      "docs": "detect() 判读到 page-skill slug 的映射表（#56，纯函数）：challenged\n映射 bot-shield 与 captcha，login-wall 映射 login-wall，其余判读\n（rate-limited/blocked/stalled/blank/loading/ok）无映射返回空。置信\n档恒 PLAUSIBLE：判读是关键词与网络行为推断，非 DOM 特征实证（对照\n探针腿的 CONFIRMED 档要 cf-chl DOM 这类硬证据）。slug 值域即\n[`FROZEN_PAGE_SLUGS`]，表驱动静态对不越白名单。\n\n# Examples\n\n```\nassert_eq!(\n    browse_core::skills::verdict_page_slugs(\"challenged\"),\n    &[(\"bot-shield\", \"PLAUSIBLE\"), (\"captcha\", \"PLAUSIBLE\")]\n);\nassert_eq!(\n    browse_core::skills::verdict_page_slugs(\"login-wall\"),\n    &[(\"login-wall\", \"PLAUSIBLE\")]\n);\nassert!(browse_core::skills::verdict_page_slugs(\"ok\").is_empty());\n```"
+      "docs": "detect() 判读到 page-skill slug 的映射表（#56，纯函数）：challenged\n映射 bot-shield 与 captcha，login-wall 映射 login-wall，其余判读\n（rate-limited/blocked/stalled/blank/loading/ok）无映射返回空。置信\n档恒 PLAUSIBLE：判读是关键词与网络行为推断，非 DOM 特征实证（对照\n探针腿的 CONFIRMED 档要 cf-chl DOM 这类硬证据）。slug 值域即\n[`FROZEN_PAGE_SLUGS`]，表驱动静态对不越白名单。\n\n# Examples\n\n```\nassert_eq!(\n    browse_core::skills::verdict_page_slugs(\"challenged\"),\n    &[(\"challenge-stop\", \"PLAUSIBLE\")]\n);\nassert!(browse_core::skills::verdict_page_slugs(\"login-wall\").is_empty());\nassert!(browse_core::skills::verdict_page_slugs(\"ok\").is_empty());\n```"
     },
     {
       "path": "browse_core::surface",
@@ -895,12 +905,7 @@
     {
       "path": "browse_core::workspace",
       "kind": "module",
-      "docs": "workspace 单仓管理（#50/#51 配套）：站点与机制知识仓\n`github.com/raystyle/browse_workspace` 的安装、更新与仓内读取。\n\n何时用：`browse workspace` 命令族的全部后端（status/install/update/\nlist/site/page）。git 维护走 shell-out `git`（不引 git crate）：install\n是 clone、update 是 `pull --ff-only`，本地修改可手工 commit/push 回推\n同一远端。仓根定位见 [`crate::paths::workspace_dir`]。"
-    },
-    {
-      "path": "browse_core::workspace::DOMAIN_FILES_CAP",
-      "kind": "constant",
-      "docs": "域名层点名清单的封顶（#50 验收：回执文件列表封顶 10；list 同口径）。"
+      "docs": "workspace 单仓管理（#50/#51 配套 + 清仓重建总台令 2026-10-09）：站点\n与机制知识仓 `github.com/raystyle/browse_workspace` 的安装、更新与仓内\n读取。技能本体是「宿主侧 `mech.rn` + 页内侧 `probe.user.js`」双脚本对\n（`page-skills/<slug>/` 与 `domain-skills/<段>/` 同形），README 只作人读\n说明——list/site/page 只认成对目录，缺一的目录不算技能。\n\n何时用：`browse workspace` 命令族的全部后端（status/install/update/\nlist/site/page）。git 维护走 shell-out `git`（不引 git crate）：install\n是 clone、update 是 `pull --ff-only`，本地修改可手工 commit/push 回推\n同一远端。仓根定位见 [`crate::paths::workspace_dir`]。"
     },
     {
       "path": "browse_core::workspace::SEED_REMOTE",
@@ -910,7 +915,7 @@
     {
       "path": "browse_core::workspace::domain_segment_files",
       "kind": "function",
-      "docs": "列 `<root>/domain-skills/<段>/` 的技能文件名（排序，封顶\n[`DOMAIN_FILES_CAP`]，只收 .md/.txt）。目录缺失返回空。何时用：\n技能触发层（[`crate::skills`]）的点名清单与 `browse workspace list`\n共用此口径。"
+      "docs": "列 `<root>/domain-skills/<段>/` 的对文件清单（成对才有,排序保回执\n确定）。目录缺失或不成对返回空。何时用：技能触发层（[`crate::skills`]）\n的点名清单与 `browse workspace list` 共用此口径。"
     },
     {
       "path": "browse_core::workspace::domain_segment_files_multi",
@@ -925,7 +930,7 @@
     {
       "path": "browse_core::workspace::list_json",
       "kind": "function",
-      "docs": "`browse workspace list` 的机器面：`{domains: [{segment, files}],\npages: [slug]}`。files 与回执点名同口径封顶 [`DOMAIN_FILES_CAP`]；\n未安装返回空结构（由调用面给安装提示）。"
+      "docs": "`browse workspace list` 的机器面：`{domains: [{segment, files}],\npages: [slug]}`。files 是对内文件（mech.rn/probe.user.js/README.md）；\n未安装返回空结构（由调用面给安装提示）。"
     },
     {
       "path": "browse_core::workspace::list_json_multi",
@@ -935,7 +940,7 @@
     {
       "path": "browse_core::workspace::read_page",
       "kind": "function",
-      "docs": "`browse workspace page <slug>`：读 `page-skills/<slug>.md` 全文。\n\n# Errors\n\nslug 不存在（CTA 指回 list）；路径越出仓根；仓根未安装。"
+      "docs": "`browse workspace page <slug>`：交出该对（有 README 附全文，无给\n路径摘要；清仓重建后不再读 `page-skills/<slug>.md` 旧形）。\n\n# Errors\n\nslug 不存在或不成对（CTA 指回 list）；路径越出仓根；仓根未安装。"
     },
     {
       "path": "browse_core::workspace::read_page_multi",
@@ -945,7 +950,7 @@
     {
       "path": "browse_core::workspace::read_site",
       "kind": "function",
-      "docs": "`browse workspace site <段>[/<文件>]`：只给段时打该段清单（每行\n`<文件>  <首行标题>`，与 snippets list 同构；**不封顶**，是回执点名\n的下钻面）；带 `<段>/<文件>` 时读该文件全文。\n\n# Errors\n\n段或文件不存在（CTA 指回 list）；路径越出仓根；仓根未安装。"
+      "docs": "`browse workspace site <段>[/<文件>]`：只给段时打该段清单（每行\n`<文件>  <首行标题>`，路径摘要同构；是回执点名\n的下钻面）；带 `<段>/<文件>` 时读该文件全文。\n\n# Errors\n\n段或文件不存在（CTA 指回 list）；路径越出仓根；仓根未安装。"
     },
     {
       "path": "browse_core::workspace::read_site_multi",

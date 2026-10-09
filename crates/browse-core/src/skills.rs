@@ -1,8 +1,10 @@
-//! 技能触发层（#50/#51/#56）：goto 导航回执与 fetch/detect 回执的条件
-//! 附加面。知识全文存 workspace 单仓（[`crate::workspace`]，
-//! github.com/raystyle/browse_workspace），本模块只做「点名」：命中附加
-//! 清单与 hint（读全文命令），未命中或关闭时一键不加，回执与现状逐字节
-//! 一致。
+//! 技能触发层（#50/#51/#56 + 清仓重建总台令 2026-10-09）：goto 导航回执
+//! 与 fetch/detect 回执的条件附加面。技能本体存 workspace 单仓
+//! （[`crate::workspace`]，github.com/raystyle/browse_workspace），形是
+//! 「宿主侧 `mech.rn` + 页内侧 `probe.user.js`」**双脚本对**——本模块在
+//! 回执里「点名」：热路径只消费各对 `probe.user.js` 的 `/* @detect */`
+//! 块，按多根序收集拼成**一次**主世界求值，命中附加清单与 hint，未命中、
+//! 无对或关闭时零键，回执不加页面技能键。
 
 use serde_json::{Value, json};
 
@@ -54,9 +56,9 @@ pub fn domain_segment(url: &str) -> Option<String> {
     }
 }
 
-/// 列 `<ws>/domain-skills/<段>/` 的技能文件名（#50，纯函数）：只收
-/// .md/.txt，排序保回执确定（read_dir 顺序不保证），封顶
-/// [`crate::workspace::DOMAIN_FILES_CAP`]；目录缺失返回空 vec。
+/// 列 `<ws>/domain-skills/<段>/` 的对文件清单（纯函数）：成对（mech.rn
+/// 加 probe.user.js）才有，排序保回执确定（read_dir 顺序不保证）；目录
+/// 缺失或不成对返回空 vec。
 ///
 /// # Examples
 ///
@@ -75,158 +77,137 @@ pub fn domain_hint(segment: &str) -> String {
     format!("browse workspace site {segment}")
 }
 
-/// #51 页面特征探测 JS：自包含 IIFE，恒返合法 JSON 字符串（连异常
-/// 路径都返 `{framework:null,slugs:[]}` 骨架，Rust 侧静默降级零键）。
-/// 何时用：作为内置缺省判据的唯一函数体——由私有的 `default_probe_rn`
-/// 包进 `cdp::js`（**主世界** returnByValue：框架全局与元素 expando
-/// 隔离世界不可见，评审 F-1）在 goto 后的技能附加入口跑一次；workspace
-/// `page-skills/scripts/probe.rn` 命中时整段被覆写（本常量不执行，
-/// REQ-029）。外层 8 秒界在私有的 `run_probe_rn`。边界：TreeWalker 前
-/// 800 元素封顶、iframe 判定源封顶 50、不用 getComputedStyle（大页防
-/// 卡顿）；正文单引号字串，`r##` 是防御性嵌法（评审 G9：现正文无 `"#`
-/// 序列，将来引入双引号字串也不会提前终结 `r#`）。
-///
-/// slug 与置信档（#51 冻结清单，检出序恒定）：spa（框架容器键或全局，
-/// CONFIRMED）、hydration（`__next_f`/`__NUXT_DATA__`/astro-island/
-/// `[q:container]`，CONFIRMED）、shadow-dom（前 800 节点 shadowRoot，
-/// CONFIRMED）、iframe（清单非空，CONFIRMED）、iframe-cross-origin
-/// （源比对，CONFIRMED）、lazy-scroll（页高 >= 8 倍视口加滚动容器，
-/// PLAUSIBLE）、bot-shield（cf-chl DOM CONFIRMED / CF cookie
-/// PLAUSIBLE）、login-wall（可见 password 框，PLAUSIBLE）、captcha
-/// （recaptcha/hcaptcha/turnstile 特征，CONFIRMED）、service-worker
-/// （controller 非空，CONFIRMED）。framework 是 info 字段不占 slug。
-pub const PAGE_PROBE_JS: &str = r##"(() => {
-  const out = { framework: null, slugs: [] };
-  const add = (s, c) => { out.slugs.push({ slug: s, confidence: c }); };
-  try {
-    const w = window, d = w.document;
-    if (!d || !d.body) return out;
-
-    // ---- 全局与 hydration 标记（廉价先行；点名收进 slug 段保冻结序）----
-    const nuxt = w.__NUXT_DATA__ || w.__NUXT__;
-    const next = w.__NEXT_DATA__ || (Array.isArray(w.__next_f) ? w.__next_f : null);
-    const astro = d.querySelector('astro-island');
-    const qwik = d.querySelector('[q\\:container]');
-
-    // ---- framework（info 字段，不占 slug）----
-    let fname = null, fver = null;
-    if (w.__vue_app__) { fname = 'vue'; fver = w.__vue_app__.version || null; }
-    else if (w.Ember && w.Ember.VERSION) { fname = 'ember'; fver = w.Ember.VERSION; }
-    else if (astro) { fname = 'astro'; }
-    else if (qwik) { fname = 'qwik'; }
-    // react（容器键）/angular（body[ng-version]）/svelte（元素自有键）在游走里补
-
-    // ---- cookie（bot-shield 的 PLAUSIBLE 腿）----
-    let ck = '';
-    try { ck = d.cookie || ''; } catch (e) {}
-    const cfCk = /(?:^|;\s*)(?:cf_clearance|__cf_bm)=/.test(ck);
-
-    // ---- 挑战/验证码 DOM（一次合并选择器，CONFIRMED 腿）----
-    let chal = false, cfDom = false;
-    try {
-      chal = !!d.querySelector('.cf-turnstile,.g-recaptcha,.h-captcha,[data-sitekey],'
-        + 'script[src*="challenges.cloudflare.com"],script[src*="recaptcha"],'
-        + 'script[src*="hcaptcha.com"]');
-      cfDom = !!d.querySelector('cf-chl-running,#challenge-running,#challenge-form,'
-        + '.cf-turnstile,script[src*="challenges.cloudflare.com"]');
-    } catch (e) {}
-
-    // ---- iframe 清单（判定源封顶 50；跨源比对用 hostname 不带端口）----
-    let ifn = 0, xo = 0;
-    try {
-      const ifr = d.querySelectorAll('iframe');
-      ifn = ifr.length;
-      const cap = Math.min(ifn, 50);
-      for (let i = 0; i < cap; i++) {
-        const s = ifr[i].src || '';
-        const m = s.match(/^https?:\/\/([^\/:]+)/);
-        if (m && location.hostname && m[1] !== location.hostname) xo++;
-      }
-    } catch (e) {}
-
-    // ---- service worker ----
-    let sw = false;
-    try { sw = !!(w.navigator && w.navigator.serviceWorker &&
-                 w.navigator.serviceWorker.controller); } catch (e) {}
-
-    // ---- lazy-scroll 前置（页高 >= 8 倍视口才细看滚动容器）----
-    const vh = w.innerHeight || 0;
-    const docH = Math.max(d.documentElement ? d.documentElement.scrollHeight : 0, d.body.scrollHeight);
-    const tall = vh > 0 && docH >= 8 * vh;
-
-    // ---- 有界节点游走（TreeWalker 前 800 元素封顶）----
-    const CAP = 800;
-    let n = 0, shadow = false, react = false, svelte = false, angular = null, pw = false, scrollC = false;
-    let tw = null;
-    try { tw = d.createTreeWalker(d, NodeFilter.SHOW_ELEMENT, null); } catch (e) {}
-    if (tw) {
-      let el;
-      while (n < CAP && (el = tw.nextNode())) {
-        n++;
-        if (el.shadowRoot) shadow = true;
-        const tag = el.tagName;
-        if (tag === 'IFRAME' || tag === 'FRAME') continue;
-        // react/svelte 检测：查元素自有属性（DOM 元素的 own props 只有
-        // expando 键，react 的 __reactFiber$ 与 svelte 的 __svelte* 都是
-        // expando，逐元素全键扫描便宜且比容器 id 白名单更稳）
-        if (!(react && svelte)) {
-          const keys = Object.getOwnPropertyNames(el);
-          for (let k = 0; k < keys.length; k++) {
-            const key = keys[k];
-            if (!react && (key.lastIndexOf('__reactContainer$', 0) === 0 ||
-                key.lastIndexOf('__reactFiber$', 0) === 0)) react = true;
-            else if (!svelte && key.lastIndexOf('__svelte', 0) === 0) svelte = true;
-            if (react && svelte) break;
-          }
-        }
-        if (angular === null && tag === 'BODY' && el.getAttribute) {
-          const v = el.getAttribute('ng-version');
-          if (v) angular = v;
-        }
-        if (tag === 'INPUT' && el.type === 'password' && !pw) {
-          try { pw = el.getClientRects().length > 0; } catch (e) { pw = true; }
-        }
-        if (tall && !scrollC && el.scrollHeight > el.clientHeight + 50 &&
-            el.clientHeight > 50) scrollC = true;
-      }
-    }
-    if (angular !== null) { fname = 'angular'; fver = angular; }
-    if (react) { fname = 'react'; fver = null; }
-    else if (svelte && fname === null) { fname = 'svelte'; fver = null; }
-
-    // ---- slugs（固定序，保回执确定；序即文档冻结清单序）----
-    if (react || svelte || fname === 'vue' || fname === 'angular' ||
-        fname === 'ember' || fname === 'qwik') add('spa', 'CONFIRMED');
-    if (next || nuxt || astro || qwik) add('hydration', 'CONFIRMED');
-    if (shadow) add('shadow-dom', 'CONFIRMED');
-    if (ifn > 0) add('iframe', 'CONFIRMED');
-    if (xo > 0) add('iframe-cross-origin', 'CONFIRMED');
-    if (tall && scrollC) add('lazy-scroll', 'PLAUSIBLE');
-    if (cfDom) add('bot-shield', 'CONFIRMED');
-    else if (cfCk) add('bot-shield', 'PLAUSIBLE');
-    if (pw) add('login-wall', 'PLAUSIBLE');
-    if (chal) add('captcha', 'CONFIRMED');
-    if (sw) add('service-worker', 'CONFIRMED');
-
-    if (fname) out.framework = { name: fname, version: fver };
-  } catch (e) { /* 整体降级：空骨架零键附加 */ }
-  return out;
-})()"##;
-
-/// #51 冻结 slug 名单（探测与回执的合法值域；页面可控串注入面的
-/// 白名单，评审 F3）。种子仓 `page-skills/<slug>.md` 与此同名同序。
+/// 清仓重建后的冻结 slug 名单（页面可控串注入面的白名单，评审 F3 律
+/// 沿承）：合法值域只含首批真正写进 workspace 的双脚本对名字（爬虫五对
+/// 加安全四对，grok 检索轮定名）。换名单即发版判据，仓侧不新增名字点不
+/// 出新键（要自动点名的新 slug 攒批发版进此表）。
 pub const FROZEN_PAGE_SLUGS: &[&str] = &[
-    "spa",
-    "hydration",
-    "shadow-dom",
-    "iframe",
-    "iframe-cross-origin",
-    "lazy-scroll",
-    "bot-shield",
-    "login-wall",
-    "captcha",
-    "service-worker",
+    "response-tap",
+    "scroll-until-end",
+    "next-page",
+    "spa-route",
+    "link-table",
+    "challenge-stop",
+    "antibot-vendor",
+    "fingerprint-watch",
+    "policy-surface",
 ];
+
+/// 一个成对的页面技能（清仓重建总台令 2026-10-09）：多根序首胜的原子
+/// 对——`page-skills/<slug>/` 下 `mech.rn` 与 `probe.user.js` 同时在才算。
+/// `detect_js` 是从 probe.user.js 抽出的 `/* @detect */` 块正文（无块为
+/// 空串：对仍可被 page/list 读到，但热路径不拼批）。
+pub struct SkillPair {
+    /// 技能名（目录名）。
+    pub slug: String,
+    /// `/* @detect */` 块正文（无块空串）。
+    pub detect_js: String,
+}
+
+/// 枚举各根 `page-skills/` 的成对目录（纯函数，单测用）：目录同时有
+/// `mech.rn` 与 `probe.user.js` 才算技能；同 slug 序首根整对胜（禁止跨根
+/// 拼对，保回执确定性）；结果按 slug 排序。何时用：判定热路径拼批与
+/// `browse workspace list/page` 的对清册共用此口径。
+pub fn collect_pairs_multi(roots: &[std::path::PathBuf]) -> Vec<SkillPair> {
+    let mut seen: Vec<String> = Vec::new();
+    let mut pairs: Vec<(String, String)> = Vec::new();
+    for root in roots {
+        let ps = root.join("page-skills");
+        let Ok(rd) = std::fs::read_dir(&ps) else {
+            continue;
+        };
+        let mut dirs: Vec<std::path::PathBuf> = rd
+            .filter_map(|e| e.ok())
+            .map(|e| e.path())
+            .filter(|p| p.is_dir())
+            .collect();
+        dirs.sort();
+        for d in dirs {
+            let Some(name) = d.file_name().and_then(|n| n.to_str()) else {
+                continue;
+            };
+            if seen.contains(&name.to_string()) || !is_pair_dir(&d) {
+                continue;
+            }
+            seen.push(name.to_string());
+            let detect = std::fs::read_to_string(d.join("probe.user.js"))
+                .map(|src| extract_detect_block(&src))
+                .unwrap_or_default();
+            pairs.push((name.to_string(), detect));
+        }
+    }
+    pairs.sort_by(|a, b| a.0.cmp(&b.0));
+    pairs
+        .into_iter()
+        .map(|(slug, detect_js)| SkillPair { slug, detect_js })
+        .collect()
+}
+
+/// 目录是否成对（`mech.rn` 与 `probe.user.js` 同时在；缺一跳过，daemon
+/// 日志不刷——静默跳过是该目录不构成技能的语义本身）。
+fn is_pair_dir(d: &std::path::Path) -> bool {
+    d.join("mech.rn").is_file() && d.join("probe.user.js").is_file()
+}
+
+/// 抽 `/* @detect */` 到 `/* @enddetect */` 之间的正文（纯函数）：无标记
+/// 对回空串。块内约定是 `function browseDetect(facts) {...}`，命中返回
+/// `{slug, confidence}`，否则 `null`。
+fn extract_detect_block(src: &str) -> String {
+    let Some(open) = src.find("/* @detect */") else {
+        return String::new();
+    };
+    let body_start = open + "/* @detect */".len();
+    let Some(close) = src[body_start..].find("/* @enddetect */") else {
+        return String::new();
+    };
+    src[body_start..body_start + close].trim().to_string()
+}
+
+/// 序首 `_prelude.js`（facts 游走脚本，page-skills 层）：先命中根整胜，
+/// 全根未命中回空串（拼批以空 facts 跑，检测块仍可只靠自己的
+/// querySelector）。改游走不发版（判定正文全在仓里）。
+pub fn load_prelude_multi(roots: &[std::path::PathBuf]) -> String {
+    for root in roots {
+        let p = root.join("page-skills").join("_prelude.js");
+        if p.is_file() {
+            if let Ok(body) = std::fs::read_to_string(&p) {
+                return body;
+            }
+            static WARNED: std::sync::OnceLock<()> = std::sync::OnceLock::new();
+            if WARNED.set(()).is_ok() {
+                eprintln!("[browse] _prelude.js 在而不可读，该根按未命中处理");
+            }
+        }
+    }
+    String::new()
+}
+
+/// 拼批判定 JS（纯函数，单测锁形）：prelude 在 facts 上填事实（约定可写
+/// `facts.framework = {name, version}`），各对的检测块在独立 IIFE 里跑
+/// （各块自带 `browseDetect` 作用域，互不撞名），块自调约定函数并把非空
+/// 返回收进 slugs；单块抛错只弃该块。恒返 `{framework, slugs}` 骨架。
+pub fn build_batch_js(prelude: &str, pairs: &[SkillPair]) -> String {
+    let mut out = String::from(
+        "(() => {\n  const out = { framework: null, slugs: [] };\n  const facts = {};\n",
+    );
+    if !prelude.is_empty() {
+        out.push_str("  try {\n");
+        out.push_str(prelude);
+        out.push_str("\n  } catch (e) {}\n");
+    }
+    out.push_str("  try { if (facts.framework) out.framework = facts.framework; } catch (e) {}\n");
+    for p in pairs {
+        if p.detect_js.is_empty() {
+            continue;
+        }
+        out.push_str(&format!(
+            "  try {{ const r = (function(facts) {{ {}\n    return (typeof browseDetect === 'function') ? browseDetect(facts) : null; }})(facts); if (r && r.slug) out.slugs.push(r); }} catch (e) {{}}\n",
+            p.detect_js
+        ));
+    }
+    out.push_str("  return out;\n})()");
+    out
+}
 
 /// 把探测结果变成回执附加键对（#51，纯函数）：framework 形合法出
 /// `("framework", {name,version})`；slugs 过滤后非空出 `page_skills` 与
@@ -242,7 +223,7 @@ pub const FROZEN_PAGE_SLUGS: &[&str] = &[
 /// ```
 /// let probe = serde_json::json!({
 ///     "framework": {"name": "vue", "version": "3.5"},
-///     "slugs": [{"slug": "spa", "confidence": "CONFIRMED"}]
+///     "slugs": [{"slug": "challenge-stop", "confidence": "CONFIRMED"}]
 /// });
 /// let f = browse_core::skills::page_fields(&probe);
 /// assert_eq!(f.len(), 3, "framework 加 page_skills 加 hint: {f:?}");
@@ -252,13 +233,13 @@ pub const FROZEN_PAGE_SLUGS: &[&str] = &[
 ///     "framework": {"name": "pwn"},
 ///     "slugs": [
 ///         {"slug": "../../etc/passwd", "confidence": "CONFIRMED"},
-///         {"slug": "spa", "confidence": "MAYBE"},
-///         {"slug": "captcha", "confidence": "CONFIRMED"}
+///         {"slug": "challenge-stop", "confidence": "MAYBE"},
+///         {"slug": "antibot-vendor", "confidence": "CONFIRMED"}
 ///     ]
 /// });
 /// let f = browse_core::skills::page_fields(&forged);
 /// let skills = f.iter().find(|(k, _)| *k == "page_skills").unwrap();
-/// assert_eq!(skills.1, serde_json::json!([{"slug":"captcha","confidence":"CONFIRMED"}]));
+/// assert_eq!(skills.1, serde_json::json!([{"slug":"antibot-vendor","confidence":"CONFIRMED"}]));
 /// ```
 pub fn page_fields(probe: &Value) -> Vec<(&'static str, Value)> {
     let mut out = Vec::new();
@@ -351,7 +332,8 @@ fn valid_framework(v: Option<&Value>) -> Option<Value> {
 /// let dir = std::env::temp_dir().join(format!("browse-sk56-{}", std::process::id()));
 /// let seg = dir.join("domain-skills").join("x");
 /// std::fs::create_dir_all(&seg).unwrap();
-/// std::fs::write(seg.join("notes.md"), "# x").unwrap();
+/// std::fs::write(seg.join("mech.rn"), "pub async fn main() {}").unwrap();
+/// std::fs::write(seg.join("probe.user.js"), "// probe").unwrap();
 /// let f = browse_core::skills::url_domain_fields(&dir, "https://www.x.com/a");
 /// assert_eq!(f.len(), 2, "命中出两键: {f:?}");
 /// assert!(f.iter().all(|(k, _)| k.starts_with("domain_skills")));
@@ -389,18 +371,16 @@ pub fn url_domain_fields(ws: &std::path::Path, url: &str) -> Vec<(&'static str, 
 /// ```
 /// assert_eq!(
 ///     browse_core::skills::verdict_page_slugs("challenged"),
-///     &[("bot-shield", "PLAUSIBLE"), ("captcha", "PLAUSIBLE")]
+///     &[("challenge-stop", "PLAUSIBLE")]
 /// );
-/// assert_eq!(
-///     browse_core::skills::verdict_page_slugs("login-wall"),
-///     &[("login-wall", "PLAUSIBLE")]
-/// );
+/// assert!(browse_core::skills::verdict_page_slugs("login-wall").is_empty());
 /// assert!(browse_core::skills::verdict_page_slugs("ok").is_empty());
 /// ```
 pub fn verdict_page_slugs(verdict: &str) -> &'static [(&'static str, &'static str)] {
     match verdict {
-        "challenged" => &[("bot-shield", "PLAUSIBLE"), ("captcha", "PLAUSIBLE")],
-        "login-wall" => &[("login-wall", "PLAUSIBLE")],
+        // 清仓重建映射:挑战判读指向新对 challenge-stop(PLAUSIBLE 档恒定,
+        // 判读是推断非 DOM 实证);login-wall 无新对承接,零映射
+        "challenged" => &[("challenge-stop", "PLAUSIBLE")],
         _ => &[],
     }
 }
@@ -466,11 +446,11 @@ pub(crate) async fn augment_goto(s: &std::sync::Arc<cdp::Session>, receipt: &mut
         }
     }
     if page_skills_enabled() {
-        // 特征判据 rn 脚本化（总台令 2026-10-03）：workspace
-        // `page-skills/scripts/probe.rn` 隐式加载（多根序首优先）覆写内置缺省，
-        // 判据增改走 workspace 仓免 browse 发版；脚本经 rune VM 跑
-        // （cdp::js 主世界探页——框架全局与元素 expando 只在页面世界
-        // 可见，回 {framework, slugs} 对象），失败、环境错或超 8 秒界
+        // 双脚本对判定（清仓重建总台令 2026-10-09）：枚举各根
+        // page-skills 成对目录的 @detect 块拼一次主世界求值（cdp::js
+        // ——框架全局与元素 expando 只在页面世界可见），序首 _prelude.js
+        // 供 facts；无对零键且不发起求值（内置大探针已随清仓退役），
+        // 判据增改走 workspace 仓免 browse 发版；失败、环境错或超 8 秒界
         // 静默降级零键；白名单仍在本仓（页面可控输出经
         // FROZEN_PAGE_SLUGS 滤，信任模型不变）
         let probe = run_probe_rn(s).await;
@@ -488,13 +468,22 @@ pub(crate) async fn augment_goto(s: &std::sync::Arc<cdp::Session>, receipt: &mut
 /// （脚本缺失回缺省、编译/执行/环境错均静默降级——判据脚本属机制配方，
 /// 坏脚本不许让 goto 失败）。VM 双限额与 30 秒单调用界走 rune 面缺省。
 async fn run_probe_rn(s: &std::sync::Arc<cdp::Session>) -> Option<Value> {
+    let roots = crate::paths::workspace_roots();
+    let pairs = collect_pairs_multi(&roots);
+    if pairs.iter().all(|p| p.detect_js.is_empty()) {
+        // 无对（或全对无 @detect 块）：零键零求值——内置大探针已随清仓
+        // 退役，不再对页面发起任何判定调用
+        return None;
+    }
+    let prelude = load_prelude_multi(&roots);
+    let batch = build_batch_js(&prelude, &pairs);
     // 8 秒外层界（评审 G-D，对齐旧探针界）：挂死页不再拖 goto 到 rune 面
     // 30 秒单调用界
     let probe = tokio::time::timeout(
         std::time::Duration::from_secs(8),
         browse_rune::run(
             std::sync::Arc::clone(s),
-            &load_probe_rn(),
+            &wrap_probe_rn(&batch),
             browse_rune::DEFAULT_CAPS,
             browse_rune::RunOpts::default(),
         ),
@@ -509,7 +498,7 @@ async fn run_probe_rn(s: &std::sync::Arc<cdp::Session>) -> Option<Value> {
                 static WARNED_RUN: std::sync::OnceLock<()> = std::sync::OnceLock::new();
                 if WARNED_RUN.set(()).is_ok() {
                     eprintln!(
-                        "[browse] page 判据脚本可见失败（receipt.error；后续静默降级零键；检查 workspace page-skills/scripts/probe.rn）：{}",
+                        "[browse] page 判据脚本可见失败（receipt.error；后续静默降级零键；检查 workspace 对应 probe.user.js 的 @detect 块）：{}",
                         serde_json::to_string(&receipt["error"]).unwrap_or_default()
                     );
                 }
@@ -523,7 +512,7 @@ async fn run_probe_rn(s: &std::sync::Arc<cdp::Session>) -> Option<Value> {
             static WARNED: std::sync::OnceLock<()> = std::sync::OnceLock::new();
             if WARNED.set(()).is_ok() {
                 eprintln!(
-                    "[browse] page 判据脚本执行失败（后续静默降级零键；检查 workspace page-skills/scripts/probe.rn）"
+                    "[browse] page 判据脚本执行失败（后续静默降级零键；检查 workspace 对应 probe.user.js 的 @detect 块）"
                 );
             }
             None
@@ -547,57 +536,30 @@ async fn run_probe_rn(s: &std::sync::Arc<cdp::Session>) -> Option<Value> {
     }
 }
 
-/// 特征判据脚本加载（隐式，总台令 2026-10-03 标准目录形）：workspace
-/// 各根序首命中的 `page-skills/scripts/probe.rn` 覆写（机制脚本标准
-/// 目录，后续判据类脚本同住）；全根未命中回内置缺省（判据与历史
-/// PROBE 全同，保离线行为稳定）。
-fn load_probe_rn() -> String {
-    load_probe_rn_multi(&crate::paths::workspace_roots())
+/// 把拼批判定 JS 包成 rune 体（`cdp::js` 走**主世界**：框架全局与元素
+/// expando 只在页面世界可见，评审 F-1 律沿承）。定界器按正文里最长 `#`
+/// 连跑升阶（workspace 提供的正文是运行期数据，不设编译期断言——升阶
+/// 定界对任意正文安全）。
+fn wrap_probe_rn(js: &str) -> String {
+    let hashes = "#".repeat(max_hash_run(js) + 1);
+    format!(
+        "// 双脚本对拼批判定（workspace page-skills 各对 @detect 块）\n// 体走主世界（cdp::js）：框架全局与元素 expando 只在页面世界可见\npub async fn main() {{\n    let v = cdp::js(r{h}\"return {js}\"{h}, #{{}}).await?;\n    Ok(v)\n}}",
+        h = hashes
+    )
 }
 
-/// [`load_probe_rn`] 的多根纯函数形（单测用）：序首命中根的
-/// `page-skills/scripts/probe.rn` 覆写，全根未命中回内置缺省。文件在而
-/// 不可读（权限/半写，评审 G-7）一次性告警——静默回缺省会让每条 goto
-/// 用旧判据且无感。
-fn load_probe_rn_multi(roots: &[std::path::PathBuf]) -> String {
-    for root in roots {
-        let p = root.join("page-skills").join("scripts").join("probe.rn");
-        match std::fs::read_to_string(&p) {
-            Ok(body) => return body,
-            Err(e) if p.is_file() => {
-                static WARNED: std::sync::OnceLock<()> = std::sync::OnceLock::new();
-                if WARNED.set(()).is_ok() {
-                    eprintln!("[browse] probe.rn 在而不可读（{e}），该根按未命中处理");
-                }
-            }
-            // 不在：正常未命中，试下一根
-            Err(_) => {}
+/// 正文里最长 `#` 连跑长度（`wrap_probe_rn` 的定界器升阶依据）。
+fn max_hash_run(s: &str) -> usize {
+    let (mut best, mut cur) = (0usize, 0usize);
+    for ch in s.chars() {
+        if ch == '#' {
+            cur += 1;
+            best = best.max(cur);
+        } else {
+            cur = 0;
         }
     }
-    default_probe_rn()
-}
-
-/// 内置缺省判据脚本（rn 形，workspace 覆写位 page-skills/scripts/probe.rn）：
-/// 包一层 `pub async fn main`，体经 `cdp::js` 走**主世界**（评审 F-1：框架
-/// 检测依赖页面世界的 JS 全局 `__NUXT__`/`Vue` 与元素 expando
-/// `__reactFiber$`/`__svelte*`，隔离世界一律不可见会静默废掉框架与
-/// hydration 腿）。
-fn default_probe_rn() -> String {
-    // 定界安全（评审 G-E 加二轮 G-2）：内层用 r## 定界，判据 JS 含 "#
-    // 不破（只 "## 破）；debug 断言 + 单测真断言双锁（debug_assert 不
-    // 覆盖 release，单测在 CI 闸拦在发版前）
-    debug_assert!(
-        !PAGE_PROBE_JS.contains("\"##"),
-        "判据 JS 含 \"## 会破 r## 定界"
-    );
-    format!(
-        r###"// browse 内置缺省特征判据（workspace page-skills/scripts/probe.rn 可覆写）
-// 体走主世界（cdp::js）：框架全局与元素 expando 只在页面世界可见
-pub async fn main() {{
-    let v = cdp::js(r##"return {PAGE_PROBE_JS}"##, #{{}}).await?;
-    Ok(v)
-}}"###
-    )
+    best
 }
 
 #[cfg(test)]
@@ -633,82 +595,130 @@ mod tests {
         assert_eq!(domain_segment("https://"), None);
     }
 
-    /// list_domain_skills：排序、扩展过滤、封顶 10。
+    /// list_domain_skills：成对才有、排序稳定。
     #[test]
-    fn listing_sorted_filtered_capped() {
+    fn listing_pairs_only() {
         let dir = std::env::temp_dir().join(format!("browse-sk-{}", std::process::id()));
         let seg = dir.join("domain-skills").join("x");
         std::fs::create_dir_all(&seg).unwrap();
-        for i in 0..11 {
-            std::fs::write(seg.join(format!("f{i:02}.md")), "# f").unwrap();
-        }
-        std::fs::write(seg.join("skip.js"), "// x").unwrap();
+        // 半对不算
+        std::fs::write(seg.join("probe.user.js"), "// x").unwrap();
+        assert!(list_domain_skills(&dir, "x").is_empty(), "不成对零清单");
+        // 成对即列三件(或两件)
+        std::fs::write(seg.join("mech.rn"), "pub async fn main() {}").unwrap();
         let files = list_domain_skills(&dir, "x");
-        assert_eq!(files.len(), 10, "封顶 10：{files:?}");
-        assert_eq!(files[0], "f00.md");
-        assert!(!files.contains(&"skip.js".to_string()), "非 md/txt 滤除");
+        assert_eq!(
+            files,
+            vec!["mech.rn".to_string(), "probe.user.js".to_string()],
+            "{files:?}"
+        );
         assert!(list_domain_skills(&dir, "nope").is_empty(), "缺段空表");
         let _ = std::fs::remove_dir_all(&dir);
     }
-    /// 判据脚本加载（rn 化批）：序首命中覆写优先、全根未命中回内置
-    /// 缺省（缺省判据与历史 PROBE 同判据：含 frozen 名单同款 add 位）。
+    /// 双脚本对枚举：成对才算、序首根整对胜、无 @detect 块对保留但
+    /// detect_js 空、_prelude 序首命中。
     #[test]
-    fn probe_rn_load_override_and_default() {
-        let dir = std::env::temp_dir().join(format!("browse-probe-rn-{}", std::process::id()));
+    fn pair_enumeration_first_root_and_completeness() {
+        let dir = std::env::temp_dir().join(format!("browse-pairs-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
-        let hit = dir.join("hit");
-        let miss = dir.join("miss");
-        std::fs::create_dir_all(hit.join("page-skills").join("scripts")).unwrap();
-        std::fs::create_dir_all(&miss).unwrap();
+        let a = dir.join("a");
+        let b = dir.join("b");
+        // 根 a:完整对(带 detect 块) + 半对(缺 mech.rn,不算)
+        let ca = a.join("page-skills").join("challenge-stop");
+        std::fs::create_dir_all(&ca).unwrap();
+        std::fs::write(ca.join("mech.rn"), "pub async fn main() {}").unwrap();
         std::fs::write(
-            hit.join("page-skills").join("scripts").join("probe.rn"),
-            "// 自定义判据",
+            ca.join("probe.user.js"),
+            "/* @detect */\nfunction browseDetect(facts) {\n  return { slug: 'challenge-stop', confidence: 'CONFIRMED' };\n}\n/* @enddetect */\n",
         )
         .unwrap();
-        // 序首命中:覆写内容直出
-        assert_eq!(
-            load_probe_rn_multi(&[hit.clone(), miss.clone()]),
-            "// 自定义判据"
-        );
-        // 全根未命中:内置缺省(判据同体,含 pub async fn main 与 cdp::js 包裹)
-        let d = load_probe_rn_multi(std::slice::from_ref(&miss));
-        assert!(d.contains("pub async fn main"), "{d}");
-        assert!(d.contains("cdp::js"), "{d}");
-        // 定界安全真断言(二轮 G-2:debug_assert 不覆盖 release,CI 闸在此拦)
+        let half = a.join("page-skills").join("half-pair");
+        std::fs::create_dir_all(&half).unwrap();
+        std::fs::write(half.join("probe.user.js"), "// 只有探针没有编排").unwrap();
+        // 根 a 的 _prelude
+        std::fs::write(
+            a.join("page-skills").join("_prelude.js"),
+            "facts.framework = { name: 'react', version: null };",
+        )
+        .unwrap();
+        // 根 b:同名对(detect 块不同,应被序首根 a 遮住) + 独立对
+        let cb = b.join("page-skills").join("challenge-stop");
+        std::fs::create_dir_all(&cb).unwrap();
+        std::fs::write(cb.join("mech.rn"), "// b 版").unwrap();
+        std::fs::write(
+            cb.join("probe.user.js"),
+            "/* @detect */ function browseDetect(f) {} /* @enddetect */",
+        )
+        .unwrap();
+        let nb = b.join("page-skills").join("antibot-vendor");
+        std::fs::create_dir_all(&nb).unwrap();
+        std::fs::write(nb.join("mech.rn"), "// x").unwrap();
+        // 无 detect 块的完整对
+        std::fs::write(nb.join("probe.user.js"), "// 常驻监听型,无判定块").unwrap();
+
+        let roots = vec![a.clone(), b.clone()];
+        let pairs = collect_pairs_multi(&roots);
+        let slugs: Vec<&str> = pairs.iter().map(|p| p.slug.as_str()).collect();
+        assert_eq!(slugs, vec!["antibot-vendor", "challenge-stop"], "{slugs:?}");
+        let cs = pairs.iter().find(|p| p.slug == "challenge-stop").unwrap();
         assert!(
-            !PAGE_PROBE_JS.contains("\"##"),
-            "判据 JS 含 \"## 破 r## 定界"
+            cs.detect_js.contains("CONFIRMED"),
+            "序首根 a 的块胜出: {}",
+            cs.detect_js
+        );
+        assert!(
+            pairs
+                .iter()
+                .find(|p| p.slug == "antibot-vendor")
+                .unwrap()
+                .detect_js
+                .is_empty(),
+            "无块对保留但空"
+        );
+        // prelude 序首命中
+        assert_eq!(
+            load_prelude_multi(&roots),
+            "facts.framework = { name: 'react', version: null };"
         );
         let _ = std::fs::remove_dir_all(&dir);
     }
 
-    /// 冻结名单与探针发射名单零漂移（评审 G-A）：名单每项探针都有
-    /// add( 发射位；反向探针发射的每个 slug 都在名单内（否则会被
-    /// 白名单静默滤掉，无键无测试红）。bot-shield 双腿（DOM/cookie
-    /// 两置信档）是同 slug 双发射位，按集合比对不按次数。
+    /// 拼批与包裹：批含 prelude 与各块、块 IIFE 自调、定界器随 `#` 连跑
+    /// 升阶;白名单过滤(page_fields)仍拒名单外 slug。
     #[test]
-    fn frozen_slugs_match_probe() {
-        let mut emitted: Vec<&str> = PAGE_PROBE_JS
-            .lines()
-            .filter_map(|l| {
-                let idx = l.find("add('")?;
-                let rest = &l[idx + 5..];
-                let end = rest.find('\'')?;
-                Some(&rest[..end])
-            })
-            .collect();
-        emitted.sort_unstable();
-        emitted.dedup();
-        assert_eq!(emitted.len(), FROZEN_PAGE_SLUGS.len(), "发射集与名单数同");
-        for slug in FROZEN_PAGE_SLUGS {
-            assert!(emitted.contains(slug), "名单项 {slug} 探针未发射");
-        }
-        for e in &emitted {
-            assert!(
-                FROZEN_PAGE_SLUGS.contains(e),
-                "探针发射 {e} 不在冻结名单（会被白名单静默滤掉）"
-            );
-        }
+    fn batch_build_and_wrap_escalation() {
+        let pairs = vec![
+            SkillPair { slug: "a".into(), detect_js: "function browseDetect(facts) { return facts.x ? { slug: 'challenge-stop', confidence: 'CONFIRMED' } : null; }".into() },
+        ];
+        let batch = build_batch_js("facts.x = 1;", &pairs);
+        assert!(batch.starts_with("(() => {"), "{batch}");
+        assert!(batch.contains("facts.x = 1;"), "prelude 在批内");
+        assert!(batch.contains("browseDetect(facts)"), "块自调约定函数");
+        assert!(batch.ends_with("})()"), "{batch}");
+        // 定界器升阶:含 "## 的正文用 r### 包(正文是裸表达式,return 由包裹层补)
+        let hot = "\"##\" + 'x';";
+        let wrapped = wrap_probe_rn(hot);
+        assert!(wrapped.contains("r###\""), "升阶定界: {wrapped}");
+        assert!(
+            wrapped.contains("return \"##\" + 'x';"),
+            "return 前缀恰好一层: {wrapped}"
+        );
+        assert!(wrapped.contains("pub async fn main"), "{wrapped}");
+        // 白名单硬边界沿承:批输出的 slug 仍过 page_fields 滤
+        let probe = serde_json::json!({
+            "framework": null,
+            "slugs": [
+                {"slug": "challenge-stop", "confidence": "CONFIRMED"},
+                {"slug": "spa", "confidence": "CONFIRMED"}
+            ]
+        });
+        let f = page_fields(&probe);
+        let skills = f.iter().find(|(k, _)| *k == "page_skills").unwrap();
+        assert_eq!(
+            skills.1.as_array().unwrap().len(),
+            1,
+            "旧名 spa 被滤: {skills:?}"
+        );
     }
 
     /// page_fields：空骨架零键；framework 单独可出；slugs 出两键带命令。
@@ -726,8 +736,8 @@ mod tests {
         let full = serde_json::json!({
             "framework": {"name": "vue", "version": "3.5"},
             "slugs": [
-                {"slug": "spa", "confidence": "CONFIRMED"},
-                {"slug": "shadow-dom", "confidence": "CONFIRMED"}
+                {"slug": "next-page", "confidence": "CONFIRMED"},
+                {"slug": "policy-surface", "confidence": "CONFIRMED"}
             ]
         });
         let f = page_fields(&full);
@@ -737,7 +747,7 @@ mod tests {
             hint.1
                 .as_str()
                 .unwrap_or("")
-                .contains("browse workspace page spa")
+                .contains("browse workspace page next-page")
                 && hint.1.as_str().unwrap_or("").contains("；"),
             "hint 是读全文命令的连接: {hint:?}"
         );
@@ -780,11 +790,16 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("browse-sk56-{}", std::process::id()));
         let seg = dir.join("domain-skills").join("x");
         std::fs::create_dir_all(&seg).unwrap();
-        std::fs::write(seg.join("notes.md"), "# x").unwrap();
+        std::fs::write(seg.join("mech.rn"), "pub async fn main() {}").unwrap();
+        std::fs::write(seg.join("probe.user.js"), "// probe").unwrap();
         let f = url_domain_fields(&dir, "https://www.x.com/a");
         assert_eq!(f.len(), 2, "命中出 domain_skills 加 hint: {f:?}");
         assert_eq!(f[0].0, "domain_skills");
-        assert_eq!(f[0].1, json!(["notes.md"]), "清单与 goto 同口径");
+        assert_eq!(
+            f[0].1,
+            json!(["mech.rn", "probe.user.js"]),
+            "清单与 goto 同口径（对文件）"
+        );
         assert!(
             f[1].1
                 .as_str()

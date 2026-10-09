@@ -51,7 +51,7 @@ assert_eq!(render(&stmts), "const tabs = await listPageTargets()");
 - [`self_update`](self_update.md): browse 自更新（用户令 2026-09-18；对齐 build-release 公共契约第六节
 - [`semantic`](semantic.md): 语义层近期面：tab 族、交互三件、等待判官。
 - [`server`](server.md): daemon 的 HTTP API：常驻会话 + 方言求值 + 引擎生命周期。
-- [`skills`](skills.md): 技能触发层（#50/#51/#56）：goto 导航回执与 fetch/detect 回执的条件
+- [`skills`](skills.md): 技能触发层（#50/#51/#56 + 清仓重建总台令 2026-10-09）：goto 导航回执
 - [`surface`](surface.md): 命令面目录（incur-rs 原则的方言版适配）：CLI 子命令、方言全局函数、
-- [`workspace`](workspace.md): workspace 单仓管理（#50/#51 配套）：站点与机制知识仓
+- [`workspace`](workspace.md): workspace 单仓管理（#50/#51 配套 + 清仓重建总台令 2026-10-09）：站点
 

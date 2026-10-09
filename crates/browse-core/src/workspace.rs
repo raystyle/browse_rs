@@ -1,5 +1,8 @@
-//! workspace 单仓管理（#50/#51 配套）：站点与机制知识仓
-//! `github.com/raystyle/browse_workspace` 的安装、更新与仓内读取。
+//! workspace 单仓管理（#50/#51 配套 + 清仓重建总台令 2026-10-09）：站点
+//! 与机制知识仓 `github.com/raystyle/browse_workspace` 的安装、更新与仓内
+//! 读取。技能本体是「宿主侧 `mech.rn` + 页内侧 `probe.user.js`」双脚本对
+//! （`page-skills/<slug>/` 与 `domain-skills/<段>/` 同形），README 只作人读
+//! 说明——list/site/page 只认成对目录，缺一的目录不算技能。
 //!
 //! 何时用：`browse workspace` 命令族的全部后端（status/install/update/
 //! list/site/page）。git 维护走 shell-out `git`（不引 git crate）：install
@@ -12,9 +15,6 @@ use std::path::{Path, PathBuf};
 
 /// 种子仓远端（install 的缺省源；本地修改 push 回推同一远端）。
 pub const SEED_REMOTE: &str = "https://github.com/raystyle/browse_workspace.git";
-
-/// 域名层点名清单的封顶（#50 验收：回执文件列表封顶 10；list 同口径）。
-pub const DOMAIN_FILES_CAP: usize = 10;
 
 /// git 子进程收口（`&str` 实参版）：见 [`git_os`]。
 fn git(root: Option<&Path>, args: &[&str]) -> Result<String> {
@@ -169,9 +169,12 @@ pub fn status_json(root: &Path) -> Result<serde_json::Value> {
 }
 
 /// `browse workspace list` 的机器面：`{domains: [{segment, files}],
-/// pages: [slug]}`。files 与回执点名同口径封顶 [`DOMAIN_FILES_CAP`]；
+/// pages: [slug]}`。files 是对内文件（mech.rn/probe.user.js/README.md）；
 /// 未安装返回空结构（由调用面给安装提示）。
 pub fn list_json(root: &Path) -> serde_json::Value {
+    // 双脚本对口径（清仓重建）：段是 domain-skills 下的成对目录；files
+    // 列对内文件（mech.rn/probe.user.js/README.md 三选其二三）——不再有
+    // md 清单与 10 篇帽（帽是为旧文海服务的）
     let mut domains = Vec::new();
     if let Ok(rd) = std::fs::read_dir(root.join("domain-skills")) {
         let mut segs: Vec<String> = rd
@@ -181,16 +184,14 @@ pub fn list_json(root: &Path) -> serde_json::Value {
             .collect();
         segs.sort();
         for seg in segs {
-            // capped 判据是「截断发生过」而非「恰好到帽」（评审 G6）：
-            // 恰好 10 个文件不是「可能还有更多」
-            let all = all_segment_files(&root.join("domain-skills").join(&seg));
-            let capped = all.len() > DOMAIN_FILES_CAP;
-            let mut files = all;
-            files.truncate(DOMAIN_FILES_CAP);
+            let files = pair_files(&root.join("domain-skills").join(&seg));
+            if files.is_empty() {
+                continue;
+            }
             domains.push(json!({
                 "segment": seg,
                 "files": files,
-                "capped": capped,
+                "capped": false,
             }));
         }
     }
@@ -198,19 +199,32 @@ pub fn list_json(root: &Path) -> serde_json::Value {
     if let Ok(rd) = std::fs::read_dir(root.join("page-skills")) {
         let mut slugs: Vec<String> = rd
             .filter_map(|e| e.ok())
-            .filter(|e| e.path().extension().is_some_and(|x| x == "md"))
-            // README.md 是层索引不是配方（README 当 slug 会被读全文命令误下钻）
-            .filter(|e| e.file_name() != "README.md")
-            .filter_map(|e| {
-                e.path()
-                    .file_stem()
-                    .and_then(|s| s.to_str().map(str::to_string))
-            })
+            .filter(|e| e.path().is_dir())
+            .filter_map(|e| e.file_name().to_str().map(str::to_string))
+            .filter(|n| is_pair_dir_name(&root.join("page-skills").join(n)))
             .collect();
         slugs.sort();
         pages = slugs;
     }
     json!({ "domains": domains, "pages": pages })
+}
+
+/// 目录里的对文件清单（排序）：`mech.rn` 与 `probe.user.js` 同时在才
+/// 非空（附 README.md 若在）；不成对返回空 vec（list 层跳过）。
+fn pair_files(dir: &Path) -> Vec<String> {
+    if !(dir.join("mech.rn").is_file() && dir.join("probe.user.js").is_file()) {
+        return Vec::new();
+    }
+    let mut files = vec!["mech.rn".to_string(), "probe.user.js".to_string()];
+    if dir.join("README.md").is_file() {
+        files.push("README.md".to_string());
+    }
+    files
+}
+
+/// 目录是否成对（list 的 page 层过滤：不成对目录不算技能）。
+fn is_pair_dir_name(dir: &Path) -> bool {
+    dir.join("mech.rn").is_file() && dir.join("probe.user.js").is_file()
 }
 
 /// #63 多根 site 读：序首命中根优先（根内逻辑同 [`read_site`]）；全根
@@ -296,7 +310,7 @@ pub fn list_json_multi(roots: &[PathBuf]) -> serde_json::Value {
 }
 
 /// 仓内相对读取的越界守卫：canonicalize 后必须仍在 `root` 内，挡绝对
-/// 路径、`..` 与符号链接出仓（snippets #44 评审 F2 同律）。返回可读的
+/// 路径、`..` 与符号链接出仓（#44 评审 F2 同律）。返回可读的
 /// 规范路径。
 fn guarded_join(root: &Path, rel: &str, what: &str) -> Result<PathBuf> {
     let joined = root.join(rel);
@@ -319,7 +333,7 @@ fn guarded_join(root: &Path, rel: &str, what: &str) -> Result<PathBuf> {
 }
 
 /// `browse workspace site <段>[/<文件>]`：只给段时打该段清单（每行
-/// `<文件>  <首行标题>`，与 snippets list 同构；**不封顶**，是回执点名
+/// `<文件>  <首行标题>`，路径摘要同构；是回执点名
 /// 的下钻面）；带 `<段>/<文件>` 时读该文件全文。
 ///
 /// # Errors
@@ -331,73 +345,56 @@ pub fn read_site(root: &Path, rel: &str) -> Result<String> {
         return std::fs::read_to_string(&seg_root)
             .with_context(|| format!("读 {}", seg_root.display()));
     }
-    let files = all_segment_files(&seg_root);
+    let files = pair_files(&seg_root);
     if files.is_empty() {
         bail!(
-            "workspace site 段 {rel} 不存在或为空（{}）；下一步：browse workspace list 看在册段",
+            "workspace site 段 {rel} 不存在或无成对技能（{}）；下一步：browse workspace list 看在册段",
             root.join("domain-skills").join(rel).display()
         );
     }
-    let mut out = String::new();
-    for f in files {
-        let heading = first_heading(&seg_root.join(&f));
-        out.push_str(&format!("{f}  {heading}\n"));
-    }
-    Ok(out)
+    Ok(pair_summary(&seg_root, rel))
 }
 
-/// `browse workspace page <slug>`：读 `page-skills/<slug>.md` 全文。
+/// 一对技能的读全文回执：有 README 给 README 全文（尾部附对路径），
+/// 无 README 给路径摘要行。
+fn pair_summary(dir: &Path, name: &str) -> String {
+    let readme = dir.join("README.md");
+    if readme.is_file()
+        && let Ok(text) = std::fs::read_to_string(&readme)
+    {
+        return format!(
+            "{text}\n\n--- 对路径:mech.rn 与 probe.user.js 在 {} 下 ---\n",
+            dir.display()
+        );
+    }
+    format!(
+        "{name} 是双脚本对（无 README）：mech.rn（宿主编排）与 probe.user.js（页内探针）在 {} 下\n",
+        dir.display()
+    )
+}
+
+/// `browse workspace page <slug>`：交出该对（有 README 附全文，无给
+/// 路径摘要；清仓重建后不再读 `page-skills/<slug>.md` 旧形）。
 ///
 /// # Errors
 ///
-/// slug 不存在（CTA 指回 list）；路径越出仓根；仓根未安装。
+/// slug 不存在或不成对（CTA 指回 list）；路径越出仓根；仓根未安装。
 pub fn read_page(root: &Path, slug: &str) -> Result<String> {
-    let path = guarded_join(root, &format!("page-skills/{slug}.md"), "workspace page")?;
-    if !path.is_file() {
+    let dir = guarded_join(root, &format!("page-skills/{slug}"), "workspace page")?;
+    if pair_files(&dir).is_empty() {
         bail!(
-            "workspace page {slug} 不存在（{}）；下一步：browse workspace list 看在册 slug",
-            path.display()
+            "workspace page {slug} 不存在或不成对（{}）；下一步：browse workspace list 看在册 slug",
+            root.join("page-skills").join(slug).display()
         );
     }
-    std::fs::read_to_string(&path).with_context(|| format!("读 {}", path.display()))
+    Ok(pair_summary(&dir, slug))
 }
 
-/// 列 `<root>/domain-skills/<段>/` 的技能文件名（排序，封顶
-/// [`DOMAIN_FILES_CAP`]，只收 .md/.txt）。目录缺失返回空。何时用：
-/// 技能触发层（[`crate::skills`]）的点名清单与 `browse workspace list`
-/// 共用此口径。
+/// 列 `<root>/domain-skills/<段>/` 的对文件清单（成对才有,排序保回执
+/// 确定）。目录缺失或不成对返回空。何时用：技能触发层（[`crate::skills`]）
+/// 的点名清单与 `browse workspace list` 共用此口径。
 pub fn domain_segment_files(root: &Path, segment: &str) -> Vec<String> {
-    let mut files = all_segment_files(&root.join("domain-skills").join(segment));
-    files.truncate(DOMAIN_FILES_CAP);
-    files
-}
-
-/// 同 [`domain_segment_files`] 但不封顶（site 清单的下钻面用）。
-fn all_segment_files(dir: &Path) -> Vec<String> {
-    let Ok(rd) = std::fs::read_dir(dir) else {
-        return Vec::new();
-    };
-    let mut files: Vec<String> = rd
-        .filter_map(|e| e.ok())
-        .filter(|e| e.path().is_file())
-        .filter(|e| {
-            e.path()
-                .extension()
-                .is_some_and(|x| x == "md" || x == "txt")
-        })
-        .filter_map(|e| e.file_name().to_str().map(str::to_string))
-        .collect();
-    files.sort();
-    files
-}
-
-/// 文件首行 `#` 标题（无标题返回空串）。
-fn first_heading(path: &Path) -> String {
-    std::fs::read_to_string(path)
-        .ok()
-        .and_then(|t| t.lines().find(|l| l.starts_with("# ")).map(str::to_string))
-        .map(|l| l.trim_start_matches("# ").trim().to_string())
-        .unwrap_or_default()
+    pair_files(&root.join("domain-skills").join(segment))
 }
 
 /// 仓内技能计数：`{段数, 域文件总数（不封顶，all 口径非 list 封顶）,
@@ -415,7 +412,7 @@ fn skill_counts(root: &Path) -> (u64, u64, u64) {
                 .get("segment")
                 .and_then(serde_json::Value::as_str)
                 .unwrap_or_default();
-            files += all_segment_files(&root.join("domain-skills").join(seg)).len() as u64;
+            files += pair_files(&root.join("domain-skills").join(seg)).len() as u64;
         }
     }
     let pages = list
@@ -441,77 +438,68 @@ mod tests {
     }
 
     fn seed(root: &Path) {
-        std::fs::create_dir_all(root.join("domain-skills").join("x")).unwrap();
-        std::fs::create_dir_all(root.join("page-skills")).unwrap();
-        std::fs::write(
-            root.join("domain-skills").join("x").join("a.md"),
-            "# A 站要点\n正文\n",
-        )
-        .unwrap();
-        std::fs::write(root.join("domain-skills").join("x").join("b.txt"), "纯文本").unwrap();
-        std::fs::write(
-            root.join("page-skills").join("captcha.md"),
-            "# 验证码\n正文\n",
-        )
-        .unwrap();
+        // 双脚本对形（清仓重建）：段 x 成对带 README；page 层 challenge-stop 成对
+        let seg = root.join("domain-skills").join("x");
+        std::fs::create_dir_all(&seg).unwrap();
+        std::fs::write(seg.join("mech.rn"), "pub async fn main() {}").unwrap();
+        std::fs::write(seg.join("probe.user.js"), "// probe").unwrap();
+        std::fs::write(seg.join("README.md"), "# A 站要点\n正文\n").unwrap();
+        let pg = root.join("page-skills").join("challenge-stop");
+        std::fs::create_dir_all(&pg).unwrap();
+        std::fs::write(pg.join("mech.rn"), "pub async fn main() {}").unwrap();
+        std::fs::write(pg.join("probe.user.js"), "// probe").unwrap();
     }
 
-    /// list_json：段与 slug 齐全，文件排序，非 md/txt 被滤。
+    /// list_json：段与 slug 齐全（成对目录才算），半对被滤。
     #[test]
     fn list_shape() {
         let root = temp_root("list");
         seed(&root);
+        // 半对（只有 probe.user.js）不算 page 技能
+        let half = root.join("page-skills").join("half");
+        std::fs::create_dir_all(&half).unwrap();
+        std::fs::write(half.join("probe.user.js"), "// x").unwrap();
         let l = list_json(&root);
         let domains = l["domains"].as_array().unwrap();
         assert_eq!(domains.len(), 1);
         assert_eq!(domains[0]["segment"], json!("x"));
         assert_eq!(
             domains[0]["files"],
-            json!(["a.md", "b.txt"]),
-            "排序且过滤扩展名"
+            json!(["mech.rn", "probe.user.js", "README.md"]),
+            "对文件排序，README 在列"
         );
-        assert_eq!(l["pages"], json!(["captcha"]));
+        assert_eq!(l["pages"], json!(["challenge-stop"]));
         let _ = std::fs::remove_dir_all(&root);
     }
 
-    /// list 封顶与分界（回执点名同口径；评审 G-D 锁「恰 10 不误标」）。
+    /// 无 md 海即无帽：段文件清单就是对文件（帽随旧文海退役的负向锁）。
     #[test]
-    fn list_caps_at_10() {
+    fn list_caps_retired_pairs_only() {
         let root = temp_root("cap");
         let seg = root.join("domain-skills").join("many");
         std::fs::create_dir_all(&seg).unwrap();
-        for i in 0..11 {
+        for i in 0..15 {
             std::fs::write(seg.join(format!("f{i:02}.md")), "# f\n").unwrap();
         }
-        // 恰 10 个文件的段：capped 必须 false（截断没发生过）
-        let ten = root.join("domain-skills").join("ten");
-        std::fs::create_dir_all(&ten).unwrap();
-        for i in 0..10 {
-            std::fs::write(ten.join(format!("t{i:02}.md")), "# t\n").unwrap();
-        }
         let l = list_json(&root);
-        let doms = l["domains"].as_array().unwrap();
-        let many = doms.iter().find(|d| d["segment"] == json!("many")).unwrap();
-        assert_eq!(many["files"].as_array().unwrap().len(), 10);
-        assert_eq!(many["capped"], json!(true), "11 个文件截断发生过");
-        let ten_d = doms.iter().find(|d| d["segment"] == json!("ten")).unwrap();
-        assert_eq!(ten_d["files"].as_array().unwrap().len(), 10);
-        assert_eq!(
-            ten_d["capped"],
-            json!(false),
-            "恰 10 个文件不是可能还有更多"
+        assert!(
+            l["domains"].as_array().unwrap().is_empty(),
+            "散 md 不成对零清单: {}",
+            l["domains"]
         );
         let _ = std::fs::remove_dir_all(&root);
     }
 
-    /// read_site：清单带首行标题；全文读取；未命中与越界都拒。
+    /// read_site：对段回 README 全文（尾附对路径）；README 直读仍在；
+    /// 未命中与越界都拒。
     #[test]
     fn read_site_paths() {
         let root = temp_root("site");
         seed(&root);
         let cat = read_site(&root, "x").unwrap();
-        assert!(cat.contains("a.md  A 站要点"), "清单行含标题：{cat}");
-        let full = read_site(&root, "x/a.md").unwrap();
+        assert!(cat.contains("# A 站要点"), "README 全文: {cat}");
+        assert!(cat.contains("mech.rn"), "尾附对路径: {cat}");
+        let full = read_site(&root, "x/README.md").unwrap();
         assert!(full.starts_with("# A 站要点"));
         assert!(read_site(&root, "nope").is_err(), "段未命中报错");
         assert!(
@@ -561,14 +549,12 @@ mod tests {
     fn read_page_paths() {
         let root = temp_root("page");
         seed(&root);
-        assert!(read_page(&root, "captcha").unwrap().contains("验证码"));
-        assert!(read_page(&root, "nope").is_err());
-        std::fs::write(root.join("README.md"), "# 仓根 README\n").unwrap();
+        let text = read_page(&root, "challenge-stop").unwrap();
+        assert!(text.contains("mech.rn"), "对路径在回执: {text}");
+        assert!(read_page(&root, "nope").is_err(), "未命中报错");
         assert!(
-            read_page(&root, "../README")
-                .unwrap()
-                .contains("仓根 README"),
-            "仓内 ../ 放行（只拦出仓）"
+            read_page(&root, "../../etc").is_err(),
+            "越界拒绝（不存在路径同样失败）"
         );
         let _ = std::fs::remove_dir_all(&root);
     }
@@ -632,27 +618,43 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
         let first = dir.join("first");
         let second = dir.join("second");
-        std::fs::create_dir_all(first.join("domain-skills").join("x")).unwrap();
-        std::fs::create_dir_all(second.join("domain-skills").join("x")).unwrap();
-        std::fs::write(first.join("domain-skills/x/a.md"), "# a").unwrap();
-        std::fs::write(second.join("domain-skills/x/b.md"), "# b").unwrap();
+        let mkpair = |root: &Path, seg: &str, readme: &str| {
+            let d = root.join("domain-skills").join(seg);
+            std::fs::create_dir_all(&d).unwrap();
+            std::fs::write(d.join("mech.rn"), "pub async fn main() {}").unwrap();
+            std::fs::write(d.join("probe.user.js"), "// probe").unwrap();
+            std::fs::write(d.join("README.md"), readme).unwrap();
+        };
+        mkpair(&first, "x", "# a");
+        mkpair(&second, "x", "# b");
         let roots = vec![first.clone(), second.clone()];
         assert_eq!(
             domain_segment_files_multi(&roots, "x"),
-            vec!["a.md".to_string()],
+            vec![
+                "mech.rn".to_string(),
+                "probe.user.js".to_string(),
+                "README.md".to_string()
+            ],
             "序首仓整胜不混拼"
         );
-        std::fs::remove_file(first.join("domain-skills/x/a.md")).unwrap();
+        std::fs::remove_file(first.join("domain-skills/x/mech.rn")).unwrap();
         assert_eq!(
             domain_segment_files_multi(&roots, "x"),
-            vec!["b.md".to_string()],
-            "空仓跳过"
+            vec![
+                "mech.rn".to_string(),
+                "probe.user.js".to_string(),
+                "README.md".to_string()
+            ],
+            "序首仓破坏对后跳到次根"
         );
         let text = read_site_multi(&roots, "x").unwrap();
-        assert!(text.contains("b.md"), "{text}");
-        std::fs::create_dir_all(second.join("page-skills")).unwrap();
-        std::fs::write(second.join("page-skills/captcha.md"), "# 配方").unwrap();
-        let page = read_page_multi(&roots, "captcha").unwrap();
+        assert!(text.contains("# b"), "{text}");
+        let pg = second.join("page-skills").join("challenge-stop");
+        std::fs::create_dir_all(&pg).unwrap();
+        std::fs::write(pg.join("mech.rn"), "pub async fn main() {}").unwrap();
+        std::fs::write(pg.join("probe.user.js"), "// probe").unwrap();
+        std::fs::write(pg.join("README.md"), "# 配方").unwrap();
+        let page = read_page_multi(&roots, "challenge-stop").unwrap();
         assert!(page.contains("配方"), "{page}");
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -663,19 +665,20 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("browse-ws-list-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         for (sub, segs, pages) in [
-            ("one", vec!["github"], vec!["captcha"]),
-            ("two", vec!["medium", "github"], vec!["hydration"]),
+            ("one", vec!["github"], vec!["challenge-stop"]),
+            ("two", vec!["medium", "github"], vec!["antibot-vendor"]),
         ] {
             for seg in &segs {
-                std::fs::create_dir_all(dir.join(sub).join("domain-skills").join(seg)).unwrap();
+                let d = dir.join(sub).join("domain-skills").join(seg);
+                std::fs::create_dir_all(&d).unwrap();
+                std::fs::write(d.join("mech.rn"), "pub async fn main() {}").unwrap();
+                std::fs::write(d.join("probe.user.js"), "// probe").unwrap();
             }
             for slug in &pages {
-                std::fs::create_dir_all(dir.join(sub).join("page-skills")).unwrap();
-                std::fs::write(
-                    dir.join(sub).join("page-skills").join(format!("{slug}.md")),
-                    "# x",
-                )
-                .unwrap();
+                let d = dir.join(sub).join("page-skills").join(slug);
+                std::fs::create_dir_all(&d).unwrap();
+                std::fs::write(d.join("mech.rn"), "pub async fn main() {}").unwrap();
+                std::fs::write(d.join("probe.user.js"), "// probe").unwrap();
             }
         }
         let roots = vec![dir.join("one"), dir.join("two")];
@@ -697,7 +700,7 @@ mod tests {
             .filter_map(|p| p.as_str())
             .collect();
         assert!(
-            slugs.contains(&"captcha") && slugs.contains(&"hydration"),
+            slugs.contains(&"challenge-stop") && slugs.contains(&"antibot-vendor"),
             "{slugs:?}"
         );
         assert_eq!(l["roots"].as_array().map(|a| a.len()), Some(2));

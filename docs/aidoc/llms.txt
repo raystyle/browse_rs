@@ -24,9 +24,9 @@
 - [browse-core::self_update](browse_core/self_update.md): browse 自更新（用户令 2026-09-18；对齐 build-release 公共契约第六节
 - [browse-core::semantic](browse_core/semantic.md): 语义层近期面：tab 族、交互三件、等待判官。
 - [browse-core::server](browse_core/server.md): daemon 的 HTTP API：常驻会话 + 方言求值 + 引擎生命周期。
-- [browse-core::skills](browse_core/skills.md): 技能触发层（#50/#51/#56）：goto 导航回执与 fetch/detect 回执的条件
+- [browse-core::skills](browse_core/skills.md): 技能触发层（#50/#51/#56 + 清仓重建总台令 2026-10-09）：goto 导航回执
 - [browse-core::surface](browse_core/surface.md): 命令面目录（incur-rs 原则的方言版适配）：CLI 子命令、方言全局函数、
-- [browse-core::workspace](browse_core/workspace.md): workspace 单仓管理（#50/#51 配套）：站点与机制知识仓
+- [browse-core::workspace](browse_core/workspace.md): workspace 单仓管理（#50/#51 配套 + 清仓重建总台令 2026-10-09）：站点
 
 ## browse-rune 0.31.0
 

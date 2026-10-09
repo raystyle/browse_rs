@@ -24,8 +24,8 @@ POST /quit 三端点保留），新增 `/engine/up` 与求值前的懒引擎策�
 - `DaemonDesc` — daemon 自描述（#59）：宿主与进程身份一次采值，status 与 /health 内嵌
 - `EngineUpRequest` — 描述 POST /engine/up 的请求体。
 - `EvalRequest` — 描述 POST /eval 的请求体。
+- `EventCreateRequest` — `POST /events` 请求体（#77 油猴事件回调，标准形）：`type` 两档
+- `EventRing` — 事件环（#77）：容量有界的环形缓冲，满即丢最旧，序号单调递增。
 - `RuneRequest` — 描述 POST /rune 的请求体（账本 #67：Rune 编排面）。
-- `UsEvent` — 一条油猴（userscript）事件回调（#77）：脚本经 `GM_xmlhttpRequest`
-- `UsEventRequest` — `POST /us-event` 请求体（#77 油猴事件回调）：`name` 必填，`url`
-- `UsEventRing` — 事件环（#77）：容量有界的环形缓冲，满即丢最旧，序号单调递增。
+- `UserscriptEvent` — 一条油猴（userscript）事件回调（#77）：脚本经 `GM_xmlhttpRequest`
 

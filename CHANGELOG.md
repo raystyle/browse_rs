@@ -4,7 +4,16 @@
 
 ## Unreleased
 
-（无；最新封版 0.31.0）
+（无；最新封版 0.32.0）
+
+## 0.32.0 - 2026-10-09
+
+- **workspace 双脚本对重建（REQ-035，用户令「全面重写/以前 skill 全部删除重新写/rn 脚本和油猴 js 为主/爬虫与网络安全类」；grok 两轮设计案在 /tmp）**：技能本体变为 `page-skills/<slug>/(mech.rn + probe.user.js + README?)` 双脚本对（判定热路径只消费各对 `/* @detect */` 块，按多根序枚举拼**一次**主世界求值（`_prelude.js` 供 facts）；内置大探针（PAGE_PROBE_JS）与 `probe.rn` 隐式加载退役，无对零键零求值；白名单换首批九对（response-tap/scroll-until-end/next-page/spa-route/link-table/challenge-stop/antibot-vendor/fingerprint-watch/policy-surface），detect 判读 challenged 映射 challenge-stop；`browse workspace list/page/site` 改对读（README 全文或路径摘要，半对不算技能）。
+- **stop api（用户令「油猴 js 检测到什么发送请求到这个 api 就停止进程输出什么」）**：`POST /userscript/stop` 打断在飞 rune，被停回执 `stopped: {op, elapsed_ms, cause: "userscript_stop", capture: {seq, type, slug, url, data}}`；不拿槽锁、不停浏览器；无在跑 rune 回 `stopped: false`。E2E 实弹：页内晚到挑战 2.4 秒打断 60 秒编排。
+- **API 标准形（用户令「使用标准型/us- 不是标准形有歧义」）**：事件 create/read 同径对称（`POST /events` 与 `GET /events`）；`/us-event`/`/us-stop` 端点名废弃（发布数小时的零消费者面，直接换）。stringly-typed `name: "see.<slug>"` 约定改结构化 `{type: "see"|"stop", slug}`（旧 name 前缀形兼容解析一段）。
+- **snippets 剔除淘汰（用户令，breaking）**：`browse snippets list/show` 命令族、`BROWSE_SNIPPETS_ROOT` env、状态目录 `<state>/snippets` 内置根全部移除（脚本数据目录只留 workspace 一家；`@实参` 具名解析与 rune `js_lib` 缺省根落 workspace 序首根 `scripts/`（`--root` 旗标保留覆写）；rune RunOpts 字段更名 scripts_root。
+- 指南 userscripts.md：事件回调节全面标准形 + 条件停止节；手册 108/120 行。
+- semver 判据：能力新增（stop api/双脚本对）+ 行为变化（判定入口重写、snippets 破除）取 minor；数小时前面的一批端点更名属零消费者窗口的更正不入 major。
 
 ## 0.31.0 - 2026-10-09
 

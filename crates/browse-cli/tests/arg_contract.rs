@@ -1,7 +1,7 @@
 //! CLI argv 契约锁（#53）：0.12.1 的 G-F 收口把 `next` 必值口改成直出
 //! exit 2 后，七处子命令旗标收集循环按「参数尽返 Err 收尾」旧契约写，
 //! 全部假报用法错（`fetch` / `artifact` 三兄弟 / `ledger keygen` /
-//! `issue new` / `issue list`），`snippets list` 的可选位也一并踩碎。
+//! `issue new` / `issue list`）。
 //! 本件用真二进制（`CARGO_BIN_EXE_browse`）锁双口分面：必值口缺值
 //! exit 2，收集口参数尽即收尾。全部用例零网络（dry-run 与本地校验面）。
 
@@ -23,7 +23,7 @@ fn run(args: &[&str], env: &[(&str, &str)]) -> (i32, String, String) {
 }
 
 /// BROWSE_NAME 传绝对路径即整仓 state_dir（G7 口径）：测试态隔离不碰
-/// 本机 ~/.browse-rs（keygen 会写真密钥、snippets 读真库）。Drop 收渣
+/// 本机 ~/.browse-rs（keygen 会写真密钥、workspace 读真仓）。Drop 收渣
 /// （#53 评审 G-lite：反复跑不留临时目录）。
 struct TempState(String);
 
@@ -69,13 +69,7 @@ fn flag_collection_loops_terminate() {
     assert_eq!(code, 2, "{err}");
     assert!(err.contains("--kind 必填"), "应命中 kind 校验：{err}");
 
-    // snippets list 裸调：可选位 [site] 缺省列全库（隔离态空库，空库提
     // 示在 stderr）
-    let snips = TempState::new("snips");
-    let (code, _, err) = run(&["snippets", "list"], &[("BROWSE_NAME", snips.path())]);
-    assert_eq!(code, 0, "裸 snippets list 应 0");
-    assert!(err.contains("片段库为空"), "空库回执：{err}");
-
     // ledger keygen 裸调：循环收尾后真落钥（隔离态，勿碰本机密档）
     let key = TempState::new("key");
     let (code, out, err) = run(&["ledger", "keygen"], &[("BROWSE_NAME", key.path())]);
@@ -123,17 +117,12 @@ fn required_value_face_still_exits_2() {
     assert!(err.contains("fetch <url> 需要一个值"), "{err}");
 }
 
-/// G-F 的 Mode 层缺参处理器复活（0.12.1 里被解析层假报先拦成死代码）；
-/// snippets show 从无守卫（#53 评审 F1），本批补齐同款。
+/// G-F 的 Mode 层缺参处理器复活（0.12.1 里被解析层假报先拦成死代码）。
 #[test]
 fn mode_level_missing_param_reachable() {
     let (code, _, err) = run(&["workspace", "site"], &[]);
     assert_eq!(code, 2, "{err}");
     assert!(err.contains("workspace site 缺段"), "{err}");
-
-    let (code, _, err) = run(&["snippets", "show"], &[]);
-    assert_eq!(code, 2, "{err}");
-    assert!(err.contains("snippets show 缺 rel"), "{err}");
 }
 
 /// bail_arg 措辞中性化：非 issue 子命令的坏旗标不再误报「issue 参数不
@@ -189,154 +178,6 @@ fn at_file_arg_coexists_with_stdin_pipe() {
         err.contains("@实参读文件失败"),
         "argv @ 先于管道形态：{err}"
     );
-}
-
-/// #65 片段库根三序（旗标 > env > 内置缺省）与越根拦截：
-/// `--root` 生效、env 生效、旗标盖过 env、无配置仍读内置
-/// `<state_dir>/snippets`、越出配置根的相对/绝对路径仍拦（exit 1）。
-#[test]
-fn snippets_root_flag_env_default_and_escape_guard() {
-    let st = TempState::new("root");
-    let root = std::path::Path::new(st.path()).join("root");
-    let site = root.join("x.test");
-    std::fs::create_dir_all(&site).expect("建站点目录");
-    std::fs::write(
-        site.join("title.js"),
-        "// 用途：取标题\nreturn document.title\n",
-    )
-    .expect("写片段");
-    // 越根探针：库根外的真文件
-    std::fs::write(
-        std::path::Path::new(st.path()).join("outside.js"),
-        "// 库外文件\n",
-    )
-    .expect("写库外探针");
-
-    // 旗标根生效
-    let (code, out, err) = run(
-        &["snippets", "list", "--root", &root.to_string_lossy()],
-        &[],
-    );
-    assert_eq!(code, 0, "{err}");
-    assert!(out.contains("x.test/title.js"), "旗标根应列出片段：{out}");
-    assert!(out.contains("取标题"), "首行 // 摘要约定不变：{out}");
-
-    // env 根生效（show 读全文）
-    let (code, out, err) = run(
-        &["snippets", "show", "x.test/title.js"],
-        &[("BROWSE_SNIPPETS_ROOT", &root.to_string_lossy())],
-    );
-    assert_eq!(code, 0, "{err}");
-    assert!(
-        out.contains("return document.title"),
-        "env 根应读出全文：{out}"
-    );
-
-    // 旗标 > env：env 指空目录、旗标指真库，以旗标为准
-    let empty = std::path::Path::new(st.path()).join("empty-root");
-    std::fs::create_dir_all(&empty).expect("建空根");
-    let (code, out, err) = run(
-        &["snippets", "list", "--root", &root.to_string_lossy()],
-        &[("BROWSE_SNIPPETS_ROOT", &empty.to_string_lossy())],
-    );
-    assert_eq!(code, 0, "{err}");
-    assert!(out.contains("x.test/title.js"), "旗标应盖过 env：{out}");
-
-    // 越根拦截：相对 ../ 与绝对路径两形（exit 1，CTA 在 stderr）
-    let (code, _, err) = run(
-        &["snippets", "show", "../outside.js"],
-        &[("BROWSE_SNIPPETS_ROOT", &root.to_string_lossy())],
-    );
-    assert_eq!(code, 1, "越根应拦（exit 1）：{err}");
-    assert!(err.contains("越出片段库"), "{err}");
-    let outside = std::path::Path::new(st.path()).join("outside.js");
-    let (code, _, err) = run(
-        &["snippets", "show", &outside.to_string_lossy()],
-        &[("BROWSE_SNIPPETS_ROOT", &root.to_string_lossy())],
-    );
-    assert_eq!(code, 1, "绝对路径越根应拦：{err}");
-    assert!(err.contains("越出片段库"), "{err}");
-
-    // 缺省不变：无 env 无旗标仍读内置 <state_dir>/snippets
-    let builtin = std::path::Path::new(st.path())
-        .join("snippets")
-        .join("y.site");
-    std::fs::create_dir_all(&builtin).expect("建内置库目录");
-    std::fs::write(builtin.join("task.js"), "// 用途：内置\nreturn 1\n").expect("写内置片段");
-    let mut c = Command::new(env!("CARGO_BIN_EXE_browse"));
-    c.args(["snippets", "list"])
-        .stdin(Stdio::null())
-        .env_remove("BROWSE_SNIPPETS_ROOT")
-        .env("BROWSE_NAME", st.path());
-    let out = c.output().expect("跑内置缺省形");
-    let text = String::from_utf8_lossy(&out.stdout);
-    assert_eq!(out.status.code(), Some(0), "{text}");
-    assert!(text.contains("y.site/task.js"), "缺省应读内置库：{text}");
-    assert!(
-        !text.contains("x.test/title.js"),
-        "外部根不应泄进缺省形：{text}"
-    );
-}
-
-/// 评审一轮 F1/G1/G2/G5 修复锁：snippets 族坏旗标与多余位置位回 bail
-/// exit 2（基线契约复位）；显式配置根不存在报配置错 exit 1（拼错根与
-/// 真空库可分），内置缺省根不在册维持空库引导面（#44 契约）；裸 @
-/// 出「@ 后缺文件路径」。
-#[test]
-fn snippets_arg_face_after_review_round1() {
-    // F1：未知旗标（list 与 show 两臂）与 --root= 形回 bail exit 2
-    let (code, _, err) = run(&["snippets", "list", "x", "--bogus"], &[]);
-    assert_eq!(code, 2, "{err}");
-    assert!(err.contains("参数不认识 --bogus"), "{err}");
-    let (code, _, err) = run(&["snippets", "show", "x.js", "--root="], &[]);
-    assert_eq!(code, 2, "{err}");
-    assert!(err.contains("参数不认识 --root="), "{err}");
-
-    // G1：多余位置位用法错（首位置位胜出语义的另一半）
-    let (code, _, err) = run(&["snippets", "list", "a", "b"], &[]);
-    assert_eq!(code, 2, "{err}");
-    assert!(err.contains("site 过滤位"), "{err}");
-    let (code, _, err) = run(&["snippets", "show", "a.js", "b.js"], &[]);
-    assert_eq!(code, 2, "{err}");
-    assert!(err.contains("rel 位"), "{err}");
-
-    // G2：显式根（env 形）不存在报配置错 exit 1；旗标形同款
-    let (code, _, err) = run(
-        &["snippets", "list"],
-        &[("BROWSE_SNIPPETS_ROOT", "/no/such/root")],
-    );
-    assert_eq!(code, 1, "{err}");
-    assert!(err.contains("片段库目录不存在"), "{err}");
-    assert!(err.contains("核对 --root / BROWSE_SNIPPETS_ROOT"), "{err}");
-    let (code, _, err) = run(&["snippets", "list", "--root", "/no/such/root"], &[]);
-    assert_eq!(code, 1, "{err}");
-    assert!(err.contains("片段库目录不存在"), "{err}");
-
-    // G2 对照：内置缺省根不在册维持「片段库为空」exit 0（#44 契约不破）
-    let snips = TempState::new("g2");
-    let (code, _, err) = run(&["snippets", "list"], &[("BROWSE_NAME", snips.path())]);
-    assert_eq!(code, 0, "{err}");
-    assert!(err.contains("片段库为空"), "{err}");
-
-    // G5：裸 @ 特例文案（不再落悬空冒号形）
-    let (code, _, err) = run(&["--js", "@"], &[]);
-    assert_eq!(code, 2, "{err}");
-    assert!(err.contains("@ 后缺文件路径"), "{err}");
-}
-
-/// 评审二轮 G10：显式根存在但不是目录（指到文件）报「不是目录」配置错
-/// exit 1，与「目录不存在」分面。
-#[test]
-fn snippets_explicit_root_not_a_dir() {
-    let st = TempState::new("g10");
-    let file = std::path::Path::new(st.path()).join("a-file");
-    std::fs::write(&file, "x").expect("写探针文件");
-    let (code, _, err) = run(
-        &["snippets", "list", "--root", &file.to_string_lossy()],
-        &[],
-    );
-    assert_eq!(code, 1, "{err}");
-    assert!(err.contains("片段库根不是目录"), "{err}");
 }
 
 /// #66 模板道契约：--vars 形状与激活规则（只配 @ 形态、键=值 形）、
@@ -498,17 +339,10 @@ fn rune_arg_contract() {
 }
 
 /// #67 三轮 G10：子命令收集环里「认识的全局旗标尾置」报位置 CTA（不再
-/// 「参数不认识」的措辞矛盾），未知旗标保持原 bail 面；rune 与 snippets
-/// 两族同口径。
+/// 「参数不认识」的措辞矛盾），未知旗标保持原 bail 面。
 #[test]
 fn tail_global_flag_gets_position_cta() {
     let (code, _, err) = run(&["rune", "x.rn", "--headless"], &[]);
-    assert_eq!(code, 2, "{err}");
-    assert!(
-        err.contains("是全局旗标，要置于子命令与脚本位之前"),
-        "{err}"
-    );
-    let (code, _, err) = run(&["snippets", "list", "x", "--json"], &[]);
     assert_eq!(code, 2, "{err}");
     assert!(
         err.contains("是全局旗标，要置于子命令与脚本位之前"),
@@ -630,27 +464,4 @@ fn roster_matches_global_parse_arms_bidirectionally() {
             "解析臂 {a} 不在名册（反向漂移；子命令内环旗标误入全局段？）"
         );
     }
-}
-
-/// #64/#65 评审 G3 存量收口：list 面符号链接跳过（越根链接不进清单，
-/// show 面已有越根守卫）。
-#[test]
-fn snippets_list_skips_symlinks() {
-    let st = TempState::new("symlnk");
-    let root = format!("{}/snippets", st.path());
-    let outside = format!("{}/outside", st.path());
-    std::fs::create_dir_all(format!("{}/site", root)).unwrap();
-    std::fs::create_dir_all(&outside).unwrap();
-    std::fs::write(format!("{}/site/real.js", root), "// 真件").unwrap();
-    std::fs::write(format!("{}/evil.js", outside), "// 链接目标").unwrap();
-    #[cfg(unix)]
-    std::os::unix::fs::symlink(
-        format!("{}/evil.js", outside),
-        format!("{}/site/link.js", root),
-    )
-    .unwrap();
-    let (code, out, err) = run(&["snippets", "list"], &[("BROWSE_NAME", st.path())]);
-    assert_eq!(code, 0, "{err}");
-    assert!(out.contains("site/real.js"), "真件在列：{out}");
-    assert!(!out.contains("link.js"), "符号链接应被跳过：{out}");
 }

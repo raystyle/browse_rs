@@ -2889,7 +2889,7 @@ async fn rune_three_channel_integration() {
         script,
         browse_rune::DEFAULT_CAPS,
         browse_rune::RunOpts {
-            snippets_root: lib_root.clone(),
+            scripts_root: lib_root.clone(),
             stdin: "pipe-data".to_string(),
             ..Default::default()
         },
@@ -3739,7 +3739,7 @@ async fn rune_js_lib_comments_inert() {
         script,
         browse_rune::DEFAULT_CAPS,
         browse_rune::RunOpts {
-            snippets_root: dir.clone(),
+            scripts_root: dir.clone(),
             ..Default::default()
         },
     )

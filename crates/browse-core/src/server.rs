@@ -148,21 +148,23 @@ impl DaemonDesc {
 }
 
 /// 一条油猴（userscript）事件回调（#77）：脚本经 `GM_xmlhttpRequest`
-/// `POST /us-event` 上报的页面事件，agent 侧经 `browse events` 消费。
+/// `POST /events` 上报的页面事件，agent 侧经 `browse events` 消费。
 /// 何时用：页面内事件要主动通知宿主（区别于轮询/快照拉取）的探针形
 /// 集成。边界：只承载上报与消费，脚本安装管理归引擎面（Userscript.\*
 /// CDP 域，clean-chrome 批 4），两者正交。
 #[derive(Debug, Clone, serde::Serialize)]
-pub struct UsEvent {
+pub struct UserscriptEvent {
     /// 单调序号（daemon 生命周期内递增，`--since` 消费游标）。
     pub seq: u64,
     /// daemon 侧收到时刻（Unix 毫秒）。
     pub ts_ms: u64,
-    /// 事件名（脚本自定义，如 `dom-click`）。
-    pub name: String,
+    /// 事件类型（标准形两档）：`see`（观察上报）/ `stop`（条件停止）。
+    pub r#type: String,
+    /// 技能 slug（如 `challenge-stop`；裸事件无 slug 时为 `None`）。
+    pub slug: Option<String>,
     /// 上报页面 URL（脚本自报的 `location.href`）。
     pub url: Option<String>,
-    /// 任意载荷（超限序列化截断，见 [`UsEventRing::push`]）。
+    /// 任意载荷（超限序列化截断，见 [`EventRing::push`]）。
     pub data: Option<Value>,
 }
 
@@ -170,33 +172,34 @@ pub struct UsEvent {
 /// 纯同步逻辑（`std::sync::Mutex` 包裹进 [`Daemon`]），handler 层做
 /// 校验与截断后入环。
 #[derive(Debug, Default)]
-pub struct UsEventRing {
+pub struct EventRing {
     next_seq: u64,
-    buf: std::collections::VecDeque<UsEvent>,
+    buf: std::collections::VecDeque<UserscriptEvent>,
 }
 
 /// 事件环容量：1000 条（页面侧失控上报也不打爆 daemon 内存）。
-const US_EVENT_RING_CAP: usize = 1000;
+const EVENT_RING_CAP: usize = 1000;
 /// 单条事件 `name`/`url` 截断上限（字符）。
-const US_EVENT_STR_CAP: usize = 512;
+const EVENT_STR_CAP: usize = 512;
 /// 单条事件 `data` 序列化字节上限：超出截断并以 `__truncated` 标记。
-const US_EVENT_DATA_CAP: usize = 32 * 1024;
+const EVENT_DATA_CAP: usize = 32 * 1024;
 
-impl UsEventRing {
-    /// 入环一条：`name` 必填非空（超限截断），`url` 截断同上，
+impl EventRing {
+    /// 入环一条（标准形）：`type` 两档、`slug` 可空（各字段超限截断），
     /// `data` 序列化超上限字节截断成 `{__truncated: true, bytes: 原长}`。
     /// 返回分配的序号。
     pub fn push(
         &mut self,
-        name: String,
+        r#type: String,
+        slug: Option<String>,
         url: Option<String>,
         data: Option<Value>,
         ts_ms: u64,
     ) -> u64 {
-        let clamp = |s: String| s.chars().take(US_EVENT_STR_CAP).collect::<String>();
+        let clamp = |s: String| s.chars().take(EVENT_STR_CAP).collect::<String>();
         let data = data.map(|d| {
             let full = serde_json::to_string(&d).unwrap_or_default();
-            if full.len() > US_EVENT_DATA_CAP {
+            if full.len() > EVENT_DATA_CAP {
                 json!({ "__truncated": true, "bytes": full.len() })
             } else {
                 d
@@ -204,26 +207,27 @@ impl UsEventRing {
         });
         let seq = self.next_seq;
         self.next_seq = self.next_seq.saturating_add(1);
-        self.buf.push_back(UsEvent {
+        self.buf.push_back(UserscriptEvent {
             seq,
             ts_ms,
-            name: clamp(name),
+            r#type: clamp(r#type),
+            slug: slug.map(clamp),
             url: url.map(clamp),
             data,
         });
-        while self.buf.len() > US_EVENT_RING_CAP {
+        while self.buf.len() > EVENT_RING_CAP {
             self.buf.pop_front();
         }
         seq
     }
 
     /// 取序号严格大于 `since` 的全部事件（升序）。
-    pub fn since(&self, since: u64) -> Vec<UsEvent> {
+    pub fn since(&self, since: u64) -> Vec<UserscriptEvent> {
         self.buf.iter().filter(|e| e.seq > since).cloned().collect()
     }
 
     /// 取最近 `n` 条（升序返回；`n` 为 0 取全部）。
-    pub fn last(&self, n: usize) -> Vec<UsEvent> {
+    pub fn last(&self, n: usize) -> Vec<UserscriptEvent> {
         if n == 0 || n >= self.buf.len() {
             return self.buf.iter().cloned().collect();
         }
@@ -269,9 +273,13 @@ pub struct Daemon {
     pub rune_cancel: std::sync::Mutex<Option<tokio::sync::watch::Sender<bool>>>,
     /// rune 是否在跑（stop 回执的 running 判据）。
     pub rune_running: Arc<AtomicBool>,
-    /// 油猴事件回调环（#77）：`POST /us-event` 入环，`browse events`
+    /// 油猴事件回调环（#77）：`POST /events` 入环，`browse events`
     /// 消费。锁形因 Daemon 在 Arc 后共享。
-    pub us_events: std::sync::Mutex<UsEventRing>,
+    pub events_ring: std::sync::Mutex<EventRing>,
+    /// 页内条件停止的捕获槽（#77 stop api，只留最后一次）：`POST /userscript/stop`
+    /// 先落槽再打取消，被停 rune 的 stopped 回执从槽取 capture（槽是
+    /// 真源，事件环只是副本）；新 rune 起跑即清槽防陈货串场。
+    pub stop_capture: std::sync::Mutex<Option<Value>>,
 }
 
 impl Daemon {
@@ -302,7 +310,8 @@ impl Daemon {
             last_activity: std::sync::Mutex::new(Instant::now()),
             rune_cancel: std::sync::Mutex::new(None),
             rune_running: Arc::new(AtomicBool::new(false)),
-            us_events: std::sync::Mutex::new(UsEventRing::default()),
+            events_ring: std::sync::Mutex::new(EventRing::default()),
+            stop_capture: std::sync::Mutex::new(None),
         })
     }
 }
@@ -406,8 +415,13 @@ pub async fn serve(daemon: Arc<Daemon>, bind: &str) -> anyhow::Result<()> {
         .route("/rune/stop", post(rune_stop_handler))
         .route("/health", get(health_handler))
         .route("/engine/up", post(engine_up_handler))
-        .route("/us-event", post(us_event_handler))
-        .route("/events", get(events_handler).delete(events_clear_handler))
+        .route(
+            "/events",
+            post(events_create_handler)
+                .get(events_handler)
+                .delete(events_clear_handler),
+        )
+        .route("/userscript/stop", post(userscript_stop_handler))
         .route("/quit", post(quit_handler))
         .with_state(state);
 
@@ -615,10 +629,10 @@ async fn rune_handler(
     let root = std::path::PathBuf::from(
         req.root
             .clone()
-            .unwrap_or_else(|| crate::paths::snippets_root().to_string_lossy().into_owned()),
+            .unwrap_or_else(|| crate::paths::scripts_root().to_string_lossy().into_owned()),
     );
     let opts = browse_rune::RunOpts {
-        snippets_root: root,
+        scripts_root: root,
         stdin: req.stdin.clone().unwrap_or_default(),
         // 桥上界随请求级兜底硬界（评审 kimi G-6）
         host_fns: host_fns(&d.host, rune_timeout_for(req.timeout_s)),
@@ -638,6 +652,8 @@ async fn rune_handler(
     let (cancel_tx, mut cancel_rx) = tokio::sync::watch::channel(false);
     *d.rune_cancel.lock().unwrap_or_else(|e| e.into_inner()) = Some(cancel_tx);
     d.rune_running.store(true, Ordering::Relaxed);
+    // 页内条件停止的捕获槽清场（#77 stop api）：上一轮残留不串进本次回执
+    *d.stop_capture.lock().unwrap_or_else(|e| e.into_inner()) = None;
     // 恐慌滞留守卫（评审 G-41）：store(true) 与 store(false) 之间处理器
     // panic 时旗标永滞 true（stop 道拒绝服务）；Drop 守卫在 unwind 与
     // 正常返回两道都复位
@@ -694,8 +710,17 @@ async fn rune_handler(
             // 面、elapsed_ms 实测毫秒、cause 二分流：stop_request 请求停 /
             // engine_lost 失联联动停）加日志行；脚本侧自停走原生控制流
             //（select/分支加 Err 返回，error 面自带 CTA，不自封装原语）
+            // 页内条件停止（#77）：捕获槽有货即 userscript_stop 因（槽只在真停到
+            // rune 时落），否则按 stop_request / engine_lost 二分流
+            let capture = d
+                .stop_capture
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .take();
             let cause = if matches!(outcome, Outcome::EngineLost) {
                 "engine_lost"
+            } else if capture.is_some() {
+                "userscript_stop"
             } else {
                 "stop_request"
             };
@@ -711,7 +736,7 @@ async fn rune_handler(
             );
             // 停止道同丢弃执行体（评审 G-3）
             spawn_pending_reaper(&watch_session);
-            return rune_stopped_response(op, elapsed, cause);
+            return rune_stopped_response(op, elapsed, cause, capture);
         }
     };
     let ctx = d.engine.context_snapshot(&d.desc).await;
@@ -927,25 +952,38 @@ fn rune_stopped_response(
     op: Value,
     elapsed_ms: u64,
     cause: &str,
+    capture: Option<Value>,
 ) -> (axum::http::StatusCode, Json<Value>) {
     let cta = match cause {
         "engine_lost" => format!(
             "browse: rune 执行因引擎失联被主动停止（已跑 {elapsed_ms} 毫秒；两次连通性探测失败）；下一步：browse status 看引擎态（崩溃/被关/网络），重试即自动重拉引擎"
         ),
+        "userscript_stop" => format!(
+            "browse: rune 执行被页内条件停止（已跑 {elapsed_ms} 毫秒；POST /userscript/stop slug={}）；下一步：看 stopped.capture（脚本捕获的 what），编排断点即 stopped.op",
+            capture
+                .as_ref()
+                .and_then(|c| c.get("slug"))
+                .and_then(Value::as_str)
+                .unwrap_or("userscript/stop")
+        ),
         _ => format!(
             "browse: rune 执行被主动停止（已跑 {elapsed_ms} 毫秒；POST /rune/stop 或 browse rune stop）；下一步：停止方属预期回执；被停方看 stopped.op 定位中断调用面，长等待段可拆批或改事件等待后重跑"
         ),
     };
+    let mut stopped = json!({
+        "op": op,
+        "elapsed_ms": elapsed_ms,
+        "cause": cause,
+    });
+    if let Some(c) = capture {
+        stopped["capture"] = c;
+    }
     (
         axum::http::StatusCode::INTERNAL_SERVER_ERROR,
         Json(json!({
             "ok": false,
             "error": cta,
-            "stopped": {
-                "op": op,
-                "elapsed_ms": elapsed_ms,
-                "cause": cause,
-            }
+            "stopped": stopped,
         })),
     )
 }
@@ -1093,18 +1131,57 @@ async fn quit_handler(State(st): State<AppState>) -> impl IntoResponse {
     Json(json!({ "ok": true }))
 }
 
-/// `POST /us-event` 请求体（#77 油猴事件回调）：`name` 必填，`url`
-/// 缺省由脚本自报，`data` 任意 JSON。
+/// `POST /events` 请求体（#77 油猴事件回调，标准形）：`type` 两档
+/// （`see` 观察 / `stop` 条件停止）加 `slug`（技能名，可空）；兼容旧
+/// `name` 前缀形（`see.<slug>` / `stop.<slug>`，前缀推导两字段）。
 #[derive(Debug, Deserialize)]
-pub struct UsEventRequest {
-    /// 事件名（脚本自定义，如 `dom-click`）。
-    pub name: String,
+pub struct EventCreateRequest {
+    /// 事件类型：`see` / `stop`（缺省走 `name` 推导，两者全缺 400）。
+    #[serde(default, rename = "type")]
+    pub r#type: Option<String>,
+    /// 技能 slug（标准形主键；截 512 字符）。
+    #[serde(default)]
+    pub slug: Option<String>,
+    /// 旧形事件名（`see.<slug>`/`stop.<slug>` 前缀推导；type 给了则以
+    /// type 为准）。
+    #[serde(default)]
+    pub name: Option<String>,
     /// 上报页面 URL。
     #[serde(default)]
     pub url: Option<String>,
     /// 任意载荷（环侧截断）。
     #[serde(default)]
     pub data: Option<Value>,
+}
+
+/// 请求体到环字段的标准形收口：type 两档校验（非法 400 由调用方），旧
+/// `name` 前缀在此推导（`see.`/`stop.` 前缀剥给 slug；裸名当 `see` 且
+/// slug 留空）。返回 `(type, slug)`。
+fn normalize_event_kind(req: &EventCreateRequest) -> anyhow::Result<(String, Option<String>)> {
+    if let Some(t) = req.r#type.as_deref() {
+        if t != "see" && t != "stop" {
+            anyhow::bail!(
+                "events 的 type 只认 see/stop（当前：{t}）；下一步：观察上报用 see，条件停止用 stop"
+            );
+        }
+        return Ok((t.to_string(), req.slug.clone()));
+    }
+    if let Some(n) = req.name.as_deref() {
+        let n = n.trim();
+        if n.is_empty() {
+            return Ok((String::new(), None));
+        }
+        if let Some(slug) = n.strip_prefix("stop.") {
+            return Ok(("stop".into(), Some(slug.to_string())));
+        }
+        if let Some(slug) = n.strip_prefix("see.") {
+            return Ok(("see".into(), Some(slug.to_string())));
+        }
+        return Ok(("see".into(), None));
+    }
+    anyhow::bail!(
+        "events 请求缺 type（标准形）或 name（旧形），两者至少其一；下一步：{{\"type\":\"see\",\"slug\":\"challenge-stop\"}}"
+    )
 }
 
 /// Unix 毫秒钟（同 engine 侧面形）：取不到回 0（时间锚缺失比崩溃面轻）。
@@ -1115,25 +1192,30 @@ fn now_ms() -> u64 {
         .unwrap_or(0)
 }
 
-/// `POST /us-event`（#77）：油猴脚本经 `GM_xmlhttpRequest` 直达 daemon
-/// 的事件回调入口（GM 面绕 CORS，页面 `fetch` 直调会被 CORS 拦——脚
-/// 本侧用 GM 面是文档口径）。daemon 绑定 127.0.0.1（缺省）即天然只
-/// 收本机上报。回 `{ok, seq}`。
-async fn us_event_handler(
+/// `POST /events`（#77）：油猴脚本经 `GM_xmlhttpRequest` 直达 daemon
+/// 的事件上报入口（与 `GET /events` 同径对称——集合资源的 create；
+/// GM 面绕 CORS，页面 `fetch` 直调会被 CORS 拦——脚本侧用 GM 面是文
+/// 档口径）。daemon 绑定 127.0.0.1（缺省）即天然只收本机上报。回
+/// `{ok, seq}`。
+async fn events_create_handler(
     State(st): State<AppState>,
-    Json(req): Json<UsEventRequest>,
+    Json(req): Json<EventCreateRequest>,
 ) -> (axum::http::StatusCode, Json<Value>) {
-    if req.name.trim().is_empty() {
+    let (r#type, slug) = match normalize_event_kind(&req) {
+        Ok(v) => v,
+        Err(e) => return err_response(e),
+    };
+    if r#type.is_empty() {
         return err_response(anyhow::anyhow!(
-            "us-event 的 name 必填非空；下一步：脚本侧 JSON 带 name 字段"
+            "events 的 name 不能为空串；下一步：标准形 {{\"type\":\"see\",\"slug\":\"...\"}}"
         ));
     }
     let mut ring = st
         .daemon
-        .us_events
+        .events_ring
         .lock()
         .unwrap_or_else(|e| e.into_inner());
-    let seq = ring.push(req.name.trim().to_string(), req.url, req.data, now_ms());
+    let seq = ring.push(r#type, slug, req.url, req.data, now_ms());
     (
         axum::http::StatusCode::OK,
         Json(json!({ "ok": true, "seq": seq })),
@@ -1167,7 +1249,7 @@ async fn events_handler(
     let (since, last) = parse_events_query(uri.query().unwrap_or_default());
     let ring = st
         .daemon
-        .us_events
+        .events_ring
         .lock()
         .unwrap_or_else(|e| e.into_inner());
     let events = match since {
@@ -1185,11 +1267,65 @@ async fn events_handler(
 /// 不回卷，消费游标不失位。
 async fn events_clear_handler(State(st): State<AppState>) -> impl IntoResponse {
     st.daemon
-        .us_events
+        .events_ring
         .lock()
         .unwrap_or_else(|e| e.into_inner())
         .clear();
     Json(json!({ "ok": true }))
+}
+
+/// `POST /userscript/stop`（#77 stop api，用户令「油猴 js 检测到什么发送
+/// 请求到这个 api 就停止进程输出什么」；标准形端点名，旧 `/userscript/stop` 已
+/// 弃）：页内脚本条件成立即打本端点，daemon 打断当前正在跑的那次 rune
+/// （`mech.rn` 编排），被停回执带 `stopped.capture`（脚本捕获的 what 与
+/// 停在宿主哪一步）。与 `/rune/stop` 的差异：有人给的停止因与捕获，走
+/// 的取消道相同。不停浏览器、不关 daemon、不清事件环；无在跑 rune 时
+/// 入环并回 `stopped:false`（不落捕获槽，防陈货串下一次执行）。不拿
+/// `eval_lock`。body 标准形 `{slug, url, data}`（type 恒 stop 由端点语
+/// 义内定），兼容旧 `name`（`stop.<slug>` 前缀推导）。
+async fn userscript_stop_handler(
+    State(st): State<AppState>,
+    Json(mut req): Json<EventCreateRequest>,
+) -> (axum::http::StatusCode, Json<Value>) {
+    req.r#type = Some("stop".into());
+    let (r#type, slug) = match normalize_event_kind(&req) {
+        Ok(v) => v,
+        Err(e) => return err_response(e),
+    };
+    // 先入环（副本，browse events 可见同 seq）
+    let seq = {
+        let mut ring = st
+            .daemon
+            .events_ring
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        ring.push(r#type, slug.clone(), req.url, req.data, now_ms())
+    };
+    let d = &st.daemon;
+    let running = d.rune_running.load(Ordering::Relaxed);
+    let capture = json!({ "seq": seq, "type": "stop", "slug": slug });
+    let tx = d
+        .rune_cancel
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .take();
+    let requested = tx.is_some_and(|t| t.send(true).is_ok());
+    if running && requested {
+        *d.stop_capture.lock().unwrap_or_else(|e| e.into_inner()) = Some(capture);
+        (
+            axum::http::StatusCode::OK,
+            Json(json!({ "ok": true, "stopped": true, "seq": seq })),
+        )
+    } else {
+        (
+            axum::http::StatusCode::OK,
+            Json(json!({
+                "ok": true, "stopped": false, "seq": seq,
+                "reason": if running { "eval_busy" } else { "idle" },
+                "note": "无在跑 rune 执行（事件已入环；capture 不落槽）"
+            })),
+        )
+    }
 }
 
 #[cfg(test)]
@@ -1231,11 +1367,17 @@ mod tests {
     /// #77 事件环：序号单调、since/last 窗、容量截断、data 超限截断、
     /// clear 不回卷序号。
     #[test]
-    fn us_event_ring_semantics() {
-        let mut ring = UsEventRing::default();
+    fn event_ring_semantics() {
+        let mut ring = EventRing::default();
         for i in 0..5u64 {
             assert_eq!(
-                ring.push(format!("e{i}"), None, None, 1_700_000_000_000 + i),
+                ring.push(
+                    "see".into(),
+                    Some(format!("e{i}")),
+                    None,
+                    None,
+                    1_700_000_000_000 + i
+                ),
                 i
             );
         }
@@ -1250,19 +1392,25 @@ mod tests {
         assert_eq!(ring.last(0).len(), 5, "last 0 = 全部");
         // data 超限截断成 __truncated 标记
         let big = Value::String("x".repeat(40 * 1024));
-        ring.push("big".into(), None, Some(big), 0);
+        ring.push("see".into(), Some("big".into()), None, Some(big), 0);
         let big_ev = ring.last(0).pop().expect("big 在环尾");
         let d = big_ev.data.expect("截断标记仍在");
         assert_eq!(d["__truncated"], json!(true), "{d}");
         assert!(
-            d["bytes"].as_u64().unwrap_or_default() > US_EVENT_DATA_CAP as u64,
+            d["bytes"].as_u64().unwrap_or_default() > EVENT_DATA_CAP as u64,
             "{d}"
         );
         // 容量截断：灌满翻倍，只留尾部
-        for i in 0..(US_EVENT_RING_CAP as u64 * 2) {
-            ring.push(format!("f{i}"), Some("http://x/".into()), None, 0);
+        for i in 0..(EVENT_RING_CAP as u64 * 2) {
+            ring.push(
+                "see".into(),
+                Some(format!("f{i}")),
+                Some("http://x/".into()),
+                None,
+                0,
+            );
         }
-        assert_eq!(ring.last(0).len(), US_EVENT_RING_CAP);
+        assert_eq!(ring.last(0).len(), EVENT_RING_CAP);
         // clear 不回卷
         let before = ring.next_seq();
         ring.clear();
@@ -1314,7 +1462,7 @@ mod tests {
     /// cause）与 CTA 文案（stop_request 与 engine_lost 双形）。
     #[test]
     fn rune_stopped_envelope_has_structured_face() {
-        let (code, Json(v)) = rune_stopped_response(json!("goto"), 1234, "stop_request");
+        let (code, Json(v)) = rune_stopped_response(json!("goto"), 1234, "stop_request", None);
         assert_eq!(code, axum::http::StatusCode::INTERNAL_SERVER_ERROR);
         assert_eq!(v["ok"], json!(false));
         let msg = v["error"].as_str().unwrap_or_default();
@@ -1327,7 +1475,7 @@ mod tests {
         assert_eq!(v["stopped"]["elapsed_ms"], json!(1234));
         assert_eq!(v["stopped"]["cause"], json!("stop_request"));
         // 引擎失联联动形：cause 与 CTA 分流
-        let (_, Json(v)) = rune_stopped_response(json!("wait_event"), 5678, "engine_lost");
+        let (_, Json(v)) = rune_stopped_response(json!("wait_event"), 5678, "engine_lost", None);
         let msg = v["error"].as_str().unwrap_or_default();
         assert!(msg.contains("引擎失联"), "{msg}");
         assert!(msg.contains("browse status"), "{msg}");

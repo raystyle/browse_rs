@@ -53,6 +53,16 @@
       "docs": "把方言片段 POST 到 daemon 的 /eval 求值。\n\n返回最后一条语句的值；daemon 侧错误进 `Err`（错误串已是给人/agent 的下一步指令形态）。\n\n# Errors\n\nHTTP 失败或 daemon 求值失败（语法错、CDP 错、守卫拦截、超时）。"
     },
     {
+      "path": "browse_cli::client::events_clear",
+      "kind": "function",
+      "docs": "清空油猴事件环（#77）：`DELETE /events`（序号不回卷，消费游标不失位）。\n\n# Errors\n\ndaemon 不在或响应坏。"
+    },
+    {
+      "path": "browse_cli::client::events_ring",
+      "kind": "function",
+      "docs": "消费油猴事件回调（#77）：`GET /events`，`since` 游标与 `last` 条数\n窗（都缺省取最近 20 条）。回 `{ok, events, nextSeq}`。\n\n# Errors\n\ndaemon 不在或响应坏。"
+    },
+    {
       "path": "browse_cli::client::expand_at_args",
       "kind": "function",
       "docs": "`@` 文件实参展开（#64）：片段实参以 `@` 开头即读文件内容为片段体，\n其余实参原样保留。方言与 `--js` 两形态通用（同一实参道）；绝对与\n相对路径皆可（相对即当前工作目录）。先于 `--b64` 解码展开，\n`--b64 @<存 base64 的文件>` 组合形自然成立；stdin 管道形态不经此道\n（管道内容是片段体本身，不前缀展开）。\n\n# Errors\n\n`@` 后路径读取失败（不存在、无权限、非 UTF-8 等）报带下一步提示的\n错误（调用方直出 exit 2，与 `--b64` 坏串同族）。\n\n# Examples\n\n```\n# use browse_cli::client::expand_at_args;\n// 非 @ 前缀实参原样保留\nlet mut args = vec![\"return 1\".to_string()];\nexpand_at_args(&mut args).unwrap();\nassert_eq!(args[0], \"return 1\");\n// 空 @ 前缀（裸 @）读不了，报错\nlet mut bad = vec![\"@\".to_string()];\nassert!(expand_at_args(&mut bad).is_err());\n```"
@@ -65,7 +75,7 @@
     {
       "path": "browse_cli::client::load_template",
       "kind": "function",
-      "docs": "模板源解析（#66）：`--vars` 模板道的 @ 实参解析序——snippets 根\n第一等：`根/<名>` 原样与 `根/<名>.js` 两试（命中且 canonicalize 后\n仍在根内即用；越根候选跳过根道，守卫语义同 snippets show）；\n根未命中回落字面路径（`#64` 语义：绝对/相对皆可，cwd 基准）。\n返回 `(命中路径, 源码)`；全未命中报错列出试过的位。\n\n# Errors\n\n所有候选位都不存在或读失败。\n\n# Examples\n\n```\n# use browse_cli::client::load_template;\n// 全未命中（根也不在册）：报错列出试过的候选位\nlet err = load_template(\"no/such/tmpl\", std::path::Path::new(\"/no/such/root\")).unwrap_err();\nassert!(err.to_string().contains(\"no/such/tmpl\"), \"{}\", err);\n```"
+      "docs": "模板源解析（#66）：`--vars` 模板道的 @ 实参解析序——scripts 根\n第一等：`根/<名>` 原样与 `根/<名>.js` 两试（命中且 canonicalize 后\n仍在根内即用；越根候选跳过根道，守卫语义同仓内读）；\n根未命中回落字面路径（`#64` 语义：绝对/相对皆可，cwd 基准）。\n返回 `(命中路径, 源码)`；全未命中报错列出试过的位。\n\n# Errors\n\n所有候选位都不存在或读失败。\n\n# Examples\n\n```\n# use browse_cli::client::load_template;\n// 全未命中（根也不在册）：报错列出试过的候选位\nlet err = load_template(\"no/such/tmpl\", std::path::Path::new(\"/no/such/root\")).unwrap_err();\nassert!(err.to_string().contains(\"no/such/tmpl\"), \"{}\", err);\n```"
     },
     {
       "path": "browse_cli::client::load_template_ext",
@@ -121,16 +131,6 @@
       "path": "browse_cli::client::state_dir",
       "kind": "function",
       "docs": "返回 daemon 日志与运行面目录（`%USERPROFILE%\\.browse-rs[\\<name>]`，多实例各一份）。"
-    },
-    {
-      "path": "browse_cli::client::us_events",
-      "kind": "function",
-      "docs": "消费油猴事件回调（#77）：`GET /events`，`since` 游标与 `last` 条数\n窗（都缺省取最近 20 条）。回 `{ok, events, nextSeq}`。\n\n# Errors\n\ndaemon 不在或响应坏。"
-    },
-    {
-      "path": "browse_cli::client::us_events_clear",
-      "kind": "function",
-      "docs": "清空油猴事件环（#77）：`DELETE /events`（序号不回卷，消费游标不失位）。\n\n# Errors\n\ndaemon 不在或响应坏。"
     },
     {
       "path": "browse_cli::fetch",

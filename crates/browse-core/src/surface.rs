@@ -98,7 +98,7 @@ pub const COMMANDS: &[CmdSpec] = &[
                 "--vars 键=值 可重复；@ 实参同给即模板道"
             ),
         ],
-        description: "求值方言片段（缺省形态；自动拉起 daemon 与引擎）。实参以 @ 开头即文件实参形态：读文件内容为片段体（绝对/相对路径皆可，读失败报错带下一步），与 --js 同形；@ 实参配 --vars 键=值 即模板道（snippets 根先解析，Jinja 渲染，0.30.3 缺省 ERB 定界 <%= 键 %>，JS 花括号免撞，--vars-syntax classic 或件首行指令回退；未填键 exit 2 报键名；注释区免渲染），方言与 --js 两形态同用。",
+        description: "求值方言片段（缺省形态；自动拉起 daemon 与引擎）。实参以 @ 开头即文件实参形态：读文件内容为片段体（绝对/相对路径皆可，读失败报错带下一步），与 --js 同形；@ 实参配 --vars 键=值 即模板道（scripts 根先解析，Jinja 渲染，0.30.3 缺省 ERB 定界 <%= 键 %>，JS 花括号免撞，--vars-syntax classic 或件首行指令回退；未填键 exit 2 报键名；注释区免渲染），方言与 --js 两形态同用。",
         example: "browse 'return await currentTab()'",
     },
     CmdSpec {
@@ -131,7 +131,7 @@ pub const COMMANDS: &[CmdSpec] = &[
                 "--vars 键=值 可重复；与 @ 实参同给即模板道"
             ),
         ],
-        description: "全量 JS 受限旁路：不经方言解析器直发 Runtime.evaluate（returnByValue 加 awaitPromise），return 值序列化回传；模板字符串/正则/函数声明直接写，消多层引号转义。分工：方言管 CDP 编排，--js 管页面逻辑。空实参加管道 = 整段 stdin 一次求值（配 --b64 先解码）。文件实参形态：实参以字面 @ 开头即读文件内容为片段体（前导空白即不触发、保持字面；`browse --js @snip.js`；方言与 --js 两形态通用，绝对/相对路径皆可，读失败报错带下一步；先于 --b64 展开，`--b64 @x.b64` = 文件存 base64 的组合形；stdin 管道不经此道）。模板参数化（命令小程序）：@ 实参与 --vars 键=值（可重复累积，不收逗号分隔）同给即模板道——模板源先按 snippets 根解析（--root / BROWSE_SNIPPETS_ROOT / 内置三序，名原样与补 .js 两试，越根候选跳过），未命中回落字面路径；按 Jinja 渲染（0.30.3 缺省 ERB 定界 <%= 键 %>、| default() 可选参、<% for %> 生成面，JS 花括号免撞；--vars-syntax classic 或件首行指令回退 {{ 键 }} 经典形；--vars 值恒字符串，循环遍历传参按字符、要数组在模板里 split），未填键网络前拦 exit 2 报键名（注释区免渲染 0.30.0）；不给 --vars 即纯透传（字面大括号对不误伤）。不可序列化值（DOM 节点、Date、Map、RegExp 等，含容器内元素）在 returnByValue 下序列化成 {}，CLI 按空容器口径零输出；要值就在 JS 里自己 JSON.stringify 或取原语（.textContent/.outerHTML）。与 --repl 不同行。",
+        description: "全量 JS 受限旁路：不经方言解析器直发 Runtime.evaluate（returnByValue 加 awaitPromise），return 值序列化回传；模板字符串/正则/函数声明直接写，消多层引号转义。分工：方言管 CDP 编排，--js 管页面逻辑。空实参加管道 = 整段 stdin 一次求值（配 --b64 先解码）。文件实参形态：实参以字面 @ 开头即读文件内容为片段体（前导空白即不触发、保持字面；`browse --js @snip.js`；方言与 --js 两形态通用，绝对/相对路径皆可，读失败报错带下一步；先于 --b64 展开，`--b64 @x.b64` = 文件存 base64 的组合形；stdin 管道不经此道）。模板参数化（命令小程序）：@ 实参与 --vars 键=值（可重复累积，不收逗号分隔）同给即模板道——模板源先按 scripts 根解析（--root 旗标 > workspace 序首根 scripts/，名原样与补 .js 两试，越根候选跳过），未命中回落字面路径；按 Jinja 渲染（0.30.3 缺省 ERB 定界 <%= 键 %>、| default() 可选参、<% for %> 生成面，JS 花括号免撞；--vars-syntax classic 或件首行指令回退 {{ 键 }} 经典形；--vars 值恒字符串，循环遍历传参按字符、要数组在模板里 split），未填键网络前拦 exit 2 报键名（注释区免渲染 0.30.0）；不给 --vars 即纯透传（字面大括号对不误伤）。不可序列化值（DOM 节点、Date、Map、RegExp 等，含容器内元素）在 returnByValue 下序列化成 {}，CLI 按空容器口径零输出；要值就在 JS 里自己 JSON.stringify 或取原语（.textContent/.outerHTML）。与 --repl 不同行。",
         example: r#"browse --js 'return (() => { const f = s => s.length; return f("ab"); })()'"#,
     },
     CmdSpec {
@@ -326,7 +326,7 @@ pub const COMMANDS: &[CmdSpec] = &[
                 "false（先清环再回执；序号不回卷，消费游标不失位）"
             ),
         ],
-        description: "消费油猴（userscript）事件回调：脚本经 GM_xmlhttpRequest POST /us-event 上报 {name, url, data}（daemon 端口默认 9880，BROWSE_PORT/命名实例派生端口注意），本命令读事件环（容量 1000 满丢最旧，data 超 32KB 截断）；回 {ok, events, nextSeq}。daemon 不在跑不算错（环随 daemon 生命周期）。事件面与引擎脚本管理面（Userscript.* CDP 域）正交。用法与示例见 docs/guides/userscripts.md。",
+        description: "消费油猴（userscript）事件回调：脚本经 GM_xmlhttpRequest POST /events 上报 {type, slug, url, data}（标准形：type 两档 see/stop；daemon 端口默认 9880，BROWSE_PORT/命名实例派生端口注意），本命令读事件环（容量 1000 满丢最旧，data 超 32KB 截断）；回 {ok, events, nextSeq}。daemon 不在跑不算错（环随 daemon 生命周期）。事件面与引擎脚本管理面（Userscript.* CDP 域）正交。用法与示例见 docs/guides/userscripts.md。",
         example: "browse events --since 41",
     },
     CmdSpec {
@@ -338,7 +338,7 @@ pub const COMMANDS: &[CmdSpec] = &[
                 "script",
                 "string",
                 true,
-                "@ 前缀走 snippets 根(.rn 两试)或字面路径"
+                "@ 前缀走 scripts 根(.rn 两试)或字面路径"
             ),
             arg!(
                 "vars",
@@ -350,7 +350,7 @@ pub const COMMANDS: &[CmdSpec] = &[
                 "root",
                 "string",
                 false,
-                "同 snippets 族根三序（只对 @ 名生效）"
+                "--root 旗标 > workspace scripts/（只对 @ 名生效）"
             ),
         ],
         description: "Rune 编排面（三形态运行时之一：rn 脚本小程序握 js+cdp 双能力，方言命令管 cdp、js 小程序管 js）：脚本在独立 VM 跑（Rune 语言，入口 pub async fn main() 返回 Result），经自注册 cdp 模块做效果：goto/eval/eval_handle/call/release 走隔离世界轻探针，wait_event(method,ms) 事件驱动等待（原生 Session::wait_for 直出，活动 tab 与 browser 级事件，超时 Err 可 match 做条件分支），raw(method,params_json) 任意 CDP 命令直发（params 是 JSON 对象串，空串等价空对象；页面会话作用域；协议文档参数形原样粘贴，与 wait_event 的任意 method 名对偶；Input.dispatchMouseEvent 序列组拟人鼠标 wiggle/拖拽/滚轮、Fetch.enable 加 wait_event(Fetch.requestPaused) 循环加 failRequest/continueRequest 组按 resourceType 断流放行、Network.setCookie/getAllCookies 组 cookie 面；回收件组合形的自检归脚本：setCookie 的 success、填值的命中先验），dialect(fn,args_json) 方言全量桥（方言全局函数按名直达方言面同一实现：waitLoad/waitForResponse/clickRef 等 100+ 件；args 是 JSON 数组串，空串等价空数组；与 raw 对偶=CDP 层与方言层两通道），js(src,args) 内联 JS 小程序体与 js_lib(name,vars) 库内 .js 小程序走主世界全量页面逻辑（页面函数可调；args/vars 对象 JSON 字面量注入引号天然安全；js 体须用 return 出值，裸表达式得 null），render(tpl,vars) 运行时 Jinja，stdin() 读管道参数道。输入三通道：文件/实参、管道源码（无实参时 cat plan.rn | browse rune）、管道参数（有实参时）。r# 裸串：r#\"…\"#（Rust 同形，含 \"# 升 r##）编译前重写为转义普通串，任意引号反斜杠多行原样直达 js/eval，模板道免渲染（注释区同免渲染字面回填；{% raw %} 仍管 Jinja 面任意区）。双限额（指令与分配），未填模板键网络前拦 exit 2；模板定界 0.30.3 缺省 ERB（<%= 键 %>，JS 花括号免撞；classic 旗标或件首行指令回退）。错误二分：cdp::CdpError{op,message} 与脚本自造 Timeout 属脚本可见失败，VM 错误是终态。eval_handle 句柄经 clone 复用，call 的函数体用 function(){…} 形收 this。方言/--js 契约零动。，requests(opts)/snapshot(opts)/request_detail(sel,opts) 三支柱同源（与方言面同一实现）。全部 CDP 调用 30 秒上界、同源腿 60 秒上界、引擎忙 10 秒快错（不无界排队），丢响应快错不挂死；整体执行兜底硬界统一 60 秒缺省（--timeout 请求级覆写或 BROWSE_RUNE_TIMEOUT 旋钮，/eval 同道 BROWSE_EVAL_TIMEOUT；与 wait 族等待窗正交），超时/主动停止回执附结构化 timeout/stopped 面（op 在飞调用面、elapsed_ms、cause），CLI 侧 stderr 出一行 JSON。主动停止三道：browse rune stop（动词位，POST /rune/stop；脚本名恰为 stop 且无 --vars 会被当动词，用 @stop 或加 --vars 走脚本道）、引擎失联联动（两次探测断连即停 cause=engine_lost，兜非 CDP 等待段）、脚本侧原生控制流自停（select/分支加 Err 返回，error 面自带 CTA）。退出码三态：0 含脚本可见失败（main 返 Err/cdp::CdpError 走 ok:true 的 value.error 面），1 宿主终态（编译错/VM 错误/超时/被停），2 用法错。",
@@ -440,38 +440,6 @@ pub const COMMANDS: &[CmdSpec] = &[
         example: "browse ledger keygen",
     },
     CmdSpec {
-        name: "snippets-list",
-        kind: CmdKind::Cli,
-        signature: "browse snippets list [site] [--root <dir>]",
-        args: &[
-            arg!("site", "string", false, "目录/路径子串过滤"),
-            arg!(
-                "root",
-                "string",
-                false,
-                "--root 旗标 > BROWSE_SNIPPETS_ROOT env > 缺省状态目录 snippets/"
-            ),
-        ],
-        description: "列片段库（参数化 JS 命令小程序库）：片段根下递归走访（<site>/<task>.js 天然分层），每文件取首行 // 注释头当摘要。先查库再写新片段的纪律入口。根可外置：--root 旗标或 BROWSE_SNIPPETS_ROOT env 指向外部仓（如 prs_c2coe 内片段目录），缺省仍内置状态目录 snippets/；语义分工：workspace 存编排知识（域/页/意图技能），snippets 存参数化 JS 命令小程序（代码驻库，@ 实参加 --vars 传参即一条命令一个可复用小程序）。",
-        example: "browse snippets list",
-    },
-    CmdSpec {
-        name: "snippets-show",
-        kind: CmdKind::Cli,
-        signature: "browse snippets show <rel> [--root <dir>]",
-        args: &[
-            arg!("rel", "string", true),
-            arg!(
-                "root",
-                "string",
-                false,
-                "同 list（根三序旗标 > env > 内置）"
-            ),
-        ],
-        description: "看片段全文；配合 --js 管道、--js @<路径>（或 @ 加 --vars 模板传参执行）或 POST /eval 即「缺 helper 自己存」闭环；越出片段根的相对路径仍拦截（根随 --root/BROWSE_SNIPPETS_ROOT 配置走）；show 面要全名，@ 实参模板道可省 .js 后缀（两试补全）。",
-        example: "browse snippets show x.test/search-title.js",
-    },
-    CmdSpec {
         name: "workspace-status",
         kind: CmdKind::Cli,
         signature: "browse workspace status [--json]",
@@ -516,7 +484,7 @@ pub const COMMANDS: &[CmdSpec] = &[
         kind: CmdKind::Cli,
         signature: "browse workspace list",
         args: &[],
-        description: "列 workspace 在册资产：domain-skills/ 各站点段（文件清单，封顶同回执口径）与 page-skills/ 各 slug。",
+        description: "列 workspace 在册技能对（清仓重建后技能=mech.rn 加 probe.user.js 双脚本对，缺一不算）：domain-skills/ 各站点段与 page-skills/ 各 slug（文件清单为对内三件，封顶随旧文海退役）。",
         example: "browse workspace list",
     },
     CmdSpec {
@@ -527,7 +495,7 @@ pub const COMMANDS: &[CmdSpec] = &[
             arg!("段", "string", true),
             arg!("文件", "string", false, "缺省打该段清单"),
         ],
-        description: "读域名站点知识（goto 回执 domain_skills 的下钻面）：只给段打该段文件清单（文件名加首行标题），给 <段>/<文件> 读全文。",
+        description: "读域名站点技能对（goto 回执 domain_skills 的下钻面，清仓重建后技能=mech.rn 加 probe.user.js 双脚本对）：只给段交出该对的 README（无则路径摘要），给 <段>/<文件> 读段内文件全文。",
         example: "browse workspace site github",
     },
     CmdSpec {
@@ -535,8 +503,8 @@ pub const COMMANDS: &[CmdSpec] = &[
         kind: CmdKind::Cli,
         signature: "browse workspace page <slug>",
         args: &[arg!("slug", "string", true)],
-        description: "读页面特征机制配方全文（goto 回执 page_skills 的下钻面）：page-skills/<slug>.md。",
-        example: "browse workspace page captcha",
+        description: "读页面技能对（goto 回执 page_skills 的下钻面，清仓重建后技能=双脚本对）：交出 page-skills/<slug>/ 的 README（无则路径摘要，尾部附 mech.rn 与 probe.user.js 位置）。",
+        example: "browse workspace page challenge-stop",
     },
     CmdSpec {
         name: "serve",
@@ -1908,8 +1876,6 @@ pub const HELP_GROUPS: &[(&str, &[&str])] = &[
     (
         "片段与知识仓",
         &[
-            "browse snippets list",
-            "browse snippets show <rel>",
             "browse workspace status",
             "browse workspace install",
             "browse workspace update",

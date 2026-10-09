@@ -73,7 +73,7 @@ pub(crate) struct CdpState {
     /// tab 静默失手，旧 tab 的注册留到会话终）。
     world_sid: std::sync::Mutex<Option<String>>,
     /// `js_lib` 的片段库根。
-    snippets_root: std::path::PathBuf,
+    scripts_root: std::path::PathBuf,
     /// 管道参数道捕获串。
     stdin: String,
     /// 三支柱同源宿主函数束。
@@ -340,14 +340,14 @@ impl CdpState {
             return Err(cdp_err("js_lib", "缺库名"));
         }
         let mut tried: Vec<String> = Vec::new();
-        if self.snippets_root.canonicalize().is_ok() {
-            for cand in [self.snippets_root.join(name), {
-                let mut p = self.snippets_root.join(name);
+        if self.scripts_root.canonicalize().is_ok() {
+            for cand in [self.scripts_root.join(name), {
+                let mut p = self.scripts_root.join(name);
                 p.set_extension("js");
                 p
             }] {
                 if let (Ok(canon), Ok(root_canon)) =
-                    (cand.canonicalize(), self.snippets_root.canonicalize())
+                    (cand.canonicalize(), self.scripts_root.canonicalize())
                     && canon.starts_with(&root_canon)
                     && let Ok(body) = std::fs::read_to_string(&canon)
                 {
@@ -436,7 +436,7 @@ pub struct ModuleCtx {
     /// 结果回传槽（执行器所有）。
     pub result_slot: Arc<std::sync::Mutex<Option<String>>>,
     /// `js_lib` 的片段库根（daemon 侧三序收口后的终值）。
-    pub snippets_root: std::path::PathBuf,
+    pub scripts_root: std::path::PathBuf,
     /// 管道参数道捕获串（`cdp::stdin()` 的值；无管道即空串）。
     pub stdin: String,
     /// 三支柱同源宿主函数束（daemon 注入；进程内测试可缺省）。
@@ -467,7 +467,7 @@ pub fn cdp_module(ctx: ModuleCtx) -> Result<(Module, Cleanup), rune::ContextErro
     let ModuleCtx {
         session,
         result_slot,
-        snippets_root,
+        scripts_root,
         stdin,
         host_fns,
         op_probe,
@@ -496,7 +496,7 @@ pub fn cdp_module(ctx: ModuleCtx) -> Result<(Module, Cleanup), rune::ContextErro
         object_group: format!("browse-rune-{}", next_group_seq()),
         script_id: std::sync::Mutex::new(None),
         world_sid: std::sync::Mutex::new(None),
-        snippets_root,
+        scripts_root,
         stdin,
         host_fns,
         op_probe,

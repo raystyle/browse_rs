@@ -11,7 +11,7 @@
 //! 引擎策略：附着优先（探测 9222 / DevToolsActivePort），缺则 spawn
 //! clean-chrome 专属实例；`browse down` 只终结自己 spawn 的。
 
-use anyhow::{Result, anyhow, bail};
+use anyhow::{Result, anyhow};
 use browse_cli::client;
 use browse_core::snippet_complete;
 use rustyline::DefaultEditor;
@@ -30,7 +30,7 @@ enum Mode {
     /// `browse status`：看 daemon/引擎状态。
     Status,
     /// `browse events [--since <seq>] [--last <n>] [--clear]`：消费油猴事件
-    /// 回调（#77；userscript 经 GM_xmlhttpRequest POST /us-event 上报）。
+    /// 回调（#77；userscript 经 GM_xmlhttpRequest POST /events 上报，type 两档 see/stop）。
     Events {
         /// 序号游标（严格大于）。
         since: Option<u64>,
@@ -68,13 +68,6 @@ enum Mode {
     IssueList { limit: u32, before: Option<u64> },
     /// `browse issue show <id>`：看 issue 详情。
     IssueShow(String),
-    /// `browse snippets list [site] [--root <dir>]`：列片段库（#44；#65 根可外置）。
-    SnippetsList {
-        site: Option<String>,
-        root: Option<String>,
-    },
-    /// `browse snippets show <rel> [--root <dir>]`：看片段全文（#44；#65 根可外置）。
-    SnippetsShow { rel: String, root: Option<String> },
     /// `browse workspace status [--json]`：workspace 仓与 git 状态概览（#50/#51 配套）。
     WorkspaceStatus,
     /// `browse workspace install`：git clone 种子仓到仓根。
@@ -177,7 +170,7 @@ async fn main() -> Result<()> {
     let mut cli_timeout_s: Option<u64> = None;
     let mut secrets: Option<String> = None;
     // #66 命令小程序：--vars 键=值 可重复累积；snippets 根旗标（eval 面
-    // 模板道与 snippets 子命令共用一根，三序旗标 > env > 内置）
+    // 模板道与 rune js_lib 共用一根，旗标 > workspace scripts）
     let mut vars: Vec<String> = Vec::new();
     let mut snippets_root_flag: Option<String> = None;
     // 0.30.3 模板定界（缺省 ERB）：--vars-syntax classic|erb；件首行指令
@@ -253,7 +246,7 @@ async fn main() -> Result<()> {
             // #66 模板参：只收重复旗标累积（与 --engine-arg 同族），不收
             // 逗号分隔叠法（k=v 值本身可含逗号，歧义）；形状校验在使用口
             "--vars" => vars.push(args.next("--vars")),
-            // #65/#66 共用根旗标：eval 面模板道与 snippets 子命令同根
+            // #65/#66 共用根旗标：eval 面模板道与 rune js_lib 同根
             "--root" => snippets_root_flag = Some(args.next("--root")),
             "--vars-syntax" => vars_syntax_flag = Some(args.next("--vars-syntax")),
             // base64 通道只留长参：`-b` 短参是 issue new 的 --body 既有
@@ -549,64 +542,6 @@ async fn main() -> Result<()> {
                     mode = Mode::Rune { script };
                 }
             }
-            "snippets" if snippets.is_empty() && mode_is_eval(&mode) => {
-                match args.next("snippets").as_str() {
-                    "list" => {
-                        // #65 --root 旗标：外部片段库根（旗标 > env > 内置
-                        // 缺省）；[site] 位置过滤位保留
-                        let mut site = None;
-                        while let Some(a) = args.next_opt() {
-                            match a.as_str() {
-                                "--root" => {
-                                    snippets_root_flag = Some(args.next("--root"));
-                                }
-                                // 评审一轮 F1：-- 前缀未知旗标（含 --root= 等
-                                // 形）照旧 bail，不静默吃成位置位；G1：首位
-                                // 置位胜出，多余位置位用法错
-                                other if other.starts_with('-') => bail_flag_in_subcommand(other),
-                                other if site.is_none() => site = Some(other.to_string()),
-                                other => {
-                                    eprintln!(
-                                        "browse: snippets list 只要一个 site 过滤位（{other} 多余，退出 2）"
-                                    );
-                                    std::process::exit(2);
-                                }
-                            }
-                        }
-                        mode = Mode::SnippetsList {
-                            site,
-                            root: snippets_root_flag.clone(),
-                        };
-                    }
-                    "show" => {
-                        let mut rel = String::new();
-                        while let Some(a) = args.next_opt() {
-                            match a.as_str() {
-                                "--root" => {
-                                    snippets_root_flag = Some(args.next("--root"));
-                                }
-                                // 同 list：F1 未知旗标 bail + G1 首位置位胜出
-                                other if other.starts_with('-') => bail_flag_in_subcommand(other),
-                                other if rel.is_empty() => rel = other.to_string(),
-                                other => {
-                                    eprintln!(
-                                        "browse: snippets show 只要一个 rel 位（{other} 多余，退出 2）"
-                                    );
-                                    std::process::exit(2);
-                                }
-                            }
-                        }
-                        mode = Mode::SnippetsShow {
-                            rel,
-                            root: snippets_root_flag.clone(),
-                        };
-                    }
-                    other => {
-                        eprintln!("browse: snippets 子命令不认识 {other}（list/show，退出 2）");
-                        std::process::exit(2);
-                    }
-                }
-            }
             "workspace" if snippets.is_empty() && mode_is_eval(&mode) => {
                 match args.next("workspace").as_str() {
                     "status" => mode = Mode::WorkspaceStatus,
@@ -757,19 +692,13 @@ async fn main() -> Result<()> {
 
     // 维护命令：从 surface 目录重生成 schema/llms（提交 docs/surface/）
     // @ 实参双道（#64/#66）：给 --vars 走模板道（命令小程序：源先按
-    // snippets 根三序解析、越根候选跳过，未命中回落字面路径；Jinja 语法
+    // scripts 根解析、越根候选跳过，未命中回落字面路径；Jinja 语法
     // 渲染，未填键网络前拦 exit 2 带键名）；不给 --vars 走 #64 纯透传道
     // （零漂移：读文件直展开，字面大括号对天然不误伤）。两道都先于
     // --b64 解码；stdin 管道与 REPL 不经此（管道内容本身即片段体）
-    // 评审 #66 一轮 G1：--root 只配 snippets 子命令与 @+--vars 模板道，
+    // 评审 #66 一轮 G1：--root 只配 @+--vars 模板道与 rune js_lib，
     // 求值面漏给 --vars 时显式报用法错（防「根没生效」被误读成文件不存在）
-    if snippets_root_flag.is_some()
-        && vars.is_empty()
-        && !matches!(
-            mode,
-            Mode::SnippetsList { .. } | Mode::SnippetsShow { .. } | Mode::Rune { .. }
-        )
-    {
+    if snippets_root_flag.is_some() && vars.is_empty() && !matches!(mode, Mode::Rune { .. }) {
         eprintln!(
             "browse: --root 在求值面只配 @ 实参加 --vars 模板道（漏 --vars 则根不生效；退出 2）"
         );
@@ -789,7 +718,7 @@ async fn main() -> Result<()> {
                 })
             })
             .collect();
-        let (root, _explicit) = snippets_root(snippets_root_flag.clone());
+        let (root, _explicit) = scripts_root(snippets_root_flag.clone());
         for snip in &mut snippets {
             if let Some(name) = snip.strip_prefix('@') {
                 let (_path, body) =
@@ -944,9 +873,9 @@ async fn main() -> Result<()> {
         // 没起过就没有事件），提示口径同 status
         Mode::Events { since, last, clear } => {
             if clear {
-                client::us_events_clear().await?;
+                client::events_clear().await?;
             }
-            match client::us_events(since, last).await {
+            match client::events_ring(since, last).await {
                 Ok(v) => {
                     println!("{}", serde_json::to_string_pretty(&v)?);
                     Ok(())
@@ -1238,78 +1167,6 @@ async fn main() -> Result<()> {
             Ok(())
         }
         // ---- 片段库（#44）：纯文件系统读，零协议改动，不经 daemon ----
-        Mode::SnippetsList { site, root } => {
-            let (root, explicit) = snippets_root(root);
-            // 评审一轮 G2 + 二轮 G10：显式配置根（旗标/env）不存在或
-            // 不是目录时报配置错而非「片段库为空」——拼错根与真空库
-            // 可分；内置缺省根不在册时仍走空库引导面（#44 契约）
-            if explicit && !root.is_dir() {
-                if root.exists() {
-                    bail!(
-                        "片段库根不是目录（{}）；下一步：核对 --root / BROWSE_SNIPPETS_ROOT 配置",
-                        root.display()
-                    );
-                }
-                bail!(
-                    "片段库目录不存在（{}）；下一步：核对 --root / BROWSE_SNIPPETS_ROOT 配置，或先建目录再 browse snippets list",
-                    root.display()
-                );
-            }
-            let mut found = 0usize;
-            visit_snippets(&root, &root, site.as_deref(), &mut |rel, header| {
-                found += 1;
-                println!("{rel}  {header}");
-            });
-            if found == 0 {
-                eprintln!(
-                    "片段库为空（{}）；下一步：把可复用片段存成文件（首行 // 用途： 注释头），再 browse snippets list",
-                    root.display()
-                );
-            }
-            Ok(())
-        }
-        Mode::SnippetsShow { rel, root } => {
-            if rel.is_empty() {
-                // 用法错直出 exit 2（#53 评审 F1：G-F 口径补齐——snippets
-                // show 从无 Mode 层缺参守卫，裸调曾落「片段 不存在」exit 1
-                // 的误导面，与 workspace site/page 同款收口）
-                eprintln!(
-                    "browse: snippets show 缺 rel；用法：browse snippets show <rel>（退出 2）"
-                );
-                std::process::exit(2);
-            }
-            let (root, _explicit) = snippets_root(root);
-            let path = root.join(&rel);
-            // 越界守卫（#44 评审 F2）：canonicalize 后必须仍在库内，挡
-            // 绝对路径、../ 与符号链接出库
-            let Ok(canon) = path.canonicalize() else {
-                bail!(
-                    "片段 {rel} 不存在（{}）；下一步：browse snippets list 看在册片段",
-                    path.display()
-                );
-            };
-            let Ok(root_canon) = root.canonicalize() else {
-                bail!(
-                    "片段库目录不存在（{}）；下一步：browse snippets list 看在册片段",
-                    root.display()
-                );
-            };
-            if !canon.starts_with(&root_canon) {
-                bail!(
-                    "片段 {rel} 越出片段库（只许库内相对路径）；下一步：browse snippets list 看在册片段"
-                );
-            }
-            match std::fs::read_to_string(&path) {
-                Ok(text) => {
-                    println!("{text}");
-                    Ok(())
-                }
-                Err(_) => bail!(
-                    "片段 {rel} 不存在（{}）；下一步：browse snippets list 看在册片段",
-                    path.display()
-                ),
-            }
-        }
         // ---- workspace 单仓（#50/#51 配套）：git 与文件系统操作，
         // 不经 daemon；blocking 全收 spawn_blocking（chrome_mgr 同构） ----
         Mode::WorkspaceStatus => {
@@ -1533,7 +1390,7 @@ async fn main() -> Result<()> {
                     })
                 })
                 .collect();
-            let (root, _explicit) = snippets_root(snippets_root_flag.clone());
+            let (root, _explicit) = scripts_root(snippets_root_flag.clone());
             let body = match &piped_source {
                 Some(src) => src.clone(),
                 None => {
@@ -1560,7 +1417,7 @@ async fn main() -> Result<()> {
                             Ok(b) => b,
                             Err(e) => {
                                 eprintln!(
-                                    "browse: rune 读脚本失败 {target}：{e}；下一步：核对路径，或 @名 走 snippets 根（browse snippets list 看在册）（退出 2）"
+                                    "browse: rune 读脚本失败 {target}：{e}；下一步：核对路径，或 @名 走 scripts 根（workspace scripts/ 在册）（退出 2）"
                                 );
                                 std::process::exit(2);
                             }
@@ -1807,19 +1664,15 @@ fn mode_is_eval(m: &Mode) -> bool {
 
 /// #65 片段库根三序：`--root` 旗标 > `BROWSE_SNIPPETS_ROOT` env > 内置
 /// 缺省（env 腿的「谁算显式」单源归
-/// [`browse_core::paths::snippets_root_explicit`]，评审二轮 G8；空串
-/// 旗标视同未给，与 env 空串回落同规——评审一轮 G6）。返回
-/// `(根, 是否显式配置)`：显式根不存在/不是目录时 list 面报配置错
-/// （评审一轮 G2、二轮 G10，拼错根与真空库可分），内置缺省根不存在
-/// 维持「片段库为空」引导面（bootstrap 友好，#44 契约不破）。
-fn snippets_root(flag: Option<String>) -> (std::path::PathBuf, bool) {
+/// 脚本根收口（总台令 2026-10-09 snippets 剔除淘汰）：`--root` 旗标 >
+/// workspace 序首根 `scripts/`（[`browse_core::paths::scripts_root`]）。
+/// 空串旗标视同未给。返回 `(根, 是否显式配置)`：显式根不存在/不是
+/// 目录时报配置错（拼错根与真空库可分），缺省根不在册维持空引导面。
+fn scripts_root(flag: Option<String>) -> (std::path::PathBuf, bool) {
     if let Some(f) = flag.filter(|f| !f.is_empty()) {
         return (std::path::PathBuf::from(f), true);
     }
-    match browse_core::paths::snippets_root_explicit() {
-        Some(p) => (p, true),
-        None => (browse_core::paths::snippets_root(), false),
-    }
+    (browse_core::paths::scripts_root(), false)
 }
 
 // 旗标原样透传求值前置的 engine_up，不做参数束重构（与 up 面同一套旗标族）
@@ -2225,57 +2078,4 @@ fn print_workspace_status(st: &serde_json::Value) {
         st["domainFiles"].as_u64().unwrap_or(0),
         st["pageSlugs"].as_u64().unwrap_or(0),
     );
-}
-
-/// 递归走访片段库（#44）：目录形 `<site>/<task>.js` 天然分层；每文件取首行
-/// `//` 注释头当摘要。只读，不建目录不写文件。
-fn visit_snippets(
-    root: &std::path::Path,
-    dir: &std::path::Path,
-    site: Option<&str>,
-    out: &mut dyn FnMut(&str, &str),
-) {
-    let Ok(entries) = std::fs::read_dir(dir) else {
-        return;
-    };
-    for e in entries.flatten() {
-        let p = e.path();
-        // 符号链接跳过（#64/#65 评审 G3 存量收口）：file_type 不随链接走，
-        // 链接目录与链接文件都不进清单（show 面已有越根守卫，list 对齐）
-        if e.file_type().map(|t| t.is_symlink()).unwrap_or(false) {
-            continue;
-        }
-        if p.is_dir() {
-            // site 过滤：目录名前缀匹配
-            let name = p.file_name().and_then(|n| n.to_str()).unwrap_or("");
-            if site.is_none_or(|want| name.contains(want)) {
-                visit_snippets(root, &p, site, out);
-            }
-        } else if p
-            .extension()
-            .and_then(|x| x.to_str())
-            .is_some_and(|x| x == "js" || x == "browse" || x == "txt")
-        {
-            let rel = p
-                .strip_prefix(root)
-                .ok()
-                .and_then(|r| r.to_str())
-                .unwrap_or_else(|| p.to_str().unwrap_or("?"));
-            if let Some(site) = site
-                && !rel.split('/').next().is_some_and(|seg| seg.contains(site))
-                && !rel.contains(site)
-            {
-                continue;
-            }
-            let header = std::fs::read_to_string(&p)
-                .ok()
-                .and_then(|t| {
-                    t.lines()
-                        .find(|l| l.trim_start().starts_with("//"))
-                        .map(|l| l.trim().trim_start_matches('/').trim().to_string())
-                })
-                .unwrap_or_default();
-            out(rel, &header);
-        }
-    }
 }

@@ -355,7 +355,9 @@ mod tests {
         let ws = std::env::temp_dir().join(format!("browse-fetch-sk56-{}", std::process::id()));
         let seg = ws.join("domain-skills").join("x");
         std::fs::create_dir_all(&seg).unwrap();
-        std::fs::write(seg.join("notes.md"), "# x").unwrap();
+        // 双脚本对形（清仓重建）：成对才算站点知识
+        std::fs::write(seg.join("mech.rn"), "pub async fn main() {}").unwrap();
+        std::fs::write(seg.join("probe.user.js"), "// probe").unwrap();
         let saved = std::env::var_os("BROWSE_WORKSPACE");
         // SAFETY: TEST_ENV_LOCK 窗内独占改 env，块尾按原值还原
         unsafe { std::env::set_var("BROWSE_WORKSPACE", &ws) };
@@ -367,7 +369,7 @@ mod tests {
         add_domain_skills("https://www.x.com/a", &mut http);
         assert_eq!(
             http.get("domain_skills"),
-            Some(&json!(["notes.md"])),
+            Some(&json!(["mech.rn", "probe.user.js"])),
             "{http}"
         );
         assert!(
@@ -385,7 +387,7 @@ mod tests {
         add_domain_skills("https://www.x.com/a", &mut engine);
         assert_eq!(
             engine.get("domain_skills"),
-            Some(&json!(["notes.md"])),
+            Some(&json!(["mech.rn", "probe.user.js"])),
             "{engine}"
         );
         // 未命中：键集恰为现状六键（逐字节一致的等价断言，BTreeMap 键序）

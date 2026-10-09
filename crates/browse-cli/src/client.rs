@@ -663,9 +663,9 @@ pub fn render_template_with(
     }
 }
 
-/// 模板源解析（#66）：`--vars` 模板道的 @ 实参解析序——snippets 根
+/// 模板源解析（#66）：`--vars` 模板道的 @ 实参解析序——scripts 根
 /// 第一等：`根/<名>` 原样与 `根/<名>.js` 两试（命中且 canonicalize 后
-/// 仍在根内即用；越根候选跳过根道，守卫语义同 snippets show）；
+/// 仍在根内即用；越根候选跳过根道，守卫语义同仓内读）；
 /// 根未命中回落字面路径（`#64` 语义：绝对/相对皆可，cwd 基准）。
 /// 返回 `(命中路径, 源码)`；全未命中报错列出试过的位。
 ///
@@ -731,7 +731,7 @@ pub fn load_template_ext(
     }
     tried.push(name.to_string());
     anyhow::bail!(
-        "{kind} {name} 未命中（试过：{}）；下一步：browse snippets list 看库内在册，或核对文件路径",
+        "{kind} {name} 未命中（试过：{}）；下一步：核对文件路径，或 browse workspace list 看在册资产",
         tried.join("、")
     );
 }
@@ -753,7 +753,7 @@ pub async fn health() -> Result<Value> {
 /// # Errors
 ///
 /// daemon 不在或响应坏。
-pub async fn us_events(since: Option<u64>, last: Option<usize>) -> Result<Value> {
+pub async fn events_ring(since: Option<u64>, last: Option<usize>) -> Result<Value> {
     let mut url = format!("{}/events", http());
     if let Some(s) = since {
         url.push_str(&format!("?since={s}"));
@@ -775,7 +775,7 @@ pub async fn us_events(since: Option<u64>, last: Option<usize>) -> Result<Value>
 /// # Errors
 ///
 /// daemon 不在或响应坏。
-pub async fn us_events_clear() -> Result<Value> {
+pub async fn events_clear() -> Result<Value> {
     client()
         .delete(format!("{}/events", http()))
         .send()
@@ -1005,7 +1005,7 @@ mod tests {
         d
     }
 
-    /// #66 模板源解析序：snippets 根第一等（原样 + 补 .js 两试），越根
+    /// #66 模板源解析序：scripts 根第一等（原样 + 补 .js 两试），越根
     /// 候选跳过根道；根未命中回落字面路径。纯文件系统，零网络。
     #[test]
     fn template_resolution_root_first_then_fallback() {
