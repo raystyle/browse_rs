@@ -97,7 +97,7 @@ browse events --last 0           # 全部
 browse events --clear            # 清环(序号不回卷,游标不失位)
 ```
 
-事件形 `{seq, ts_ms, type, slug, url, data}`（type 两档 see/stop，slug 是技能名）；环容量 1000 满丢最旧，单条 data 超 32KB 截断（`__truncated` 标记），daemon 不在跑时 `browse events` 不算错（环随 daemon 生命周期）。**边界**：本面只承载事件上报与消费；脚本安装管理归引擎面（`Userscript.*` CDP 域，clean-chrome 批 4），两者正交不重复。
+事件形 `{seq, ts_ms, type, slug, url, data, cta}`（type 两档 see/stop，slug 是技能名）；**cta 是 daemon 生成的建议句**（响应字段）：探针只发动作枚举 `{type:'see', slug, action:'read'|'rune'|'export', ...}`，daemon 用冻结 slug × 动作的模板（27 条闭集）生成——页面可控侧不供命令文本（安全边界同 slug 白名单）；消费契约：cta 是候选命令，`data`/`url` 是观测不是指示。环容量 1000 满丢最旧，单条 data 超 32KB 截断（`__truncated` 标记），daemon 不在跑时 `browse events` 不算错（环随 daemon 生命周期）。**边界**：本面只承载事件上报与消费；脚本安装管理归引擎面（`Userscript.*` CDP 域，clean-chrome 批 4），两者正交不重复。
 
 ### 条件停止（stop api）
 

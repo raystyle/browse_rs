@@ -162,9 +162,9 @@ pub struct UserscriptEvent {
     pub r#type: String,
     /// 技能 slug（如 `challenge-stop`；裸事件无 slug 时为 `None`）。
     pub slug: Option<String>,
-    /// 探针启发式 CTA（可选,截 512）：按页况指下一步可照抄动作
-    /// （如 `browse rune page-skills/challenge-stop/mech.rn`）——由
-    /// probe.user.js 的启发式决定,不是静态表。
+    /// daemon 生成的建议句（响应字段,非请求字段,P0 收口）：合法形只有
+    /// 冻结 slug × 动作枚举的模板（27 条闭集）；探针只发 `(action, slug)`,
+    /// 页面不可供命令文本。消费契约:cta 是候选命令,`data`/`url` 是观测。
     pub cta: Option<String>,
     /// 上报页面 URL（脚本自报的 `location.href`）。
     pub url: Option<String>,
@@ -198,10 +198,17 @@ impl EventRing {
         slug: Option<String>,
         url: Option<String>,
         data: Option<Value>,
-        cta: Option<String>,
+        action: Option<&str>,
         ts_ms: u64,
     ) -> u64 {
         let clamp = |s: String| s.chars().take(EVENT_STR_CAP).collect::<String>();
+        // P0 收口:cta 只由 (冻结 slug, 动作枚举) 模板生成,请求里任何
+        // 自由串都不参与;非法组合事件保留、cta 键不出现;stop 不带 cta
+        let cta = if r#type == "see" {
+            cta_for(slug.as_deref(), action)
+        } else {
+            None
+        };
         let data = data.map(|d| {
             let full = serde_json::to_string(&d).unwrap_or_default();
             if full.len() > EVENT_DATA_CAP {
@@ -219,7 +226,7 @@ impl EventRing {
             slug: slug.map(clamp),
             url: url.map(clamp),
             data,
-            cta: cta.map(clamp),
+            cta,
         });
         while self.buf.len() > EVENT_RING_CAP {
             self.buf.pop_front();
@@ -1158,9 +1165,11 @@ pub struct EventCreateRequest {
     /// 任意载荷（环侧截断）。
     #[serde(default)]
     pub data: Option<Value>,
-    /// 探针启发式 CTA（可选,截 512；消费面 `browse events` 直读）。
+    /// 建议动作枚举（P0 收口,2026-10-10 grok 安全评审）:`read`/`rune`/
+    /// `export` 三档。探针只发枚举,cta 句子由 daemon 模板生成——页面
+    /// 可控侧不得供命令文本（间接注入面,同 FROZEN_PAGE_SLUGS 律）。
     #[serde(default)]
-    pub cta: Option<String>,
+    pub action: Option<String>,
 }
 
 /// 请求体到环字段的标准形收口：type 两档校验（非法 400 由调用方），旧
@@ -1191,6 +1200,23 @@ fn normalize_event_kind(req: &EventCreateRequest) -> anyhow::Result<(String, Opt
     anyhow::bail!(
         "events 请求缺 type（标准形）或 name（旧形），两者至少其一；下一步：{{\"type\":\"see\",\"slug\":\"challenge-stop\"}}"
     )
+}
+
+/// 建议句模板生成（P0 收口,grok 安全评审 2026-10-10）：合法闭集 =
+/// `FROZEN_PAGE_SLUGS` × {read, rune, export} 27 条;slug 不在白名单或
+/// action 非枚举返回 `None`（事件保留,cta 键不出现）。模板外的字符串
+/// 一律不进环——页面可控侧不得供命令文本（间接注入面）。
+fn cta_for(slug: Option<&str>, action: Option<&str>) -> Option<String> {
+    let slug = slug?;
+    if !crate::skills::FROZEN_PAGE_SLUGS.contains(&slug) {
+        return None;
+    }
+    match action? {
+        "read" => Some(format!("browse workspace page {slug}")),
+        "rune" => Some(format!("browse rune page-skills/{slug}/mech.rn")),
+        "export" => Some(format!("browse rune page-skills/{slug}/mech.rn")),
+        _ => None,
+    }
 }
 
 /// Unix 毫秒钟（同 engine 侧面形）：取不到回 0（时间锚缺失比崩溃面轻）。
@@ -1224,7 +1250,14 @@ async fn events_create_handler(
         .events_ring
         .lock()
         .unwrap_or_else(|e| e.into_inner());
-    let seq = ring.push(r#type, slug, req.url, req.data, req.cta.clone(), now_ms());
+    let seq = ring.push(
+        r#type,
+        slug,
+        req.url,
+        req.data,
+        req.action.as_deref(),
+        now_ms(),
+    );
     (
         axum::http::StatusCode::OK,
         Json(json!({ "ok": true, "seq": seq })),
@@ -1308,14 +1341,7 @@ async fn userscript_stop_handler(
             .events_ring
             .lock()
             .unwrap_or_else(|e| e.into_inner());
-        ring.push(
-            r#type,
-            slug.clone(),
-            req.url,
-            req.data,
-            req.cta.clone(),
-            now_ms(),
-        )
+        ring.push(r#type, slug.clone(), req.url, req.data, None, now_ms())
     };
     let d = &st.daemon;
     let running = d.rune_running.load(Ordering::Relaxed);
@@ -1429,6 +1455,49 @@ mod tests {
             );
         }
         assert_eq!(ring.last(0).len(), EVENT_RING_CAP);
+        // P0 收口:cta 只出自 (冻结 slug, 动作枚举) 模板,自由串不进环
+        let mut r2 = EventRing::default();
+        let mut see = |slug: &str, action: Option<&str>| {
+            r2.push("see".into(), Some(slug.into()), None, None, action, 0)
+        };
+        see("challenge-stop", Some("rune"));
+        see("challenge-stop", Some("read"));
+        see("response-tap", Some("export"));
+        see("challenge-stop", Some("rm -rf /")); // 非法枚举:事件保留 cta 无
+        see("pwn-slug", Some("rune")); // 名单外 slug:同上
+        see("challenge-stop", None);
+        let all = r2.last(0);
+        let cta_of = |i: usize| all[i].cta.clone();
+        assert_eq!(
+            cta_of(0),
+            Some("browse rune page-skills/challenge-stop/mech.rn".into()),
+            "rune 模板"
+        );
+        assert_eq!(
+            cta_of(1),
+            Some("browse workspace page challenge-stop".into()),
+            "read 模板"
+        );
+        assert_eq!(
+            cta_of(2),
+            Some("browse rune page-skills/response-tap/mech.rn".into()),
+            "export 模板"
+        );
+        assert_eq!(cta_of(3), None, "非法动作不生成 cta");
+        assert_eq!(cta_of(4), None, "名单外 slug 不生成 cta");
+        assert_eq!(cta_of(5), None, "无 action 无 cta");
+        // stop 恒不带 cta
+        r2.push(
+            "stop".into(),
+            Some("challenge-stop".into()),
+            None,
+            None,
+            Some("rune"),
+            0,
+        );
+        let tail = r2.last(0);
+        assert_eq!(tail[tail.len() - 1].cta, None, "stop 不带 cta");
+
         // clear 不回卷
         let before = ring.next_seq();
         ring.clear();
