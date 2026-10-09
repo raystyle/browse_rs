@@ -3,7 +3,7 @@ id: REQ-034
 title: 油猴事件回调面与显式路径快败（封 v0.31.0；账本 #77/#76）
 status: implemented
 priority: must
-trace: 待封版树回填
+trace: 封版树 92faabc（门禁全套绿：fmt/clippy -D warnings/test 308+doc 51/aidoc --check --strict/surface 契约 9/PEVO 11 过）；release.ps1 -Tag v0.31.0 发布毕（dist 六件、三端解包冒烟、gh 直发 --latest）；#76 守卫实弹：跨宿主场景（WSL daemon 在跑 + win CLI 异宿主路径 up --pipe）129ms 秒错带指引（修前同场景 100s+ 挂）；修后 win 五腿门（0.31.0 驱动）exit 0 全过；#77 全链 E2E：us-e-reporter 双事件（page-ready/dom-click）经 GM_xmlhttpRequest 落环、CLI 双证收（/tmp/us-acceptance/us-event-e2e.ps1 幂等可复跑）
 ---
 
 # REQ-034：油猴事件回调面与显式路径快败
