@@ -3,7 +3,7 @@ id: REQ-035
 title: workspace 双脚本对重建与 stop api（封 v0.32.0；snippets 剔除）
 status: implemented
 priority: must
-trace: 待封版树回填
+trace: 封版树 2637bbe（门禁全套绿：303+50+clippy+aidoc+surface+PEVO 11；手册 108/120）；release.ps1 -Tag v0.32.0 发布毕（dist 六件）；workspace 仓清仓重建 c70db00 已推（九对+_prelude+scripts+新 README；旧料归档分支 archive/pre-pairs-2026-10-09）；E2E 七腿绿（/tmp/us-acceptance/pairs-e2e.ps1，stop 打断 2.4s 断 60s 编排）+真仓实弹（~/.browse-rs/workspace@c70db00 的 challenge-stop 判定链 CONFIRMED 点名）
 ---
 
 # REQ-035：workspace 双脚本对重建与 stop api
