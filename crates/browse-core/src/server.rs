@@ -179,6 +179,9 @@ pub struct UserscriptEvent {
 pub struct EventRing {
     next_seq: u64,
     buf: std::collections::VecDeque<UserscriptEvent>,
+    /// P1 服务端下限表（grok 评审）：`(slug, action)` 最近接纳时刻(ms),
+    /// see 事件同键 2 秒内拒收（客户端 throttleMs 是省请求,这才是界）。
+    floor: std::collections::HashMap<(String, String), u64>,
 }
 
 /// 事件环容量：1000 条（页面侧失控上报也不打爆 daemon 内存）。
@@ -187,11 +190,28 @@ const EVENT_RING_CAP: usize = 1000;
 const EVENT_STR_CAP: usize = 512;
 /// 单条事件 `data` 序列化字节上限：超出截断并以 `__truncated` 标记。
 const EVENT_DATA_CAP: usize = 32 * 1024;
+/// P1 服务端下限窗：同一 `(slug, action)` 的 see 事件 2 秒内只收一条。
+const EVENT_FLOOR_MS: u64 = 2_000;
+/// P1 单 slug 在环的 see 条数帽：失控探针不许独占环（stop 不计不受逐）。
+const EVENT_PER_SLUG_CAP: usize = 20;
+/// P1 cta 优先序（冻结,安全类先于爬虫类）：`next` 的选取依据。
+pub const CTA_PRIORITY: &[&str] = &[
+    "challenge-stop",
+    "antibot-vendor",
+    "fingerprint-watch",
+    "policy-surface",
+    "scroll-until-end",
+    "next-page",
+    "spa-route",
+    "response-tap",
+    "link-table",
+];
 
 impl EventRing {
     /// 入环一条（标准形）：`type` 两档、`slug` 可空（各字段超限截断），
     /// `data` 序列化超上限字节截断成 `{__truncated: true, bytes: 原长}`。
-    /// 返回分配的序号。
+    /// 返回分配的序号;P1 服务端下限命中（see 同 `(slug, action)` 2 秒内
+    /// 重复）返回 `None`（事件不入环）。
     pub fn push(
         &mut self,
         r#type: String,
@@ -200,8 +220,21 @@ impl EventRing {
         data: Option<Value>,
         action: Option<&str>,
         ts_ms: u64,
-    ) -> u64 {
+    ) -> Option<u64> {
         let clamp = |s: String| s.chars().take(EVENT_STR_CAP).collect::<String>();
+        // P1 服务端下限:see 同 (slug, action) 2 秒内拒收(返回 None,
+        // 调用方回 throttled;stop 不设下限——打断信号不容丢)。首见键
+        // 不查下限(floor 表里没有即从未收过)
+        let key = (
+            slug.clone().unwrap_or_default(),
+            action.unwrap_or_default().to_string(),
+        );
+        if r#type == "see"
+            && let Some(last) = self.floor.get(&key)
+            && ts_ms.saturating_sub(*last) < EVENT_FLOOR_MS
+        {
+            return None;
+        }
         // P0 收口:cta 只由 (冻结 slug, 动作枚举) 模板生成,请求里任何
         // 自由串都不参与;非法组合事件保留、cta 键不出现;stop 不带 cta
         let cta = if r#type == "see" {
@@ -219,6 +252,7 @@ impl EventRing {
         });
         let seq = self.next_seq;
         self.next_seq = self.next_seq.saturating_add(1);
+        let is_see = r#type == "see";
         self.buf.push_back(UserscriptEvent {
             seq,
             ts_ms,
@@ -228,10 +262,54 @@ impl EventRing {
             data,
             cta,
         });
-        while self.buf.len() > EVENT_RING_CAP {
-            self.buf.pop_front();
+        if is_see {
+            self.floor.insert(key, ts_ms);
         }
-        seq
+        // P1 驱逐律:先满 per-slug 帽再满环帽,都只逐 see 不逐 stop
+        // (stop 条数天然少且是打断信号,不许被观测挤掉)
+        self.enforce_caps();
+        Some(seq)
+    }
+
+    /// P1 容量纪律:驱逐只针对 see。per-slug 帽从最旧逐起;环帽优先逐
+    /// 最旧的 see,全是 stop 时才逐最旧条目(理论不会到:帽 1000 远大于
+    /// stop 量级)。
+    fn enforce_caps(&mut self) {
+        let mut per_slug: std::collections::HashMap<String, usize> =
+            std::collections::HashMap::new();
+        for e in &self.buf {
+            if e.r#type == "see"
+                && let Some(s) = &e.slug
+            {
+                *per_slug.entry(s.clone()).or_default() += 1;
+            }
+        }
+        for (s, n) in per_slug {
+            let mut to_drop = n.saturating_sub(EVENT_PER_SLUG_CAP);
+            if to_drop == 0 {
+                continue;
+            }
+            let mut i = 0;
+            while i < self.buf.len() && to_drop > 0 {
+                let hit = self.buf[i].r#type == "see" && self.buf[i].slug.as_deref() == Some(&s);
+                if hit {
+                    self.buf.remove(i);
+                    to_drop -= 1;
+                } else {
+                    i += 1;
+                }
+            }
+        }
+        while self.buf.len() > EVENT_RING_CAP {
+            match self.buf.iter().position(|e| e.r#type == "see") {
+                Some(i) => {
+                    self.buf.remove(i);
+                }
+                None => {
+                    self.buf.pop_front();
+                }
+            }
+        }
     }
 
     /// 取序号严格大于 `since` 的全部事件（升序）。
@@ -255,6 +333,23 @@ impl EventRing {
     /// 下一个将分配的序号（消费面回执的 `nextSeq`）。
     pub fn next_seq(&self) -> u64 {
         self.next_seq
+    }
+
+    /// P1 `next` 选取：全环带合法 cta 的 see 里，按 [`CTA_PRIORITY`]
+    /// 取优先级最高（序值最小）的一条；同级取最新（尾部）。空环或无
+    /// 建议返回 `None`。stop 不参与（它已走打断道，不该再领 agent）。
+    pub fn next_cta(&self) -> Option<UserscriptEvent> {
+        self.buf
+            .iter()
+            .rev()
+            .filter(|e| e.r#type == "see" && e.cta.is_some())
+            .min_by_key(|e| {
+                e.slug
+                    .as_deref()
+                    .and_then(|s| CTA_PRIORITY.iter().position(|p| *p == s))
+                    .unwrap_or(usize::MAX)
+            })
+            .cloned()
     }
 }
 
@@ -1250,18 +1345,24 @@ async fn events_create_handler(
         .events_ring
         .lock()
         .unwrap_or_else(|e| e.into_inner());
-    let seq = ring.push(
+    match ring.push(
         r#type,
         slug,
         req.url,
         req.data,
         req.action.as_deref(),
         now_ms(),
-    );
-    (
-        axum::http::StatusCode::OK,
-        Json(json!({ "ok": true, "seq": seq })),
-    )
+    ) {
+        Some(seq) => (
+            axum::http::StatusCode::OK,
+            Json(json!({ "ok": true, "seq": seq })),
+        ),
+        // P1 服务端下限命中:事件不入环（2 秒同键重复）,回 throttled 而非错
+        None => (
+            axum::http::StatusCode::OK,
+            Json(json!({ "ok": true, "throttled": true })),
+        ),
+    }
 }
 
 /// `GET /events` 查询参（#77 消费面）：`since` 序号游标与 `last`
@@ -1299,9 +1400,13 @@ async fn events_handler(
         None => ring.last(last.unwrap_or(20)),
     };
     let next = ring.next_seq();
+    // P1 `next`:全环按冻结优先序(CTA_PRIORITY,安全类先于爬虫类)取
+    // 最高优先的未消费建议(带合法 cta 的 see);同级取最新。agent 可
+    // 忽略它只看 events,也可只跟 next——挑战与采集并存时先看挑战。
+    let next_cta = ring.next_cta();
     (
         axum::http::StatusCode::OK,
-        Json(json!({ "ok": true, "events": events, "nextSeq": next })),
+        Json(json!({ "ok": true, "events": events, "nextSeq": next, "next": next_cta })),
     )
 }
 
@@ -1334,14 +1439,16 @@ async fn userscript_stop_handler(
         Ok(v) => v,
         Err(e) => return err_response(e),
     };
-    // 先入环（副本，browse events 可见同 seq）
+    // 先入环（副本，browse events 可见同 seq;stop 不设下限恒入环）
     let seq = {
         let mut ring = st
             .daemon
             .events_ring
             .lock()
             .unwrap_or_else(|e| e.into_inner());
+        let ns = ring.next_seq();
         ring.push(r#type, slug.clone(), req.url, req.data, None, now_ms())
+            .unwrap_or(ns)
     };
     let d = &st.daemon;
     let running = d.rune_running.load(Ordering::Relaxed);
@@ -1421,7 +1528,7 @@ mod tests {
                     None,
                     1_700_000_000_000 + i
                 ),
-                i
+                Some(i)
             );
         }
         assert_eq!(ring.next_seq(), 5);
@@ -1503,6 +1610,168 @@ mod tests {
         ring.clear();
         assert!(ring.last(0).is_empty());
         assert_eq!(ring.next_seq(), before);
+    }
+
+    /// P1 三件:服务端下限(2 秒同键拒收)、per-slug 封顶(stop 免逐)、
+    /// next_cta 冻结优先序(安全类先于爬虫类,同级取最新)。
+    #[test]
+    fn event_ring_p1_floor_caps_next() {
+        let mut r = EventRing::default();
+        // 下限:同 (slug,action) 2 秒内第二条拒收
+        let t = 1_700_000_000_000u64;
+        assert_eq!(
+            r.push(
+                "see".into(),
+                Some("challenge-stop".into()),
+                None,
+                None,
+                Some("rune"),
+                t
+            ),
+            Some(0)
+        );
+        assert_eq!(
+            r.push(
+                "see".into(),
+                Some("challenge-stop".into()),
+                None,
+                None,
+                Some("rune"),
+                t + 1_000
+            ),
+            None,
+            "2 秒内同键拒收"
+        );
+        assert_eq!(
+            r.push(
+                "see".into(),
+                Some("challenge-stop".into()),
+                None,
+                None,
+                Some("rune"),
+                t + 2_001
+            ),
+            Some(1),
+            "过窗再收"
+        );
+        // 不同 action 不同键,不撞
+        assert!(
+            r.push(
+                "see".into(),
+                Some("challenge-stop".into()),
+                None,
+                None,
+                Some("read"),
+                t + 1_000
+            )
+            .is_some()
+        );
+        // stop 不设下限
+        assert!(
+            r.push(
+                "stop".into(),
+                Some("challenge-stop".into()),
+                None,
+                None,
+                Some("rune"),
+                t + 1_000
+            )
+            .is_some()
+        );
+        // per-slug 封顶:同 slug 灌 25 条 see(ts 各隔 3 秒防下限),只留 20
+        let mut r2 = EventRing::default();
+        for i in 0..25u64 {
+            r2.push(
+                "see".into(),
+                Some("response-tap".into()),
+                None,
+                None,
+                Some("export"),
+                t + i * 3_000,
+            );
+        }
+        assert_eq!(r2.last(0).len(), EVENT_PER_SLUG_CAP, "per-slug 帽生效");
+        // stop 免逐:先塞 stop 再灌满,stop 还在
+        let mut r3 = EventRing::default();
+        r3.push(
+            "stop".into(),
+            Some("challenge-stop".into()),
+            None,
+            None,
+            None,
+            t,
+        );
+        for i in 0..25u64 {
+            r3.push(
+                "see".into(),
+                Some("response-tap".into()),
+                None,
+                None,
+                Some("export"),
+                t + i * 3_000,
+            );
+        }
+        assert!(
+            r3.last(0).iter().any(|e| e.r#type == "stop"),
+            "stop 不被 see 挤掉"
+        );
+        // next_cta:安全类(challenge-stop)压爬虫类(response-tap);同级取最新
+        let mut r4 = EventRing::default();
+        r4.push(
+            "see".into(),
+            Some("response-tap".into()),
+            None,
+            None,
+            Some("export"),
+            t,
+        );
+        r4.push(
+            "see".into(),
+            Some("challenge-stop".into()),
+            None,
+            None,
+            Some("rune"),
+            t + 3_000,
+        );
+        r4.push(
+            "see".into(),
+            Some("antibot-vendor".into()),
+            None,
+            None,
+            Some("read"),
+            t + 6_000,
+        );
+        let n = r4.next_cta().expect("有建议");
+        assert_eq!(n.slug.as_deref(), Some("challenge-stop"), "安全类优先");
+        let mut r5 = EventRing::default();
+        r5.push(
+            "see".into(),
+            Some("challenge-stop".into()),
+            None,
+            None,
+            Some("rune"),
+            t,
+        );
+        r5.push(
+            "see".into(),
+            Some("challenge-stop".into()),
+            None,
+            None,
+            Some("rune"),
+            t + 3_000,
+        );
+        assert_eq!(r5.next_cta().unwrap().seq, 1, "同级取最新");
+        // 无建议:cta 为 None 的(非法 action)不入选
+        let mut r6 = EventRing::default();
+        r6.push(
+            "see".into(),
+            Some("challenge-stop".into()),
+            None,
+            None,
+            Some("bogus"),
+            t,
+        );
+        assert!(r6.next_cta().is_none(), "无合法 cta 时 next 为空");
     }
 
     /// 错误前缀只加一次（#33 快核 G-lite）：cdp 守卫/引擎面文案自带

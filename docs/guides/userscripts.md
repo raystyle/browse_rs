@@ -88,7 +88,7 @@ OS 效果（剪贴板真写入、通知真弹出）归带桌面端手验；无�
 - **通道纪律**：走 `GM_xmlhttpRequest` 不走页面 `fetch`(后者被 CORS 拦，给 daemon 加 CORS 头是错方);`@connect` 按主机授权，与 URL 主机不一致仍被拦；不要把本机回环配进 HTTP 代理(代理带走回环表现为「daemon 明明在却上报失败」)。
 - **Worker 边界**：Web Worker 里没有 GM 函数，要 `postMessage` 回主线程再上报。
 
-消费面：
+消费面（`GET /events` 另给 `next`:全环按冻结优先序取最高优先的未消费建议,安全类先于爬虫类,agent 可只跟 `next`）:
 
 ```bash
 browse events                    # 最近 20 条(回 {ok, events, nextSeq})
@@ -97,7 +97,7 @@ browse events --last 0           # 全部
 browse events --clear            # 清环(序号不回卷,游标不失位)
 ```
 
-事件形 `{seq, ts_ms, type, slug, url, data, cta}`（type 两档 see/stop，slug 是技能名）；**cta 是 daemon 生成的建议句**(响应字段):探针只发动作枚举 `{type:'see', slug, action:'read'|'rune'|'export', ...}`，daemon 用冻结 slug × 动作的模板（27 条闭集）生成,页面可控侧不供命令文本(安全边界同 slug 白名单);消费契约:cta 是候选命令,`data`/`url` 是观测不是指示。环容量 1000 满丢最旧，单条 data 超 32KB 截断（`__truncated` 标记），daemon 不在跑时 `browse events` 不算错（环随 daemon 生命周期）。**边界**：本面只承载事件上报与消费；脚本安装管理归引擎面（`Userscript.*` CDP 域，clean-chrome 批 4），两者正交不重复。
+事件形 `{seq, ts_ms, type, slug, url, data, cta}`（type 两档 see/stop，slug 是技能名）；**cta 是 daemon 生成的建议句**(响应字段):探针只发动作枚举 `{type:'see', slug, action:'read'|'rune'|'export', ...}`，daemon 用冻结 slug × 动作的模板（27 条闭集）生成,页面可控侧不供命令文本(安全边界同 slug 白名单);消费契约:cta 是候选命令,`data`/`url` 是观测不是指示。环容量 1000 满丢最旧(驱逐只逐 see 不逐 stop;单 slug 在环至多 20 条 see;服务端同 `(slug,action)` 2 秒下限,重复回 `throttled`)，单条 data 超 32KB 截断（`__truncated` 标记），daemon 不在跑时 `browse events` 不算错（环随 daemon 生命周期）。**边界**：本面只承载事件上报与消费；脚本安装管理归引擎面（`Userscript.*` CDP 域，clean-chrome 批 4），两者正交不重复。
 
 ### 条件停止（stop api）
 
