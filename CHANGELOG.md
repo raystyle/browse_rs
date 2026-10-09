@@ -4,7 +4,12 @@
 
 ## Unreleased
 
-- **探针事件 P1（grok 评审候补落地）**：服务端 2 秒同 `(slug,action)` 下限(see 重复回 `throttled` 不入环,stop 不设下限)；环容量纪律(驱逐只逐 see 不逐 stop,单 slug 至多 20 条 see,失控探针不许独占环)；`GET /events` 加 `next`(全环按 `CTA_PRIORITY` 冻结序取最高优先的合法 cta 建议,安全类先于爬虫类,同级取最新,agent 可只跟 next);runtime `R.see` 去重默认键升级 `slug|action|pathname` 加 `R.route` 路由变化重武装(SPA 换页同建议可再报,workspace 仓)。环单测锁四件;E2E 7/7。
+（无；最新封版 0.33.2）
+
+## 0.33.2 - 2026-10-10
+
+- **探针事件 P1（REQ-038，grok 评审候补落地）**：服务端 2 秒同 `(slug,action)` 下限(see 重复回 `throttled` 不入环,stop 不设下限);环容量纪律(驱逐只逐 see 不逐 stop,单 slug 至多 20 条 see,失控探针不许独占环);`GET /events` 加 `next`(全环按 `CTA_PRIORITY` 冻结序取最高优先的合法 cta 建议,安全类先于爬虫类,同级取最新,agent 可只跟 next);runtime `R.see` 去重默认键升级 `slug|action|pathname` 加 `R.route` 路由变化重武装(SPA 换页同建议可再报,workspace 仓 cca6f2e)。环单测锁四件;E2E 7/7。
+- semver 判据：行为收紧加消费面键（next）取 minor。
 
 ## 0.33.1 - 2026-10-10
 

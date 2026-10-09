@@ -1,6 +1,6 @@
 {
   "crate": "browse-core",
-  "version": "0.33.1",
+  "version": "0.33.2",
   "items": [
     {
       "path": "browse_core::chrome_mgr",
@@ -701,6 +701,11 @@
       "path": "browse_core::server",
       "kind": "module",
       "docs": "daemon 的 HTTP API：常驻会话 + 方言求值 + 引擎生命周期。\n\n移植自 browser-harness-rs `src/server.rs`（POST /eval、GET /health、\nPOST /quit 三端点保留），新增 `/engine/up` 与求值前的懒引擎策略：\n\n- 求值前未连接且片段里没有 `session.connect` -> 自动 [`crate::Engine::ensure`]；\n  片段自带 `session.connect` 则不预连（显式意图优先，ADR-0004）。\n- 求值撞上「Not connected」再兜底 ensure + 重试一次（覆盖先语句后连接的写法）。\n- 单飞槽：同一时刻只跑一条片段，后来者排队（不拒 429）。\n- 兜底硬界（REQ-027 统一超时，ADR-0012）：/eval 与 /rune 同缺省 60\n  秒，请求级 `timeout_s`（`--timeout` 旗标）覆写 env 旋钮缺省\n  （`BROWSE_EVAL_TIMEOUT`/`BROWSE_RUNE_TIMEOUT`）；到期结构化退出带\n  在飞面卡点（/eval 方言函数探针、/rune OpProbe）。"
+    },
+    {
+      "path": "browse_core::server::CTA_PRIORITY",
+      "kind": "constant",
+      "docs": "P1 cta 优先序（冻结,安全类先于爬虫类）：`next` 的选取依据。"
     },
     {
       "path": "browse_core::server::Daemon",
