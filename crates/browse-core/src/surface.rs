@@ -326,7 +326,7 @@ pub const COMMANDS: &[CmdSpec] = &[
                 "false（先清环再回执；序号不回卷，消费游标不失位）"
             ),
         ],
-        description: "消费油猴（userscript）事件回调：脚本经 GM_xmlhttpRequest POST /events 上报 {type, slug, url, data}（标准形：type 两档 see/stop；daemon 端口默认 9880，BROWSE_PORT/命名实例派生端口注意），本命令读事件环（容量 1000 满丢最旧，data 超 32KB 截断）；回 {ok, events, nextSeq}。daemon 不在跑不算错（环随 daemon 生命周期）。事件面与引擎脚本管理面（Userscript.* CDP 域）正交。用法与示例见 docs/guides/userscripts.md。",
+        description: "消费油猴（userscript）事件回调：脚本经 GM_xmlhttpRequest POST /events 上报 {type, slug, url, data}（标准形：type 两档 see/stop；daemon 端口默认 9880，BROWSE_PORT/命名实例派生端口注意），本命令读事件环（容量 1000 满丢最旧，data 超 32KB 截断）；回 {ok, events, nextSeq}。daemon 不在跑不算错（环随 daemon 生命周期）。事件面与引擎脚本管理面（Userscript.* CDP 域）正交。用法与示例见 docs/operations/G001-userscripts.md。",
         example: "browse events --since 41",
     },
     CmdSpec {
@@ -530,7 +530,7 @@ pub const COMMANDS: &[CmdSpec] = &[
         kind: CmdKind::Cli,
         signature: "browse --serve [--bind host:port]",
         args: &[arg!("bind", "string", false, "127.0.0.1:9880")],
-        description: "前台跑 daemon（--bind 选监听地址），只保留 API 面（HTML 看板已移除，总台令 2026-10-02）：POST /eval 求值（body {code,new_tab,js}，错误形判 ok 字段）、POST /rune 与 /rune/stop、POST /engine/up、POST /quit、GET /health 探活；方言做线协议门外语言不限，完整契约与 curl 三例见 docs/guides/http-api.md。",
+        description: "前台跑 daemon（--bind 选监听地址），只保留 API 面（HTML 看板已移除，总台令 2026-10-02）：POST /eval 求值（body {code,new_tab,js}，错误形判 ok 字段）、POST /rune 与 /rune/stop、POST /engine/up、POST /quit、GET /health 探活；方言做线协议门外语言不限，完整契约与 curl 三例见 docs/knowledge/references/R002-http-api.md。",
         example: "browse --serve --bind 127.0.0.1:9880",
     },
     // ---- 全局函数 ----
@@ -1727,7 +1727,7 @@ pub fn render_manual() -> String {
 
     // 意图路由表（#46）：想做什么用什么，一行一带；细节下钻 interaction 层
     out.push_str(
-        "\n意图路由（想做什么用什么；机制细节下钻 browse workspace（仓在 ~/.browse-rs/workspace），HTTP 契约 docs/guides/http-api.md）：\n  去页面并等可用 goto(url,opts)；等加载 waitLoad(s)、等导航事件 waitFor(frameNavigated,s)\n  找元素 findRefs(q)；拿结构 snapshot({depth}) 或 {ref} 子树；点击/填 clickRef/fillRef（ref 来自最近快照或 findRefs）\n  取回值/正文 pageEval(js) 或 session.Runtime.evaluate；多 tab listPageTargets/switchTab/currentTab\n  hover 菜单 hoverRef；右键双击 clickRef(ref,{button,clickCount})；滚轮 mouseWheel；拖拽 mouseDown-Move-Up 手拼\n  传/下文件 dropFiles 与 downloads()/downloadPath()；等特定响应 waitForResponse(pattern,s)；诊断面 detect() 七判、console({minLevel})、jsErrors()、requests()/requestDetail()\n  仿真 emulate/emulateMedia；授权 grantPermissions；登录态热迁 cloneCookies；iframe/shadow 用 snapshot({pierce:true})；录制 recordStart 加 recordChapter\n  引擎层直出（需扩展域版引擎）：语义快照 semanticSnapshot / 变更推送 subscribeChanges / 响应等待 engineWaitForResponse / 截图差分 screenshotDiff\n  复用命令小程序 browse snippets list/show 加 @ 实参 --vars 传参执行（根可 --root/BROWSE_SNIPPETS_ROOT 外置）；宿主侧全控制流编排 browse rune（cdp 模块：探针五函数加通用 raw/dialect 两通道加事件 wait_event，隔离世界/主世界双世界）；站点/机制知识 browse workspace list/site/page（goto/fetch/detect 回执自动点名）；门外语言 POST /eval\n",
+        "\n意图路由（想做什么用什么；机制细节下钻 browse workspace（仓在 ~/.browse-rs/workspace），HTTP 契约 docs/knowledge/references/R002-http-api.md）：\n  去页面并等可用 goto(url,opts)；等加载 waitLoad(s)、等导航事件 waitFor(frameNavigated,s)\n  找元素 findRefs(q)；拿结构 snapshot({depth}) 或 {ref} 子树；点击/填 clickRef/fillRef（ref 来自最近快照或 findRefs）\n  取回值/正文 pageEval(js) 或 session.Runtime.evaluate；多 tab listPageTargets/switchTab/currentTab\n  hover 菜单 hoverRef；右键双击 clickRef(ref,{button,clickCount})；滚轮 mouseWheel；拖拽 mouseDown-Move-Up 手拼\n  传/下文件 dropFiles 与 downloads()/downloadPath()；等特定响应 waitForResponse(pattern,s)；诊断面 detect() 七判、console({minLevel})、jsErrors()、requests()/requestDetail()\n  仿真 emulate/emulateMedia；授权 grantPermissions；登录态热迁 cloneCookies；iframe/shadow 用 snapshot({pierce:true})；录制 recordStart 加 recordChapter\n  引擎层直出（需扩展域版引擎）：语义快照 semanticSnapshot / 变更推送 subscribeChanges / 响应等待 engineWaitForResponse / 截图差分 screenshotDiff\n  复用命令小程序 browse snippets list/show 加 @ 实参 --vars 传参执行（根可 --root/BROWSE_SNIPPETS_ROOT 外置）；宿主侧全控制流编排 browse rune（cdp 模块：探针五函数加通用 raw/dialect 两通道加事件 wait_event，隔离世界/主世界双世界）；站点/机制知识 browse workspace list/site/page（goto/fetch/detect 回执自动点名）；门外语言 POST /eval\n",
     );
     out.push_str(
         "定位：给 agent（也给人）的浏览器驾驶 CLI；JS 方言片段驱动 clean-chrome，\
@@ -2049,7 +2049,7 @@ pub fn render_help() -> String {
         "\n片段方言：\n  const tabs = await listPageTargets()\n  await session.use(tabs[0].targetId)\n  await goto(\"https://example.com\", {waitIdle: true})\n  支持 await/const/return、字面量与成员下标；模板字符串 raw 可多行内嵌页面代码；函数与控制流走 --js；等加载用 goto()/waitLoad()。\n  完整语言面、全局函数与 session 方法清单：browse --llms\n",
     );
     out.push_str(
-        "\n油猴脚本：\n  引擎 clean-chrome 155+ 内置 userscript 运行时：装进引擎 profile 的 .user.js 按 match 规则自动注入导航页面，管理页 chrome://userscripts。\n  置位：browse chrome install <版本>；使用与验收指南：docs/guides/userscripts.md\n  盘上管理：browse userscript install/list/enable/disable/remove/update/path（--restart 生效引擎）；CDP 直通：browse cdp <Method> --params JSON\n",
+        "\n油猴脚本：\n  引擎 clean-chrome 155+ 内置 userscript 运行时：装进引擎 profile 的 .user.js 按 match 规则自动注入导航页面，管理页 chrome://userscripts。\n  置位：browse chrome install <版本>；使用与验收指南：docs/operations/G001-userscripts.md\n  盘上管理：browse userscript install/list/enable/disable/remove/update/path（--restart 生效引擎）；CDP 直通：browse cdp <Method> --params JSON\n",
     );
     out.push_str(
         "\nEnvironment Variables:\n  BROWSE_PORT              daemon 端口（default: 9880）\n  BROWSE_NAME              命名实例：状态目录加派生端口 9900-9999，多实例并行\n  BROWSE_CHROME            chrome 路径（default: 走发现序：显式、托管 pin、祖先部署、常规路径；指向的文件不在则静默跳过续走后序，不回落托管 pin）\n  BROWSE_PROFILE           spawn 引擎 user-data-dir（default: 固定 engine-profile，down 不删）\n  BROWSE_CDP_WS            钉死连接的 WS URL\n  BROWSE_NO_ATTACH=1       跳过附着探测，强制 spawn 隔离实例\n  BROWSE_NO_AUTO_DIALOG=1  关自动接受 alert/beforeunload（改对话为手动处置面）\n  BROWSE_EVAL_TIMEOUT      /eval 兜底硬界秒（default: 60；--timeout 请求级覆写）
@@ -2065,7 +2065,7 @@ pub fn render_llms() -> String {
         "# browse-rs 命令清单\n\n给 agent 用的 clean-chrome browse CLI。\
          方言片段形态：browse '<片段>'；错误一律带 CTA「下一步」。\n\
          油猴脚本：引擎 clean-chrome 155+ 内置运行时，match 命中页面自动注入\
-         （指南 docs/guides/userscripts.md）。\n\n",
+         （指南 docs/operations/G001-userscripts.md）。\n\n",
     );
     for kind in [CmdKind::Cli, CmdKind::Global, CmdKind::Session] {
         out.push_str(&format!(

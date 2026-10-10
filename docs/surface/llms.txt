@@ -1,7 +1,7 @@
 # browse-rs 命令清单
 
 给 agent 用的 clean-chrome browse CLI。方言片段形态：browse '<片段>'；错误一律带 CTA「下一步」。
-油猴脚本：引擎 clean-chrome 155+ 内置运行时，match 命中页面自动注入（指南 docs/guides/userscripts.md）。
+油猴脚本：引擎 clean-chrome 155+ 内置运行时，match 命中页面自动注入（指南 docs/operations/G001-userscripts.md）。
 
 ## CLI
 
@@ -28,7 +28,7 @@
 | `browse chrome remove <版本>` | 删已装版本（目录加登记一起清；pin 指向的拒删，先 use 切走）。 |
 | `browse chrome doctor` | 托管 Chromium 部署体检（在位/文件基线/pin；AppContainer ACE 仅 Windows 有值，缺则 hints 给 icacls 修法）。 |
 | `browse fetch <url> [--html] [--markdown|-m] [--timeout <s>]` | 一次性只读抓取：HTTP 直取零浏览器成本；三条件升级引擎（正文空、墙词、少于 20 词）走 goto 加页内抽取（懒拉起）；回 {via, title, text} 加可选键（HTTP 腿：status/bytes/markdown?；引擎升级腿：upgradedFrom/httpStatus/markdown?；--html 直取形：html/markdown?）；--html 恒走引擎腿回渲染后 DOM HTML（documentElement.outerHTML，JS 执行后的面）；--markdown 经 mdka 把本腿 html（渲染形为渲染 DOM、HTTP 直通为 raw body）转 markdown 字段（v1 同 text 的 no-op 已升真转换；求了没取到给 null 占位）；两腿都按 URL 做 goto 同口径的 workspace 站点知识点名（命中附 domain_skills 与 hint，不依赖引擎）；页内抽取异常显式报错不带空回执。对照 waitForResponse：这是无会话一次性抓取。 |
-| `browse events [--since <seq>] [--last <n>] [--clear]` | 消费油猴（userscript）事件回调：脚本经 GM_xmlhttpRequest POST /events 上报 {type, slug, url, data}（标准形：type 两档 see/stop；daemon 端口默认 9880，BROWSE_PORT/命名实例派生端口注意），本命令读事件环（容量 1000 满丢最旧，data 超 32KB 截断）；回 {ok, events, nextSeq}。daemon 不在跑不算错（环随 daemon 生命周期）。事件面与引擎脚本管理面（Userscript.* CDP 域）正交。用法与示例见 docs/guides/userscripts.md。 |
+| `browse events [--since <seq>] [--last <n>] [--clear]` | 消费油猴（userscript）事件回调：脚本经 GM_xmlhttpRequest POST /events 上报 {type, slug, url, data}（标准形：type 两档 see/stop；daemon 端口默认 9880，BROWSE_PORT/命名实例派生端口注意），本命令读事件环（容量 1000 满丢最旧，data 超 32KB 截断）；回 {ok, events, nextSeq}。daemon 不在跑不算错（环随 daemon 生命周期）。事件面与引擎脚本管理面（Userscript.* CDP 域）正交。用法与示例见 docs/operations/G001-userscripts.md。 |
 | `browse rune <script.rn|@名> [--vars k=v] [--root <dir>]` | Rune 编排面（三形态运行时之一：rn 脚本小程序握 js+cdp 双能力，方言命令管 cdp、js 小程序管 js）：脚本在独立 VM 跑（Rune 语言，入口 pub async fn main() 返回 Result），经自注册 cdp 模块做效果：goto/eval/eval_handle/call/release 走隔离世界轻探针，wait_event(method,ms) 事件驱动等待（原生 Session::wait_for 直出，活动 tab 与 browser 级事件，超时 Err 可 match 做条件分支），raw(method,params_json) 任意 CDP 命令直发（params 是 JSON 对象串，空串等价空对象；页面会话作用域；协议文档参数形原样粘贴，与 wait_event 的任意 method 名对偶；Input.dispatchMouseEvent 序列组拟人鼠标 wiggle/拖拽/滚轮、Fetch.enable 加 wait_event(Fetch.requestPaused) 循环加 failRequest/continueRequest 组按 resourceType 断流放行、Network.setCookie/getAllCookies 组 cookie 面；回收件组合形的自检归脚本：setCookie 的 success、填值的命中先验），dialect(fn,args_json) 方言全量桥（方言全局函数按名直达方言面同一实现：waitLoad/waitForResponse/clickRef 等 100+ 件；args 是 JSON 数组串，空串等价空数组；与 raw 对偶=CDP 层与方言层两通道），js(src,args) 内联 JS 小程序体与 js_lib(name,vars) 库内 .js 小程序走主世界全量页面逻辑（页面函数可调；args/vars 对象 JSON 字面量注入引号天然安全；js 体须用 return 出值，裸表达式得 null），render(tpl,vars) 运行时 Jinja，stdin() 读管道参数道。输入三通道：文件/实参、管道源码（无实参时 cat plan.rn | browse rune）、管道参数（有实参时）。r# 裸串：r#"…"#（Rust 同形，含 "# 升 r##）编译前重写为转义普通串，任意引号反斜杠多行原样直达 js/eval，模板道免渲染（注释区同免渲染字面回填；{% raw %} 仍管 Jinja 面任意区）。双限额（指令与分配），未填模板键网络前拦 exit 2；模板定界 0.30.3 缺省 ERB（<%= 键 %>，JS 花括号免撞；classic 旗标或件首行指令回退）。错误二分：cdp::CdpError{op,message} 与脚本自造 Timeout 属脚本可见失败，VM 错误是终态。eval_handle 句柄经 clone 复用，call 的函数体用 function(){…} 形收 this。方言/--js 契约零动。，requests(opts)/snapshot(opts)/request_detail(sel,opts) 三支柱同源（与方言面同一实现）。全部 CDP 调用 30 秒上界、同源腿 60 秒上界、引擎忙 10 秒快错（不无界排队），丢响应快错不挂死；整体执行兜底硬界统一 60 秒缺省（--timeout 请求级覆写或 BROWSE_RUNE_TIMEOUT 旋钮，/eval 同道 BROWSE_EVAL_TIMEOUT；与 wait 族等待窗正交），超时/主动停止回执附结构化 timeout/stopped 面（op 在飞调用面、elapsed_ms、cause），CLI 侧 stderr 出一行 JSON。主动停止三道：browse rune stop（动词位，POST /rune/stop；脚本名恰为 stop 且无 --vars 会被当动词，用 @stop 或加 --vars 走脚本道）、引擎失联联动（两次探测断连即停 cause=engine_lost，兜非 CDP 等待段）、脚本侧原生控制流自停（select/分支加 Err 返回，error 面自带 CTA）。退出码三态：0 含脚本可见失败（main 返 Err/cdp::CdpError 走 ok:true 的 value.error 面），1 宿主终态（编译错/VM 错误/超时/被停），2 用法错。 |
 | `browse issue new <标题> --acceptance <验收> [--kind bug|improvement] [--body <正文>] [--dry-run]` | 账本 issue 流开单（真源 ledger.ohmygh.com，签名道在标准 crate ledger-client）：acceptance 必填（完成判据锚）；回执 {ok,issue}；--dry-run 本地校验加载荷与签名基预览零网络（账本只增不可撤，契约实弹先走它）；关单走 omc 工位（browse 侧只增不关不删）。 |
 | `browse issue list [--limit <n>] [--before <id>]` | 列 issue（账本面）：count 是返回条数非在册总数，has_more 权威，打满即 stderr 截断提示。 |
@@ -47,7 +47,7 @@
 | `browse workspace list` | 列 workspace 在册技能对（清仓重建后技能=mech.rn 加 probe.user.js 双脚本对，缺一不算）：domain-skills/ 各站点段与 page-skills/ 各 slug（文件清单为对内三件，封顶随旧文海退役）。 |
 | `browse workspace site <段>[/<文件>]` | 读域名站点技能对（goto 回执 domain_skills 的下钻面，清仓重建后技能=mech.rn 加 probe.user.js 双脚本对）：只给段交出该对的 README（无则路径摘要），给 <段>/<文件> 读段内文件全文。 |
 | `browse workspace page <slug>` | 读页面技能对（goto 回执 page_skills 的下钻面，清仓重建后技能=双脚本对）：交出 page-skills/<slug>/ 的 README（无则路径摘要，尾部附 mech.rn 与 probe.user.js 位置）。 |
-| `browse --serve [--bind host:port]` | 前台跑 daemon（--bind 选监听地址），只保留 API 面（HTML 看板已移除，总台令 2026-10-02）：POST /eval 求值（body {code,new_tab,js}，错误形判 ok 字段）、POST /rune 与 /rune/stop、POST /engine/up、POST /quit、GET /health 探活；方言做线协议门外语言不限，完整契约与 curl 三例见 docs/guides/http-api.md。 |
+| `browse --serve [--bind host:port]` | 前台跑 daemon（--bind 选监听地址），只保留 API 面（HTML 看板已移除，总台令 2026-10-02）：POST /eval 求值（body {code,new_tab,js}，错误形判 ok 字段）、POST /rune 与 /rune/stop、POST /engine/up、POST /quit、GET /health 探活；方言做线协议门外语言不限，完整契约与 curl 三例见 docs/knowledge/references/R002-http-api.md。 |
 
 ## 全局函数
 

@@ -1,5 +1,7 @@
 # userscripts：油猴脚本面（引擎 clean-chrome 155+）
 
+> 归档统一迁移件(ADR-0013,源自 docs/guides/userscripts.md,人裁授权不逐件过闸);此后本页改动走合取闸门(distil-skill gate),页头闸门记录段按条 11 补。
+
 油猴（userscript）能力在引擎侧：clean-chrome 155 起内置运行时，browse 只做驾驶。装进引擎 profile 的 `.user.js` 按 match 规则在导航后自动注入，browse 的 `goto`/`--js` 照常工作，注入产物落在同一 DOM 里主世界可读。本指南讲置位、安装、API 面、验收口径与边界；能力判基是 155.0.8059.39 上的 17 案验收全线收口（探针 DOM + 盘上 values 双证，2026-10-09）。
 
 ## 1. 引擎置位

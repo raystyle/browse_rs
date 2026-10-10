@@ -1,5 +1,7 @@
 # 应用插件契约（#55）
 
+> 归档统一迁移件(ADR-0013,源自 docs/guides/apps.md,人裁授权不逐件过闸);此后本页改动走合取闸门(distil-skill gate),页头闸门记录段按条 11 补。
+
 > 应用是本机生态件：一个可执行文件（pwsh 7 脚本为家族标准载体），子命令路由，经 browse 的 CLI 或 HTTP 面（POST /eval）驱动默认 daemon。不做 MCP、不做 Cloud。
 
 ## 契约

@@ -66,7 +66,7 @@ pub struct EvalRequest {
 #[derive(Debug, Default, Deserialize)]
 pub struct RuneRequest {
     /// Rune 编排脚本源码（入口恒 `pub async fn main()`；宿主只装
-    /// json/time/cdp 三模块，双限额与错误约定见 docs/adr/ADR-0009 与
+    /// json/time/cdp 三模块，双限额与错误约定见 docs/knowledge/adr/ADR-0009 与
     /// crates/browse-rune）。
     pub code: String,
     /// snippets 根覆写（三形态批：`js_lib` 解析位；旗标 > env > 内置，

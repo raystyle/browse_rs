@@ -64,7 +64,7 @@ daemon。
 补丁形版本号），clean-chrome 补丁版（上游主张 51 锚恒 false）：本仓实测
 `navigator.webdriver` 全 false（spawn headless 的 port 与 pipe 通道进
 e2e 断言，见 `tests/e2e.rs`，#29 验收补格；flat 附着态三端实测，录
-docs/diary/2026-09-16-doc-system.md），修复自起引擎被 Google 登录
+docs/sources/diary/2026-09-16-doc-system.md），修复自起引擎被 Google 登录
 一票否决的问题；旧版 `152.0.7977.84`
 （r1）保留可回退（`browse chrome use` 切回，`browse chrome remove` 清理）。
 
@@ -139,4 +139,4 @@ expression，页内是真 V8）；CDP 全量 652 方法 `session.<Domain>.<metho
 
 开发面：`cargo test --workspace`；`BROWSE_E2E=1 BROWSE_NO_ATTACH=1 cargo
 test -p browse-core --test e2e`。深入读 AGENTS.md（工程契约）、
-docs/architecture.md、docs/adr/、docs/surface/（命令面派生物）。
+docs/architecture.md、docs/knowledge/adr/、docs/surface/（命令面派生物）。

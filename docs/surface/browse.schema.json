@@ -495,7 +495,7 @@
       "type": "object"
     },
     "cli.events": {
-      "description": "browse events [--since <seq>] [--last <n>] [--clear] 消费油猴（userscript）事件回调：脚本经 GM_xmlhttpRequest POST /events 上报 {type, slug, url, data}（标准形：type 两档 see/stop；daemon 端口默认 9880，BROWSE_PORT/命名实例派生端口注意），本命令读事件环（容量 1000 满丢最旧，data 超 32KB 截断）；回 {ok, events, nextSeq}。daemon 不在跑不算错（环随 daemon 生命周期）。事件面与引擎脚本管理面（Userscript.* CDP 域）正交。用法与示例见 docs/guides/userscripts.md。",
+      "description": "browse events [--since <seq>] [--last <n>] [--clear] 消费油猴（userscript）事件回调：脚本经 GM_xmlhttpRequest POST /events 上报 {type, slug, url, data}（标准形：type 两档 see/stop；daemon 端口默认 9880，BROWSE_PORT/命名实例派生端口注意），本命令读事件环（容量 1000 满丢最旧，data 超 32KB 截断）；回 {ok, events, nextSeq}。daemon 不在跑不算错（环随 daemon 生命周期）。事件面与引擎脚本管理面（Userscript.* CDP 域）正交。用法与示例见 docs/operations/G001-userscripts.md。",
       "example": "browse events --since 41",
       "input": {
         "properties": {
@@ -749,7 +749,7 @@
       "type": "object"
     },
     "cli.serve": {
-      "description": "browse --serve [--bind host:port] 前台跑 daemon（--bind 选监听地址），只保留 API 面（HTML 看板已移除，总台令 2026-10-02）：POST /eval 求值（body {code,new_tab,js}，错误形判 ok 字段）、POST /rune 与 /rune/stop、POST /engine/up、POST /quit、GET /health 探活；方言做线协议门外语言不限，完整契约与 curl 三例见 docs/guides/http-api.md。",
+      "description": "browse --serve [--bind host:port] 前台跑 daemon（--bind 选监听地址），只保留 API 面（HTML 看板已移除，总台令 2026-10-02）：POST /eval 求值（body {code,new_tab,js}，错误形判 ok 字段）、POST /rune 与 /rune/stop、POST /engine/up、POST /quit、GET /health 探活；方言做线协议门外语言不限，完整契约与 curl 三例见 docs/knowledge/references/R002-http-api.md。",
       "example": "browse --serve --bind 127.0.0.1:9880",
       "input": {
         "properties": {
