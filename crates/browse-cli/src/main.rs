@@ -1416,6 +1416,7 @@ async fn main() -> Result<()> {
             Ok(())
         }
         Mode::CdpCall(method, params) => {
+            client::ensure_daemon().await?;
             let pv: Value = match params {
                 None => json!({}),
                 Some(s) => {

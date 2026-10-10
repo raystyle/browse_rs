@@ -198,20 +198,27 @@ fn find_entry(scripts: &[Value], id_or_name: &str) -> Result<usize, String> {
     {
         return Ok(i);
     }
-    let hits: Vec<&str> = scripts
+    if let Some(i) = scripts
         .iter()
-        .filter(|e| {
+        .position(|e| e["name"].as_str() == Some(id_or_name))
+    {
+        return Ok(i);
+    }
+    let hit_idx: Vec<usize> = scripts
+        .iter()
+        .enumerate()
+        .filter(|(_, e)| {
             e["id"]
                 .as_str()
                 .is_some_and(|id| id.starts_with(id_or_name))
+                || e["name"]
+                    .as_str()
+                    .is_some_and(|n| n.starts_with(id_or_name))
         })
-        .filter_map(|e| e["name"].as_str())
+        .map(|(i, _)| i)
         .collect();
-    if hits.len() == 1 {
-        return Ok(scripts
-            .iter()
-            .position(|e| e["name"].as_str() == Some(hits[0]))
-            .unwrap());
+    if hit_idx.len() == 1 {
+        return Ok(hit_idx[0]);
     }
     let names: Vec<String> = scripts
         .iter()
@@ -222,7 +229,7 @@ fn find_entry(scripts: &[Value], id_or_name: &str) -> Result<usize, String> {
         })
         .collect();
     Err(format!(
-        "未命中脚本 {id_or_name:?}(前缀歧义 {hits:?});在册:\n{}",
+        "未命中脚本 {id_or_name:?}(前缀歧义 {hit_idx:?});在册:\n{}",
         names.join("\n")
     ))
 }
@@ -416,6 +423,9 @@ mod tests {
         let l = list(&tmp).unwrap();
         assert_eq!(l["scripts"][0]["enabled"], false); // 重装不动 enabled
 
+        // 全名与前缀定位
+        let byname = set_enabled(&tmp, "a", true).unwrap();
+        assert_eq!(byname["id"].as_str().unwrap(), id);
         // 前缀定位与删除
         let p = script_path(&tmp, &id[..6]).unwrap();
         assert!(p.ends_with("script.user.js"));
