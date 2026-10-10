@@ -495,7 +495,7 @@ pub const COMMANDS: &[CmdSpec] = &[
             arg!("method", "string", true),
             arg!("params", "string", false),
         ],
-        description: "CDP 直通：任意 CDP 域方法经 daemon 转发引擎会话，回 result/error 原文；方法名须点分形；引擎未起自动懒拉。操作油猴脚本的 Userscript.* 域落地后同面直达。",
+        description: "CDP 直通：任意 CDP 域方法经 daemon 转发引擎会话，回 result/error 原文；方法名须点分形；引擎未起自动懒拉。数据面直通险级超 /eval（HttpOnly cookie 等直达），破坏性方法由 Session::call 守卫拦（Browser.close 恒拒等）。操作油猴脚本的 Userscript.* 域落地后同面直达。",
         example: "browse cdp Runtime.evaluate --params '{\"expression\":\"1+1\"}'",
     },
     CmdSpec {
@@ -2049,7 +2049,7 @@ pub fn render_help() -> String {
         "\n片段方言：\n  const tabs = await listPageTargets()\n  await session.use(tabs[0].targetId)\n  await goto(\"https://example.com\", {waitIdle: true})\n  支持 await/const/return、字面量与成员下标；模板字符串 raw 可多行内嵌页面代码；函数与控制流走 --js；等加载用 goto()/waitLoad()。\n  完整语言面、全局函数与 session 方法清单：browse --llms\n",
     );
     out.push_str(
-        "\n油猴脚本：\n  引擎 clean-chrome 155+ 内置 userscript 运行时：装进引擎 profile 的 .user.js 按 match 规则自动注入导航页面，管理页 chrome://userscripts。\n  置位：browse chrome install <版本>；使用与验收指南：docs/guides/userscripts.md\n  （browse userscript 命令面待引擎 Userscript.* 协议域落地，当前置场走管理页或 clean-chrome 置场 CLI）\n",
+        "\n油猴脚本：\n  引擎 clean-chrome 155+ 内置 userscript 运行时：装进引擎 profile 的 .user.js 按 match 规则自动注入导航页面，管理页 chrome://userscripts。\n  置位：browse chrome install <版本>；使用与验收指南：docs/guides/userscripts.md\n  盘上管理：browse userscript install/list/enable/disable/remove/update/path（--restart 生效引擎）；CDP 直通：browse cdp <Method> --params JSON\n",
     );
     out.push_str(
         "\nEnvironment Variables:\n  BROWSE_PORT              daemon 端口（default: 9880）\n  BROWSE_NAME              命名实例：状态目录加派生端口 9900-9999，多实例并行\n  BROWSE_CHROME            chrome 路径（default: 走发现序：显式、托管 pin、祖先部署、常规路径；指向的文件不在则静默跳过续走后序，不回落托管 pin）\n  BROWSE_PROFILE           spawn 引擎 user-data-dir（default: 固定 engine-profile，down 不删）\n  BROWSE_CDP_WS            钉死连接的 WS URL\n  BROWSE_NO_ATTACH=1       跳过附着探测，强制 spawn 隔离实例\n  BROWSE_NO_AUTO_DIALOG=1  关自动接受 alert/beforeunload（改对话为手动处置面）\n  BROWSE_EVAL_TIMEOUT      /eval 兜底硬界秒（default: 60；--timeout 请求级覆写）

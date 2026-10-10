@@ -23,7 +23,7 @@ pwsh install-userscripts.ps1 -ChromeProfile <…> -ListOnly     # 只列
 pwsh install-userscripts.ps1 -ChromeProfile <…> -Remove <id>  # 卸载
 ```
 
-脚本 id 同构引擎 `UserscriptStore::MakeId`（脚本源 SHA256 前 6 字节 hex）。勿手构 store JSON，id 与登记形以置场工具为准。
+脚本 id 同构引擎 `UserscriptStore::MakeId`：`SHA256("namespace@name")` 前 6 字节 hex（12 字符；`@name` 缺省取文件基名、`@namespace` 缺省 `"file"`）。勿手构 store JSON，置场走 `browse userscript install`。
 
 ## 3. match 与注入档
 
@@ -118,5 +118,5 @@ function stop(data) {
 
 ## 7. 边界与后续
 
-- `browse userscript` 命令面**尚无**：挂引擎 `Userscript.*` CDP 协议域（clean-chrome 批 4 在账），域落地后 browse 开命令面 REQ 薄封装；当前脚本置场走上两道。
+- `browse userscript` 命令面**已上（盘上直写腿）**：`install <file...>`（多文件、幂等重装 enabled 保留、`--restart` 自动 down/up 生效）、`list`（对册 workspace 双脚本对标 `pair:slug`）、`enable/disable/remove <id|名>...`（多脚本批量，id 全等或唯一前缀或全名定位）、`update <id|名> <file>`（先稳新源再动旧，失败不丢脚本）、`path <id|名>`（编辑入口出脚本体路径）。写 `<profile>/Default/Userscripts` 同构引擎契约，引擎启动时读盘；`Userscript.*` CDP 协议域（clean-chrome 批 4 在账）落地后升级域优先、盘上兜底。`browse cdp <Method> [--params JSON]` 直通任意 CDP 域方法（`Session::call` 守卫同拦 Browser.close 等危险方法）。
 - 脚本面随 profile 走：`--profile <dir>` 换 user-data-dir 时 Userscripts 目录随迁，固定引擎 profile 的脚本对自定义 profile 不生效。

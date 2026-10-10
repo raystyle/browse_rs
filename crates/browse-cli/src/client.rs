@@ -810,12 +810,13 @@ pub struct UpParams {
     pub engine_args: Vec<String>,
 }
 
-/// POST /engine/up 显式起引擎，走 ensure 全链（附着优先缺则 spawn）。
+/// /cdp 直通（#80）：任意 CDP 域方法经 daemon 转发引擎会话，回
+/// result/error 原文；数据面直通险级超 /eval（HttpOnly cookie 等页面
+/// JS 够不到的面也直达），破坏性方法由 `Session::call` 守卫拦。
 ///
 /// # Errors
 ///
-/// HTTP 失败或引擎 ensure 失败（连不上、chrome 找不到、spawn 超时）。
-/// /cdp 直通（#80）：任意 CDP 域方法转发引擎，回 result/error 原文。
+/// daemon 不可达或 HTTP 失败时返回错误。
 pub async fn cdp_call(method: &str, params: Value) -> Result<Value> {
     let c = client();
     let resp = c

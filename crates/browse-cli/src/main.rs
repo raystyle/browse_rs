@@ -131,8 +131,9 @@ enum Mode {
     UserscriptInstall(Vec<String>, bool),
     /// `browse userscript list`：列在册脚本（index 对读+workspace 对册）。
     UserscriptList,
-    /// `browse userscript enable/disable <id|名>...`（多脚本批量，逐条定位）。
-    UserscriptSetEnabled(Vec<String>, bool),
+    /// `browse userscript enable/disable <id|名>... [--restart]`（多脚本批量，
+    /// 逐条定位；`--restart` 生效引擎）。
+    UserscriptSetEnabled(Vec<String>, bool, bool),
     /// `browse userscript remove <id|名>...`（多脚本批量；`--restart` 同 install）。
     UserscriptRemove(Vec<String>, bool),
     /// `browse userscript update <id|名> <file>`（同 id 换源）。
@@ -657,21 +658,38 @@ async fn main() -> Result<()> {
                     }
                     "list" => mode = Mode::UserscriptList,
                     "enable" => {
-                        mode = Mode::UserscriptSetEnabled(collect_ids(&mut args, "enable").0, true)
+                        let (ids, restart) = collect_ids(&mut args, "enable");
+                        mode = Mode::UserscriptSetEnabled(ids, true, restart)
                     }
                     "disable" => {
-                        mode =
-                            Mode::UserscriptSetEnabled(collect_ids(&mut args, "disable").0, false)
+                        let (ids, restart) = collect_ids(&mut args, "disable");
+                        mode = Mode::UserscriptSetEnabled(ids, false, restart)
                     }
                     "remove" => {
                         let (ids, restart) = collect_ids(&mut args, "remove");
                         mode = Mode::UserscriptRemove(ids, restart)
                     }
                     "update" => {
-                        let id = args.next("userscript update <id|名>");
-                        let file = args.next("userscript update 的源文件");
-                        let restart = args.next_opt() == Some("--restart".to_string());
-                        mode = Mode::UserscriptUpdate(id, file, restart)
+                        // 位置实参依次收:第一个=id/名,第二个=源文件;--restart 任意位
+                        let mut pos: Vec<String> = Vec::new();
+                        let mut restart = false;
+                        while let Some(t) = args.next_opt() {
+                            if t == "--restart" {
+                                restart = true;
+                            } else if t.starts_with("--") {
+                                eprintln!(
+                                    "browse: userscript update 只认 --restart（收到 {t}，退出 2）"
+                                );
+                                std::process::exit(2)
+                            } else {
+                                pos.push(t);
+                            }
+                        }
+                        if pos.len() < 2 {
+                            eprintln!("browse: userscript update <id|名> <file>（退出 2）");
+                            std::process::exit(2)
+                        }
+                        mode = Mode::UserscriptUpdate(pos[0].clone(), pos[1].clone(), restart)
                     }
                     "path" => mode = Mode::UserscriptPath(args.next("userscript path <id|名>")),
                     other => {
@@ -1348,7 +1366,7 @@ async fn main() -> Result<()> {
             }
             Ok(())
         }
-        Mode::UserscriptSetEnabled(ids, on) => {
+        Mode::UserscriptSetEnabled(ids, on, restart) => {
             let prof = engine_profile_path(&profile);
             let mut rs = Vec::new();
             for id in &ids {
@@ -1363,7 +1381,11 @@ async fn main() -> Result<()> {
                 rs.push(r);
             }
             println!("{}", serde_json::to_string_pretty(&rs)?);
-            eprintln!("注：引擎重启后生效（--restart 面在 install/remove/update）");
+            if restart {
+                restart_engine(profile).await?;
+            } else {
+                eprintln!("注：引擎重启后生效（或带 --restart）");
+            }
             Ok(())
         }
         Mode::UserscriptRemove(ids, restart) => {
@@ -1377,7 +1399,22 @@ async fn main() -> Result<()> {
                 })
                 .await
                 .map_err(|e| anyhow!("userscript remove 任务崩了：{e}"))
-                .and_then(|r| r.map_err(|e| anyhow!("{e}")))?;
+                .and_then(|r| r.map_err(|e| anyhow!("{e}")))
+                // 批量中途失败:已删清单随错带回,不静默(评审 F5-c)
+                .map_err(|e| {
+                    if rs.is_empty() {
+                        e
+                    } else {
+                        anyhow!(
+                            "{e};(已删 {} 条: {})",
+                            rs.len(),
+                            rs.iter()
+                                .filter_map(|v: &Value| v["id"].as_str())
+                                .collect::<Vec<_>>()
+                                .join(",")
+                        )
+                    }
+                })?;
                 rs.push(r);
             }
             println!("{}", serde_json::to_string_pretty(&rs)?);

@@ -20,7 +20,7 @@
     {
       "path": "browse_cli::client::cdp_call",
       "kind": "function",
-      "docs": "POST /engine/up 显式起引擎，走 ensure 全链（附着优先缺则 spawn）。\n\n# Errors\n\nHTTP 失败或引擎 ensure 失败（连不上、chrome 找不到、spawn 超时）。\n/cdp 直通（#80）：任意 CDP 域方法转发引擎，回 result/error 原文。"
+      "docs": "/cdp 直通（#80）：任意 CDP 域方法经 daemon 转发引擎会话，回\nresult/error 原文；数据面直通险级超 /eval（HttpOnly cookie 等页面\nJS 够不到的面也直达），破坏性方法由 `Session::call` 守卫拦。\n\n# Errors\n\ndaemon 不可达或 HTTP 失败时返回错误。"
     },
     {
       "path": "browse_cli::client::daemon_alive",

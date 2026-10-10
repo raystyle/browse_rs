@@ -115,19 +115,29 @@ pub fn script_body(src: &str) -> &str {
     tail.strip_prefix('\n').unwrap_or(tail)
 }
 
-fn read_index(root: &Path) -> Value {
+/// 读 index；缺文件视为空册（首装），**存在但形坏必须报错**——半写的坏
+/// 盘若被吞成空册，下一次写会把真册盖掉（评审 F2）。
+fn read_index(root: &Path) -> Result<Value, String> {
     let p = root.join("index.json");
-    fs::read_to_string(&p)
-        .ok()
-        .and_then(|s| serde_json::from_str(&s).ok())
-        .unwrap_or_else(|| json!({"scripts": []}))
+    let Some(txt) = fs::read_to_string(&p).ok() else {
+        return Ok(json!({"scripts": []}));
+    };
+    let v: Value = serde_json::from_str(&txt)
+        .map_err(|e| format!("{} 形坏: {e}(不覆盖;手工修复或删除该文件重来)", p.display()))?;
+    if v["scripts"].as_array().is_none() {
+        return Err(format!("{} scripts 非数组(不覆盖)", p.display()));
+    }
+    Ok(v)
 }
 
+/// 原子写 index：同目录临时文件写稳后 rename 覆盖——崩溃窗口不留半截
+/// 真名文件（评审 F2；`fs::write` 直写的截断窗口会让下次读把坏盘当空册）。
 fn write_index(root: &Path, idx: &Value) -> Result<(), String> {
     let p = root.join("index.json");
-    serde_json::to_string_pretty(idx)
-        .map_err(|e| format!("index 序列化失败: {e}"))
-        .and_then(|s| fs::write(&p, s).map_err(|e| format!("写 {} 失败: {e}", p.display())))
+    let tmp = root.join("index.json.tmp");
+    let s = serde_json::to_string_pretty(idx).map_err(|e| format!("index 序列化失败: {e}"))?;
+    fs::write(&tmp, &s).map_err(|e| format!("写 {} 失败: {e}", tmp.display()))?;
+    fs::rename(&tmp, &p).map_err(|e| format!("落 {} 失败: {e}", p.display()))
 }
 
 fn meta_json(m: &ScriptMeta) -> Value {
@@ -146,7 +156,7 @@ fn meta_json(m: &ScriptMeta) -> Value {
 pub fn install(profile: &Path, files: &[PathBuf]) -> Result<Value, String> {
     let root = userscripts_root(profile);
     fs::create_dir_all(&root).map_err(|e| format!("建 {} 失败: {e}", root.display()))?;
-    let mut idx = read_index(&root);
+    let mut idx = read_index(&root)?;
     let scripts = idx["scripts"]
         .as_array_mut()
         .ok_or("index.json scripts 非数组")?;
@@ -229,7 +239,8 @@ fn find_entry(scripts: &[Value], id_or_name: &str) -> Result<usize, String> {
         })
         .collect();
     Err(format!(
-        "未命中脚本 {id_or_name:?}(前缀歧义 {hit_idx:?});在册:\n{}",
+        "未命中或歧义脚本 {id_or_name:?}(候选 {} 条);在册:\n{}",
+        hit_idx.len(),
         names.join("\n")
     ))
 }
@@ -242,13 +253,7 @@ fn find_entry(scripts: &[Value], id_or_name: &str) -> Result<usize, String> {
 /// index.json 存在但形坏时返回错误（缺文件视为空册）。
 pub fn list(profile: &Path) -> Result<Value, String> {
     let root = userscripts_root(profile);
-    let mut idx = read_index(&root);
-    if root.join("index.json").exists() && idx["scripts"].as_array().is_none() {
-        return Err(format!(
-            "{} scripts 非数组",
-            root.join("index.json").display()
-        ));
-    }
+    let mut idx = read_index(&root)?;
     let mut pairs: Vec<(String, String)> = Vec::new(); // (id, slug)
     for wroot in workspace_roots() {
         let pk = wroot.join("page-skills");
@@ -282,7 +287,7 @@ pub fn list(profile: &Path) -> Result<Value, String> {
 /// id/名未命中或 index 写失败时返回错误串。
 pub fn set_enabled(profile: &Path, id_or_name: &str, enabled: bool) -> Result<Value, String> {
     let root = userscripts_root(profile);
-    let mut idx = read_index(&root);
+    let mut idx = read_index(&root)?;
     let scripts = idx["scripts"]
         .as_array_mut()
         .ok_or("index.json scripts 非数组")?;
@@ -300,23 +305,25 @@ pub fn set_enabled(profile: &Path, id_or_name: &str, enabled: bool) -> Result<Va
 /// id/名未命中、目录删失败或 index 写失败时返回错误串。
 pub fn remove(profile: &Path, id_or_name: &str) -> Result<Value, String> {
     let root = userscripts_root(profile);
-    let mut idx = read_index(&root);
+    let mut idx = read_index(&root)?;
     let scripts = idx["scripts"]
         .as_array_mut()
         .ok_or("index.json scripts 非数组")?;
     let i = find_entry(scripts, id_or_name)?;
+    // 先删目录后写 index（评审 F3）：目录删失败时条目仍在册，可重试；
+    // 反序会留下「条目已无、目录残留」的幻影态
+    let dir = root
+        .join("scripts")
+        .join(scripts[i]["id"].as_str().unwrap_or_default());
+    if dir.exists() {
+        fs::remove_dir_all(&dir).map_err(|e2| format!("删 {} 失败: {e2}", dir.display()))?;
+    }
     let e = scripts.remove(i);
     // position 重排（引擎按序装载）
     for (n, s) in scripts.iter_mut().enumerate() {
         s["position"] = json!(n);
     }
     write_index(&root, &idx)?;
-    let dir = root
-        .join("scripts")
-        .join(e["id"].as_str().unwrap_or_default());
-    if dir.exists() {
-        fs::remove_dir_all(&dir).map_err(|e2| format!("删 {} 失败: {e2}", dir.display()))?;
-    }
     Ok(e)
 }
 
@@ -327,10 +334,31 @@ pub fn remove(profile: &Path, id_or_name: &str) -> Result<Value, String> {
 ///
 /// 源读失败或定位失败时返回错误串。
 pub fn update(profile: &Path, id_or_name: &str, file: &Path) -> Result<Value, String> {
-    let removed = remove(profile, id_or_name)?;
+    // 先读稳新源再动旧（评审 F3）：源读失败/解析不动在册脚本一步
+    let src = fs::read_to_string(file).map_err(|e| format!("读 {} 失败: {e}", file.display()))?;
+    let stem = file
+        .file_stem()
+        .map(|s| s.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    let m = parse_header(&src, &stem);
+    let new_id = make_id(&m.namespace, &m.name);
+    let root = userscripts_root(profile);
+    let old = {
+        let idx = read_index(&root)?;
+        let scripts = idx["scripts"]
+            .as_array()
+            .ok_or("index.json scripts 非数组")?;
+        scripts[find_entry(scripts, id_or_name)?].clone()
+    };
+    let old_id = old["id"].as_str().unwrap_or_default().to_string();
     let installed = install(profile, &[file.to_path_buf()])?;
+    let removed = if new_id != old_id {
+        Some(remove(profile, &old_id)?)
+    } else {
+        None
+    };
     Ok(
-        json!({"removed": removed, "installed": installed["installed"], "file": file.display().to_string()}),
+        json!({"removed": removed, "installed": installed["installed"], "id_moved": new_id != old_id, "file": file.display().to_string()}),
     )
 }
 
@@ -341,7 +369,7 @@ pub fn update(profile: &Path, id_or_name: &str, file: &Path) -> Result<Value, St
 /// id/名未命中时返回错误串。
 pub fn script_path(profile: &Path, id_or_name: &str) -> Result<PathBuf, String> {
     let root = userscripts_root(profile);
-    let idx = read_index(&root);
+    let idx = read_index(&root)?;
     let scripts = idx["scripts"]
         .as_array()
         .ok_or("index.json scripts 非数组")?;
@@ -434,6 +462,102 @@ mod tests {
         let l2 = list(&tmp).unwrap();
         assert_eq!(l2["scripts"].as_array().unwrap().len(), 0);
         assert!(!tmp.join("Default/Userscripts/scripts").join(&id).exists());
+        let _ = fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn update_源失败不动旧() {
+        let tmp = std::env::temp_dir().join(format!("us-upd-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&tmp);
+        fs::create_dir_all(&tmp).unwrap();
+        let js = tmp.join("k.user.js");
+        fs::write(
+            &js,
+            "// ==UserScript==\n// @name k\n// ==/UserScript==\nkeep();",
+        )
+        .unwrap();
+        install(&tmp, &[js]).unwrap();
+        let l = list(&tmp).unwrap();
+        let id = l["scripts"][0]["id"].as_str().unwrap().to_string();
+        // 源不存在:一步报错,旧脚本在册在盘
+        let bad = update(&tmp, &id, &tmp.join("nope.user.js"));
+        assert!(bad.is_err());
+        let l2 = list(&tmp).unwrap();
+        assert_eq!(l2["scripts"].as_array().unwrap().len(), 1);
+        assert!(script_path(&tmp, &id).is_ok());
+        // 正常换源:同 id 不漂移,enabled/position 保留
+        let js2 = tmp.join("k2.user.js");
+        fs::write(
+            &js2,
+            "// ==UserScript==\n// @name k\n// ==/UserScript==\nkeep2();",
+        )
+        .unwrap();
+        set_enabled(&tmp, &id, false).unwrap();
+        let r = update(&tmp, &id, &js2).unwrap();
+        assert_eq!(r["id_moved"], false);
+        assert!(r["removed"].is_null());
+        let l3 = list(&tmp).unwrap();
+        assert_eq!(l3["scripts"][0]["enabled"], false); // 保留,不重置
+        assert_eq!(l3["scripts"][0]["position"], 0); // 同位,不漂移(评审 F3 附带)
+        let _ = fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn 坏index报错不吞空册() {
+        let tmp = std::env::temp_dir().join(format!("us-bad-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&tmp);
+        let root = tmp.join("Default/Userscripts");
+        fs::create_dir_all(&root).unwrap();
+        fs::write(root.join("index.json"), "{half-written").unwrap();
+        assert!(list(&tmp).is_err(), "坏盘必须报错,不得当空册");
+        let js = tmp.join("x.user.js");
+        fs::write(
+            &js,
+            "// ==UserScript==\n// @name x\n// ==/UserScript==\nx();",
+        )
+        .unwrap();
+        assert!(
+            install(&tmp, &[js]).is_err(),
+            "坏盘上写操作必须拒绝(防覆盖真册)"
+        );
+        let _ = fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn 同名不同id前缀不误中() {
+        let tmp = std::env::temp_dir().join(format!("us-same-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&tmp);
+        fs::create_dir_all(&tmp).unwrap();
+        let a = tmp.join("na.user.js");
+        let b = tmp.join("nb.user.js");
+        fs::write(
+            &a,
+            "// ==UserScript==\n// @name same\n// @namespace na\n// ==/UserScript==\naaa();",
+        )
+        .unwrap();
+        fs::write(
+            &b,
+            "// ==UserScript==\n// @name same\n// @namespace nb\n// ==/UserScript==\nbbb();",
+        )
+        .unwrap();
+        install(&tmp, &[a, b]).unwrap();
+        // e 只可能是 nb 的 id 前缀(na 的 id 若不以 e 开头不命中),不得因同名打到另一条
+        let idx = list(&tmp).unwrap(); // 端到端吃 profile,别手调内部 root 形参
+        let arr = idx["scripts"].as_array().unwrap();
+        let (id_a, _id_b) = (
+            arr[0]["id"].as_str().unwrap(),
+            arr[1]["id"].as_str().unwrap(),
+        );
+        // 构造只命中一条的前缀:取 id_b 的前 4 位
+        let pre = &_id_b[..4];
+        if !id_a.starts_with(pre) {
+            let p = script_path(&tmp, pre).unwrap();
+            let body = fs::read_to_string(&p).unwrap();
+            assert!(
+                body.contains("bbb"),
+                "前缀唯一命中必须是 id_b 那条,got {body}"
+            );
+        }
         let _ = fs::remove_dir_all(&tmp);
     }
 }
