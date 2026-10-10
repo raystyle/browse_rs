@@ -9,4 +9,4 @@
 
 ## 标准技能
 
-- gate-verdict(轮 0 候选,停人裁中,接受后才入本索引与 .claude/skills 加载视图)
+- gate-verdict(轮 0 人裁接受;skills/gate-verdict/SKILL.md,加载视图 .claude/skills 符号链接)
