@@ -18,6 +18,11 @@
       "docs": "`engine_up` 的参数面：CLI up 旗标直通（字段名即 /engine/up 请求键）。"
     },
     {
+      "path": "browse_cli::client::cdp_call",
+      "kind": "function",
+      "docs": "POST /engine/up 显式起引擎，走 ensure 全链（附着优先缺则 spawn）。\n\n# Errors\n\nHTTP 失败或引擎 ensure 失败（连不上、chrome 找不到、spawn 超时）。\n/cdp 直通（#80）：任意 CDP 域方法转发引擎，回 result/error 原文。"
+    },
+    {
       "path": "browse_cli::client::daemon_alive",
       "kind": "function",
       "docs": "探测 daemon 是否在跑：GET /health 通即为在。"
@@ -35,7 +40,7 @@
     {
       "path": "browse_cli::client::engine_up",
       "kind": "function",
-      "docs": "POST /engine/up 显式起引擎，走 ensure 全链（附着优先缺则 spawn）。\n\n# Errors\n\nHTTP 失败或引擎 ensure 失败（连不上、chrome 找不到、spawn 超时）。"
+      "docs": "拉起引擎（`browse up` 面）：POST /engine/up 并校验 ok 回包。\n\n# Errors\n\ndaemon 不可达、HTTP 失败或回包 ok 非真时返回错误。"
     },
     {
       "path": "browse_cli::client::ensure_daemon",

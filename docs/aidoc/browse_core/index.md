@@ -53,5 +53,6 @@ assert_eq!(render(&stmts), "const tabs = await listPageTargets()");
 - [`server`](server.md): daemon 的 HTTP API：常驻会话 + 方言求值 + 引擎生命周期。
 - [`skills`](skills.md): 技能触发层（#50/#51/#56 + 清仓重建总台令 2026-10-09）：goto 导航回执
 - [`surface`](surface.md): 命令面目录（incur-rs 原则的方言版适配）：CLI 子命令、方言全局函数、
+- [`userscript_store`](userscript_store.md): 油猴脚本盘上契约管理（REQ #79）：对引擎 `<profile>/Default/Userscripts/`
 - [`workspace`](workspace.md): workspace 单仓管理（#50/#51 配套 + 清仓重建总台令 2026-10-09）：站点
 

@@ -49,6 +49,7 @@ pub mod semantic;
 pub mod server;
 pub mod skills;
 pub mod surface;
+pub mod userscript_store;
 pub mod workspace;
 
 pub use engine::{Engine, EngineSource, EngineSpec};

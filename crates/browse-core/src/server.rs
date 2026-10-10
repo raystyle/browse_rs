@@ -24,8 +24,19 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 use tokio::net::TcpListener;
 
+/// /cdp 的请求体（#80 CDP 直通）：任意 CDP 域方法直达引擎。
+#[derive(Debug, Deserialize)]
+pub struct CdpRequest {
+    /// CDP 方法名（点分形如 `Runtime.evaluate`）。
+    pub method: String,
+    /// 方法参数（无参方法传 `{}`；缺省空对象）。
+    #[serde(default)]
+    pub params: Value,
+}
+
 /// 描述 POST /eval 的请求体。
 #[derive(Debug, Deserialize)]
+
 pub struct EvalRequest {
     /// 方言片段源码；`js` 为真时是全量 JS（不经方言解析器，#22 旁路）。
     pub code: String,
@@ -530,6 +541,7 @@ pub async fn serve(daemon: Arc<Daemon>, bind: &str) -> anyhow::Result<()> {
                 .delete(events_clear_handler),
         )
         .route("/userscript/stop", post(userscript_stop_handler))
+        .route("/cdp", post(cdp_handler))
         .route("/quit", post(quit_handler))
         .with_state(state);
 
@@ -868,6 +880,39 @@ async fn rune_handler(
         "changes": changes,
     });
     (axum::http::StatusCode::OK, Json(envelope))
+}
+
+/// /cdp（#80 直通）：任意 CDP 域方法转发引擎会话，回 result/error 原文。
+///
+/// 冷引擎懒拉（与 /eval 同形）；方法名非点分形快败（防裸命令误入）。
+async fn cdp_handler(State(st): State<AppState>, Json(req): Json<CdpRequest>) -> impl IntoResponse {
+    if !req
+        .method
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '.')
+        || !req.method.contains('.')
+    {
+        return err_response(anyhow::anyhow!(
+            "CDP 方法名须点分形（如 Runtime.evaluate），收到 {:?}",
+            req.method
+        ));
+    }
+    let _ = st
+        .daemon
+        .last_activity
+        .lock()
+        .map(|mut t| *t = Instant::now());
+    let d = &st.daemon;
+    if !d.host.session().is_connected() {
+        let spec = d.spec.lock().unwrap_or_else(|e| e.into_inner()).clone();
+        if let Err(e) = d.engine.ensure(&spec).await {
+            return err_response(e);
+        }
+    }
+    match d.host.session().call(&req.method, req.params).await {
+        Ok(v) => (axum::http::StatusCode::OK, Json(json!({ "result": v }))),
+        Err(e) => err_response(e),
+    }
 }
 
 async fn eval_handler(

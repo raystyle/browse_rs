@@ -26,6 +26,7 @@
 - [browse-core::server](browse_core/server.md): daemon 的 HTTP API：常驻会话 + 方言求值 + 引擎生命周期。
 - [browse-core::skills](browse_core/skills.md): 技能触发层（#50/#51/#56 + 清仓重建总台令 2026-10-09）：goto 导航回执
 - [browse-core::surface](browse_core/surface.md): 命令面目录（incur-rs 原则的方言版适配）：CLI 子命令、方言全局函数、
+- [browse-core::userscript_store](browse_core/userscript_store.md): 油猴脚本盘上契约管理（REQ #79）：对引擎 `<profile>/Default/Userscripts/`
 - [browse-core::workspace](browse_core/workspace.md): workspace 单仓管理（#50/#51 配套 + 清仓重建总台令 2026-10-09）：站点
 
 ## browse-rune 0.33.2

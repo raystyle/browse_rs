@@ -708,6 +708,11 @@
       "docs": "P1 cta 优先序（冻结,安全类先于爬虫类）：`next` 的选取依据。"
     },
     {
+      "path": "browse_core::server::CdpRequest",
+      "kind": "struct",
+      "docs": "/cdp 的请求体（#80 CDP 直通）：任意 CDP 域方法直达引擎。"
+    },
+    {
       "path": "browse_core::server::Daemon",
       "kind": "struct",
       "docs": "HTTP daemon 的运行面聚合：宿主、引擎、缺省引擎意图、单飞槽与退出旗标。"
@@ -906,6 +911,66 @@
       "path": "browse_core::surface::write_surface_files",
       "kind": "function",
       "docs": "把派生文件写进目录（维护命令 `browse --gen-surface <dir>` 用）：\n`browse.schema.json` / `llms.txt` / `llms-full.txt`。\n\n# Errors\n\n写盘失败（目录不可写）。"
+    },
+    {
+      "path": "browse_core::userscript_store",
+      "kind": "module",
+      "docs": "油猴脚本盘上契约管理（REQ #79）：对引擎 `<profile>/Default/Userscripts/`\n的同构读写——安装、列表、启停、删除、换源、路径输出。\n\n引擎（clean-chrome `UserscriptStore`）启动时读盘，装改后需引擎重启生效\n（CLI `--restart` 自动 down/up）；批 4 `Userscript.*` CDP 域落地后升级为\n域优先、盘上兜底。id 与引擎 `MakeId` 同构：`SHA256(\"namespace@name\")`\n前 6 字节 hex（12 字符）。"
+    },
+    {
+      "path": "browse_core::userscript_store::ScriptMeta",
+      "kind": "struct",
+      "docs": "`==UserScript==` 头解析结果（缺省语义同置场 CLI：无 `@name` 用文件基名，\n无 `@namespace` 用 `\"file\"`）。"
+    },
+    {
+      "path": "browse_core::userscript_store::install",
+      "kind": "function",
+      "docs": "安装一个或多个 `.user.js`：写 `scripts/<id>/{meta.json, script.user.js}`，\nindex 条目 upsert（幂等重装覆盖源码与 meta，`enabled` 保留现值）。\n\n# Errors\n\n源文件读失败或盘上写失败时返回带路径的错误串。"
+    },
+    {
+      "path": "browse_core::userscript_store::list",
+      "kind": "function",
+      "docs": "列表：对读 index.json,并按 workspace `page-skills/<slug>/probe.user.js`\n头算 id 对册（命中标 `pair`，双脚本对在册的装机态一眼可见）。\n\n# Errors\n\nindex.json 存在但形坏时返回错误（缺文件视为空册）。"
+    },
+    {
+      "path": "browse_core::userscript_store::make_id",
+      "kind": "function",
+      "docs": "脚本 id：`SHA256(\"namespace@name\")` 前 6 字节 hex，与引擎 `MakeId` 同构。"
+    },
+    {
+      "path": "browse_core::userscript_store::parse_header",
+      "kind": "function",
+      "docs": "解析 `==UserScript==` 头；无头块时按全缺省 meta 返回（仍可安装，等于\n一段无匹配面的普通脚本）。"
+    },
+    {
+      "path": "browse_core::userscript_store::remove",
+      "kind": "function",
+      "docs": "删除一个脚本：index 条目与 `scripts/<id>/` 目录同删。\n\n# Errors\n\nid/名未命中、目录删失败或 index 写失败时返回错误串。"
+    },
+    {
+      "path": "browse_core::userscript_store::script_body",
+      "kind": "function",
+      "docs": "剥头后的脚本体（头块连同收尾标记剔除；无头块返回原文）。"
+    },
+    {
+      "path": "browse_core::userscript_store::script_path",
+      "kind": "function",
+      "docs": "输出脚本体文件路径（编辑入口：改后 `update` 同 id 回写或直接编辑该文件）。\n\n# Errors\n\nid/名未命中时返回错误串。"
+    },
+    {
+      "path": "browse_core::userscript_store::set_enabled",
+      "kind": "function",
+      "docs": "启停一个脚本（改 index 条目 `enabled`）。\n\n# Errors\n\nid/名未命中或 index 写失败时返回错误串。"
+    },
+    {
+      "path": "browse_core::userscript_store::update",
+      "kind": "function",
+      "docs": "同 id 换源：以新文件内容重写 meta 与脚本体（name/namespace 由新头决定，\nid 随之；若 id 漂移视为新装+旧删的原子组合）。\n\n# Errors\n\n源读失败或定位失败时返回错误串。"
+    },
+    {
+      "path": "browse_core::userscript_store::userscripts_root",
+      "kind": "function",
+      "docs": "引擎侧 Userscripts 目录（Chrome profile 下的固定相对位）。"
     },
     {
       "path": "browse_core::workspace",

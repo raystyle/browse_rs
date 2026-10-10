@@ -16,10 +16,59 @@ use browse_cli::client;
 use browse_core::snippet_complete;
 use rustyline::DefaultEditor;
 use rustyline::error::ReadlineError;
-use serde_json::json;
+use serde_json::{Value, json};
 use std::io::IsTerminal;
+use std::path::PathBuf;
 
 /// CLI 入口解析出的形态：缺省求值或生命周期子命令。
+/// userscript enable/disable/remove 的多 id 收集（空格分隔批量；只兼容尾随
+/// `--restart`，中缀旗标按用法错拒）。
+fn collect_ids(args: &mut Args, sub: &str) -> Vec<String> {
+    let mut ids = vec![args.next(&format!("userscript {sub} <id|名>"))];
+    while let Some(t) = args.next_opt() {
+        if t == "--restart" {
+            continue;
+        }
+        if t.starts_with("--") {
+            eprintln!("browse: userscript {sub} 只收 id/名（收到 {t}，退出 2）");
+            std::process::exit(2)
+        }
+        ids.push(t);
+    }
+    ids
+}
+
+/// userscript 族的目标 profile：显式 `--profile` 或当前实例缺省 engine-profile。
+fn engine_profile_path(profile: &Option<String>) -> PathBuf {
+    profile
+        .clone()
+        .map(PathBuf::from)
+        .unwrap_or_else(browse_core::paths::engine_profile_dir)
+}
+
+/// #79 `--restart`：down+up（缺省 headless）让盘上装改对引擎生效。
+async fn restart_engine(profile: Option<String>) -> anyhow::Result<()> {
+    if client::daemon_alive().await.is_some() {
+        client::quit().await?;
+    }
+    client::ensure_daemon().await?;
+    client::engine_up(client::UpParams {
+        headless: true,
+        chrome: None,
+        ws: None,
+        port: None,
+        pipe: false,
+        profile,
+        proxy: None,
+        proxy_bypass: None,
+        isolated: false,
+        engine_args: vec![],
+    })
+    .await?;
+    println!("引擎已重启（装改生效）");
+    Ok(())
+}
+
 enum Mode {
     /// 求值片段（缺省）。
     Eval,
@@ -76,6 +125,21 @@ enum Mode {
     WorkspaceUpdate,
     /// `browse workspace list`：列在册域名段与 page slug。
     WorkspaceList,
+    /// `browse userscript install <file...>`：油猴脚本盘上装机（幂等重装
+    /// enabled 保留；引擎重启生效，`--restart` 自动 down/up；REQ #79）。
+    UserscriptInstall(Vec<String>, bool),
+    /// `browse userscript list`：列在册脚本（index 对读+workspace 对册）。
+    UserscriptList,
+    /// `browse userscript enable/disable <id|名>...`（多脚本批量，逐条定位）。
+    UserscriptSetEnabled(Vec<String>, bool),
+    /// `browse userscript remove <id|名>...`（多脚本批量；`--restart` 同 install）。
+    UserscriptRemove(Vec<String>, bool),
+    /// `browse userscript update <id|名> <file>`（同 id 换源）。
+    UserscriptUpdate(String, String, bool),
+    /// `browse userscript path <id|名>`：输出脚本体路径（编辑入口）。
+    UserscriptPath(String),
+    /// `browse cdp <Method> [--params JSON]`：任意 CDP 域方法直通（#80）。
+    CdpCall(String, Option<String>),
     /// `browse workspace site <段>[/<文件>]`：域技能清单或全文。
     WorkspaceSite(String),
     /// `browse workspace page <slug>`：页面技能全文。
@@ -563,6 +627,72 @@ async fn main() -> Result<()> {
                         std::process::exit(2);
                     }
                 }
+            }
+            "userscript" if snippets.is_empty() && mode_is_eval(&mode) => {
+                match args.next("userscript").as_str() {
+                    "install" => {
+                        let mut files = Vec::new();
+                        let mut restart = false;
+                        loop {
+                            match args.next_opt() {
+                                None => break,
+                                Some(t) if t == "--restart" => restart = true,
+                                Some(t) if t.starts_with("--") => {
+                                    eprintln!(
+                                        "browse: userscript install 只认 --restart（收到 {t}，退出 2）"
+                                    );
+                                    std::process::exit(2)
+                                }
+                                Some(t) => files.push(t),
+                            }
+                        }
+                        if files.is_empty() {
+                            eprintln!(
+                                "browse: userscript install 至少一个 .user.js 路径（退出 2）"
+                            );
+                            std::process::exit(2)
+                        }
+                        mode = Mode::UserscriptInstall(files, restart)
+                    }
+                    "list" => mode = Mode::UserscriptList,
+                    "enable" => {
+                        mode = Mode::UserscriptSetEnabled(collect_ids(&mut args, "enable"), true)
+                    }
+                    "disable" => {
+                        mode = Mode::UserscriptSetEnabled(collect_ids(&mut args, "disable"), false)
+                    }
+                    "remove" => {
+                        let ids = collect_ids(&mut args, "remove");
+                        let restart = args.next_opt().is_some_and(|t| t == "--restart");
+                        mode = Mode::UserscriptRemove(ids, restart)
+                    }
+                    "update" => {
+                        let id = args.next("userscript update <id|名>");
+                        let file = args.next("userscript update 的源文件");
+                        let restart = args.next_opt() == Some("--restart".to_string());
+                        mode = Mode::UserscriptUpdate(id, file, restart)
+                    }
+                    "path" => mode = Mode::UserscriptPath(args.next("userscript path <id|名>")),
+                    other => {
+                        eprintln!(
+                            "browse: userscript 子命令不认识 {other}（install/list/enable/disable/remove/update/path，退出 2）"
+                        );
+                        std::process::exit(2)
+                    }
+                }
+            }
+            "cdp" if snippets.is_empty() && mode_is_eval(&mode) => {
+                let method = args.next("cdp <Method 如 Runtime.evaluate>");
+                let mut params = None;
+                if let Some(t) = args.next_opt() {
+                    if t == "--params" {
+                        params = Some(args.next("cdp --params 的 JSON"));
+                    } else {
+                        eprintln!("browse: cdp 只认 --params JSON（收到 {t}，退出 2）");
+                        std::process::exit(2)
+                    }
+                }
+                mode = Mode::CdpCall(method, params)
             }
             "issue" if snippets.is_empty() && mode_is_eval(&mode) => {
                 match args.next("issue").as_str() {
@@ -1169,6 +1299,132 @@ async fn main() -> Result<()> {
         // ---- 片段库（#44）：纯文件系统读，零协议改动，不经 daemon ----
         // ---- workspace 单仓（#50/#51 配套）：git 与文件系统操作，
         // 不经 daemon；blocking 全收 spawn_blocking（chrome_mgr 同构） ----
+        Mode::UserscriptInstall(files, restart) => {
+            let prof = engine_profile_path(&profile);
+            let r = tokio::task::spawn_blocking(move || {
+                browse_core::userscript_store::install(
+                    &prof,
+                    &files.iter().map(PathBuf::from).collect::<Vec<_>>(),
+                )
+            })
+            .await
+            .map_err(|e| anyhow!("userscript install 任务崩了：{e}"))
+            .and_then(|r| r.map_err(|e| anyhow!("{e}")))?;
+            println!("{}", serde_json::to_string_pretty(&r)?);
+            if restart {
+                restart_engine(profile).await?;
+            } else {
+                eprintln!(
+                    "注：引擎启动时读盘，装改后 browse down/up 生效（或下次装改带 --restart）"
+                );
+            }
+            Ok(())
+        }
+        Mode::UserscriptList => {
+            let prof = engine_profile_path(&profile);
+            let l = tokio::task::spawn_blocking(move || browse_core::userscript_store::list(&prof))
+                .await
+                .map_err(|e| anyhow!("userscript list 任务崩了：{e}"))
+                .and_then(|r| r.map_err(|e| anyhow!("{e}")))?;
+            for e in l["scripts"].as_array().cloned().unwrap_or_default() {
+                println!(
+                    "{} {} {}{}",
+                    e["id"].as_str().unwrap_or("?"),
+                    if e["enabled"].as_bool().unwrap_or(false) {
+                        "on "
+                    } else {
+                        "off"
+                    },
+                    e["name"].as_str().unwrap_or("?"),
+                    e["pair"]
+                        .as_str()
+                        .map(|p| format!("  [pair:{p}]"))
+                        .unwrap_or_default(),
+                );
+            }
+            if l["scripts"].as_array().is_none_or(|a| a.is_empty()) {
+                println!("（空册；browse userscript install <file...> 装）");
+            }
+            Ok(())
+        }
+        Mode::UserscriptSetEnabled(ids, on) => {
+            let prof = engine_profile_path(&profile);
+            let mut rs = Vec::new();
+            for id in &ids {
+                let r = tokio::task::spawn_blocking({
+                    let prof = prof.clone();
+                    let id = id.clone();
+                    move || browse_core::userscript_store::set_enabled(&prof, &id, on)
+                })
+                .await
+                .map_err(|e| anyhow!("userscript set_enabled 任务崩了：{e}"))
+                .and_then(|r| r.map_err(|e| anyhow!("{e}")))?;
+                rs.push(r);
+            }
+            println!("{}", serde_json::to_string_pretty(&rs)?);
+            eprintln!("注：引擎重启后生效（--restart 面在 install/remove/update）");
+            Ok(())
+        }
+        Mode::UserscriptRemove(ids, restart) => {
+            let prof = engine_profile_path(&profile);
+            let mut rs = Vec::new();
+            for id in &ids {
+                let r = tokio::task::spawn_blocking({
+                    let prof = prof.clone();
+                    let id = id.clone();
+                    move || browse_core::userscript_store::remove(&prof, &id)
+                })
+                .await
+                .map_err(|e| anyhow!("userscript remove 任务崩了：{e}"))
+                .and_then(|r| r.map_err(|e| anyhow!("{e}")))?;
+                rs.push(r);
+            }
+            println!("{}", serde_json::to_string_pretty(&rs)?);
+            if restart {
+                restart_engine(profile).await?;
+            } else {
+                eprintln!("注：引擎重启后生效（或带 --restart）");
+            }
+            Ok(())
+        }
+        Mode::UserscriptUpdate(id, file, restart) => {
+            let prof = engine_profile_path(&profile);
+            let r = tokio::task::spawn_blocking(move || {
+                browse_core::userscript_store::update(&prof, &id, &PathBuf::from(file))
+            })
+            .await
+            .map_err(|e| anyhow!("userscript update 任务崩了：{e}"))
+            .and_then(|r| r.map_err(|e| anyhow!("{e}")))?;
+            println!("{}", serde_json::to_string_pretty(&r)?);
+            if restart {
+                restart_engine(profile).await?;
+            } else {
+                eprintln!("注：引擎重启后生效（或带 --restart）");
+            }
+            Ok(())
+        }
+        Mode::UserscriptPath(id) => {
+            let prof = engine_profile_path(&profile);
+            let p = tokio::task::spawn_blocking(move || {
+                browse_core::userscript_store::script_path(&prof, &id)
+            })
+            .await
+            .map_err(|e| anyhow!("userscript path 任务崩了：{e}"))
+            .and_then(|r| r.map_err(|e| anyhow!("{e}")))?;
+            println!("{}", p.display());
+            Ok(())
+        }
+        Mode::CdpCall(method, params) => {
+            let pv: Value = match params {
+                None => json!({}),
+                Some(s) => {
+                    serde_json::from_str(&s).map_err(|e| anyhow!("--params 非法 JSON：{e}"))?
+                }
+            };
+            let r = client::cdp_call(&method, pv).await?;
+            println!("{}", serde_json::to_string_pretty(&r)?);
+            Ok(())
+        }
         Mode::WorkspaceStatus => {
             let root = browse_core::paths::workspace_dir();
             let st =

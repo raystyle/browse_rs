@@ -273,6 +273,8 @@ fn help_lists_every_cli_flag() {
         "--since",
         "--last",
         "--clear",
+        "--restart",
+        "--params",
     ];
     let mut flags: Vec<String> = src
         .split(['"', '|'])

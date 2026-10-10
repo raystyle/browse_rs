@@ -297,6 +297,28 @@
       "output": "runtime JSON（回值随页面与 CDP 而定）",
       "type": "object"
     },
+    "cli.cdp": {
+      "description": "browse cdp <Method> [--params JSON] CDP 直通：任意 CDP 域方法经 daemon 转发引擎会话，回 result/error 原文；方法名须点分形；引擎未起自动懒拉。操作油猴脚本的 Userscript.* 域落地后同面直达。",
+      "example": "browse cdp Runtime.evaluate --params '{\"expression\":\"1+1\"}'",
+      "input": {
+        "properties": {
+          "method": {
+            "description": "",
+            "type": "string"
+          },
+          "params": {
+            "description": "",
+            "type": "string"
+          }
+        },
+        "required": [
+          "method"
+        ],
+        "type": "object"
+      },
+      "output": "runtime JSON（回值随页面与 CDP 而定）",
+      "type": "object"
+    },
     "cli.chrome-doctor": {
       "description": "browse chrome doctor 托管 Chromium 部署体检（在位/文件基线/pin；AppContainer ACE 仅 Windows 有值，缺则 hints 给 icacls 修法）。",
       "example": "browse chrome doctor",
@@ -808,6 +830,22 @@
             "type": "string"
           },
           "ws": {
+            "description": "",
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "output": "runtime JSON（回值随页面与 CDP 而定）",
+      "type": "object"
+    },
+    "cli.userscript": {
+      "description": "browse userscript <install|list|enable|disable|remove|update|path> 油猴脚本盘上管理七件：install <file...> 装机（幂等重装 enabled 保留）加 list（对册 workspace 双脚本对）加 enable/disable/remove <id|名>（id 全等或唯一前缀或全名定位）加 update <id|名> <file> 同位换源加 path <id|名> 出脚本体路径；写 <profile>/Default/Userscripts 同构引擎契约（meta 含 match/connect/grant）；引擎启动时读盘，装改带 --restart 自动 down/up 生效；profile 走全局 --profile 或实例缺省 engine-profile。",
+      "example": "browse userscript install ~/probe.user.js --restart",
+      "input": {
+        "properties": {
+          "id": {
             "description": "",
             "type": "string"
           }

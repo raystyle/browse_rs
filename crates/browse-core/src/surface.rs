@@ -480,6 +480,25 @@ pub const COMMANDS: &[CmdSpec] = &[
         example: "browse workspace remove ~/my-skills",
     },
     CmdSpec {
+        name: "userscript",
+        kind: CmdKind::Cli,
+        signature: "browse userscript <install|list|enable|disable|remove|update|path>",
+        args: &[arg!("id", "string", false)],
+        description: "油猴脚本盘上管理七件：install <file...> 装机（幂等重装 enabled 保留）加 list（对册 workspace 双脚本对）加 enable/disable/remove <id|名>（id 全等或唯一前缀或全名定位）加 update <id|名> <file> 同位换源加 path <id|名> 出脚本体路径；写 <profile>/Default/Userscripts 同构引擎契约（meta 含 match/connect/grant）；引擎启动时读盘，装改带 --restart 自动 down/up 生效；profile 走全局 --profile 或实例缺省 engine-profile。",
+        example: "browse userscript install ~/probe.user.js --restart",
+    },
+    CmdSpec {
+        name: "cdp",
+        kind: CmdKind::Cli,
+        signature: "browse cdp <Method> [--params JSON]",
+        args: &[
+            arg!("method", "string", true),
+            arg!("params", "string", false),
+        ],
+        description: "CDP 直通：任意 CDP 域方法经 daemon 转发引擎会话，回 result/error 原文；方法名须点分形；引擎未起自动懒拉。操作油猴脚本的 Userscript.* 域落地后同面直达。",
+        example: "browse cdp Runtime.evaluate --params '{\"expression\":\"1+1\"}'",
+    },
+    CmdSpec {
         name: "workspace-list",
         kind: CmdKind::Cli,
         signature: "browse workspace list",
@@ -1896,6 +1915,13 @@ pub const HELP_GROUPS: &[(&str, &[&str])] = &[
             "browse artifact attest <id>",
             "browse artifact list",
             "browse ledger keygen",
+        ],
+    ),
+    (
+        "油猴与直通",
+        &[
+            "browse userscript <install|list|enable|disable|remove|update|path>",
+            "browse cdp <Method>",
         ],
     ),
     ("自更新", &["browse update"]),

@@ -815,6 +815,37 @@ pub struct UpParams {
 /// # Errors
 ///
 /// HTTP 失败或引擎 ensure 失败（连不上、chrome 找不到、spawn 超时）。
+/// /cdp 直通（#80）：任意 CDP 域方法转发引擎，回 result/error 原文。
+pub async fn cdp_call(method: &str, params: Value) -> Result<Value> {
+    let c = client();
+    let resp = c
+        .post(format!("{}/cdp", http()))
+        .json(&json!({ "method": method, "params": params }))
+        .send()
+        .await
+        .context("POST /cdp")?;
+    let status = resp.status();
+    let body: Value = resp
+        .json()
+        .await
+        .with_context(|| format!("解析 /cdp 响应（HTTP {status}）"))?;
+    if status.is_success() {
+        Ok(body)
+    } else {
+        Err(anyhow!(
+            "{}",
+            body.get("error")
+                .and_then(Value::as_str)
+                .unwrap_or("CDP 调用失败")
+        ))
+    }
+}
+
+/// 拉起引擎（`browse up` 面）：POST /engine/up 并校验 ok 回包。
+///
+/// # Errors
+///
+/// daemon 不可达、HTTP 失败或回包 ok 非真时返回错误。
 pub async fn engine_up(p: UpParams) -> Result<Value> {
     let c = client();
     let resp = c
