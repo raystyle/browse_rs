@@ -1,10 +1,18 @@
 # Changelog
 
-版本级里程碑；逐批过程见 docs/diary。semver 判据在册 docs/requirements/REQ-004。
+版本级里程碑；逐批过程见 docs/sources/diary。semver 判据在册 docs/knowledge/req/REQ-004。
 
 ## Unreleased
 
-（无；最新封版 0.33.2）
+（无；最新封版 0.34.0）
+
+## 0.34.0（2026-10-10，REQ-039）
+
+- **`browse userscript` 油猴脚本盘上管理七件**（#79）：install（多文件、幂等重装 enabled 保留）＋list（对册 workspace 双脚本对标 `pair:slug`）＋enable/disable/remove（多 id 批量，id 全等或全名或唯一前缀定位）＋update（先稳新源、同 id 保 enabled 与 position）＋path；`--restart` 族内全支持自动 down/up 生效；index 原子写（tmp＋rename）与形坏报错不吞空册
+- **`browse cdp <Method> [--params JSON]` CDP 直通**（#80）：任意 CDP 域方法经 daemon 转发引擎（POST /cdp），守卫层同拦危险方法（Browser.close 恒拒等）；数据面险级超 /eval 已文档化；第七代 Userscript.\* 域八面经此直通验收
+- **`browse userscript eval` 油猴世界直通求值**（#81）：executionContext 事件缓存＋GM 特征探测定位油猴世界 contextId，GM 面可用、主世界隔离反证；e2e 收录装-注-eval-删-消全链
+- grok＋kimi 双评审七 findings 全修（原子写/update 序/定位臂/批量回执/doc 归位）
+- 文档:三层聚合与归档统一（ADR-0013，con-02）,sources/knowledge/operations 三层建、guides 分流（G001/G002 手册与 R001-R003 参考）、knowledge 独立 git；标准技能 gate-verdict 首案入集
 
 ## 0.33.2 - 2026-10-10
 
