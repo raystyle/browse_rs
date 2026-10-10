@@ -21,21 +21,22 @@ use std::io::IsTerminal;
 use std::path::PathBuf;
 
 /// CLI 入口解析出的形态：缺省求值或生命周期子命令。
-/// userscript enable/disable/remove 的多 id 收集（空格分隔批量；只兼容尾随
-/// `--restart`，中缀旗标按用法错拒）。
-fn collect_ids(args: &mut Args, sub: &str) -> Vec<String> {
+/// userscript enable/disable/remove 的多 id 收集（空格分隔批量）与旗标归
+/// 集（`--restart` 可出现在任意 id 位；其它旗标按用法错拒）。
+fn collect_ids(args: &mut Args, sub: &str) -> (Vec<String>, bool) {
     let mut ids = vec![args.next(&format!("userscript {sub} <id|名>"))];
+    let mut restart = false;
     while let Some(t) = args.next_opt() {
         if t == "--restart" {
-            continue;
-        }
-        if t.starts_with("--") {
-            eprintln!("browse: userscript {sub} 只收 id/名（收到 {t}，退出 2）");
+            restart = true;
+        } else if t.starts_with("--") {
+            eprintln!("browse: userscript {sub} 只收 id/名与 --restart（收到 {t}，退出 2）");
             std::process::exit(2)
+        } else {
+            ids.push(t);
         }
-        ids.push(t);
     }
-    ids
+    (ids, restart)
 }
 
 /// userscript 族的目标 profile：显式 `--profile` 或当前实例缺省 engine-profile。
@@ -656,14 +657,14 @@ async fn main() -> Result<()> {
                     }
                     "list" => mode = Mode::UserscriptList,
                     "enable" => {
-                        mode = Mode::UserscriptSetEnabled(collect_ids(&mut args, "enable"), true)
+                        mode = Mode::UserscriptSetEnabled(collect_ids(&mut args, "enable").0, true)
                     }
                     "disable" => {
-                        mode = Mode::UserscriptSetEnabled(collect_ids(&mut args, "disable"), false)
+                        mode =
+                            Mode::UserscriptSetEnabled(collect_ids(&mut args, "disable").0, false)
                     }
                     "remove" => {
-                        let ids = collect_ids(&mut args, "remove");
-                        let restart = args.next_opt().is_some_and(|t| t == "--restart");
+                        let (ids, restart) = collect_ids(&mut args, "remove");
                         mode = Mode::UserscriptRemove(ids, restart)
                     }
                     "update" => {
