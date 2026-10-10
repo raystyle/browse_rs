@@ -847,6 +847,41 @@ pub async fn cdp_call(method: &str, params: Value) -> Result<Value> {
 /// # Errors
 ///
 /// daemon 不可达、HTTP 失败或回包 ok 非真时返回错误。
+/// /userscript/eval（#81）：在油猴世界直通求值，回 result 原文。
+///
+/// # Errors
+///
+/// daemon 不可达、HTTP 失败或引擎侧定位/求值失败时返回错误。
+pub async fn userscript_eval(code: &str, timeout_s: Option<u64>) -> Result<Value> {
+    let c = client();
+    let resp = c
+        .post(format!("{}/userscript/eval", http()))
+        .json(&json!({ "code": code, "timeout_s": timeout_s }))
+        .send()
+        .await
+        .context("POST /userscript/eval")?;
+    let status = resp.status();
+    let body: Value = resp
+        .json()
+        .await
+        .with_context(|| format!("解析 /userscript/eval 响应（HTTP {status}）"))?;
+    if status.is_success() {
+        Ok(body)
+    } else {
+        Err(anyhow!(
+            "{}",
+            body.get("error")
+                .and_then(Value::as_str)
+                .unwrap_or("油猴世界求值失败")
+        ))
+    }
+}
+
+/// 拉起引擎（`browse up` 面）：POST /engine/up 并校验 ok 回包。
+///
+/// # Errors
+///
+/// daemon 不可达、HTTP 失败或回包 ok 非真时返回错误。
 pub async fn engine_up(p: UpParams) -> Result<Value> {
     let c = client();
     let resp = c

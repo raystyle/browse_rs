@@ -140,6 +140,8 @@ enum Mode {
     UserscriptUpdate(String, String, bool),
     /// `browse userscript path <id|名>`：输出脚本体路径（编辑入口）。
     UserscriptPath(String),
+    /// `browse userscript eval <code>`：油猴世界直通求值（#81，GM 面可用）。
+    UserscriptEval(String),
     /// `browse cdp <Method> [--params JSON]`：任意 CDP 域方法直通（#80）。
     CdpCall(String, Option<String>),
     /// `browse workspace site <段>[/<文件>]`：域技能清单或全文。
@@ -692,9 +694,10 @@ async fn main() -> Result<()> {
                         mode = Mode::UserscriptUpdate(pos[0].clone(), pos[1].clone(), restart)
                     }
                     "path" => mode = Mode::UserscriptPath(args.next("userscript path <id|名>")),
+                    "eval" => mode = Mode::UserscriptEval(args.next("userscript eval <code>")),
                     other => {
                         eprintln!(
-                            "browse: userscript 子命令不认识 {other}（install/list/enable/disable/remove/update/path，退出 2）"
+                            "browse: userscript 子命令不认识 {other}（install/list/enable/disable/remove/update/path/eval，退出 2）"
                         );
                         std::process::exit(2)
                     }
@@ -1450,6 +1453,16 @@ async fn main() -> Result<()> {
             .map_err(|e| anyhow!("userscript path 任务崩了：{e}"))
             .and_then(|r| r.map_err(|e| anyhow!("{e}")))?;
             println!("{}", p.display());
+            Ok(())
+        }
+        Mode::UserscriptEval(code) => {
+            client::ensure_daemon().await?;
+            let r = client::userscript_eval(&code, None).await?;
+            if let Some(v) = r["result"]["value"].as_str() {
+                println!("{v}");
+            } else {
+                println!("{}", serde_json::to_string_pretty(&r["result"])?);
+            }
             Ok(())
         }
         Mode::CdpCall(method, params) => {

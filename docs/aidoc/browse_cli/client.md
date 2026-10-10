@@ -28,6 +28,7 @@ daemon 客户端：本地 HTTP 调用 + 首次使用自动拉起 detached daemon
 - `rune_stop` — 主动停止在跑的 rune 执行（批次二总台指令）：POST /rune/stop，回
 - `skills_passthrough_env` — 技能层透传环境（#50/#51）：拉起新 daemon 时把 CLI 进程里的 workspace
 - `state_dir` — 返回 daemon 日志与运行面目录（`%USERPROFILE%\.browse-rs[\<name>]`，多实例各一份）。
+- `userscript_eval` — 拉起引擎（`browse up` 面）：POST /engine/up 并校验 ok 回包。
 
 ## Types
 

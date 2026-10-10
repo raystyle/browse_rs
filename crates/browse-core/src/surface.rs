@@ -482,9 +482,9 @@ pub const COMMANDS: &[CmdSpec] = &[
     CmdSpec {
         name: "userscript",
         kind: CmdKind::Cli,
-        signature: "browse userscript <install|list|enable|disable|remove|update|path>",
+        signature: "browse userscript <install|list|enable|disable|remove|update|path|eval>",
         args: &[arg!("id", "string", false)],
-        description: "油猴脚本盘上管理七件：install <file...> 装机（幂等重装 enabled 保留）加 list（对册 workspace 双脚本对）加 enable/disable/remove <id|名>（id 全等或唯一前缀或全名定位）加 update <id|名> <file> 同位换源加 path <id|名> 出脚本体路径；写 <profile>/Default/Userscripts 同构引擎契约（meta 含 match/connect/grant）；引擎启动时读盘，装改带 --restart 自动 down/up 生效；profile 走全局 --profile 或实例缺省 engine-profile。",
+        description: "油猴脚本盘上管理七件：install <file...> 装机（幂等重装 enabled 保留）加 list（对册 workspace 双脚本对）加 enable/disable/remove <id|名>（id 全等或唯一前缀或全名定位）加 update <id|名> <file> 同位换源加 path <id|名> 出脚本体路径加 eval <code> 油猴世界直通求值（GM 面可用，context 特征探测定位）；写 <profile>/Default/Userscripts 同构引擎契约（meta 含 match/connect/grant）；引擎启动时读盘，装改带 --restart 自动 down/up 生效；profile 走全局 --profile 或实例缺省 engine-profile。",
         example: "browse userscript install ~/probe.user.js --restart",
     },
     CmdSpec {
@@ -1920,7 +1920,7 @@ pub const HELP_GROUPS: &[(&str, &[&str])] = &[
     (
         "油猴与直通",
         &[
-            "browse userscript <install|list|enable|disable|remove|update|path>",
+            "browse userscript <install|list|enable|disable|remove|update|path|eval>",
             "browse cdp <Method>",
         ],
     ),

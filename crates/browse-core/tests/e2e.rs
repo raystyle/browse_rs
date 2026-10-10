@@ -3754,3 +3754,186 @@ async fn rune_js_lib_comments_inert() {
     clean_profile().await;
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+/// #79/#81 userscript 命令面端到端：盘上装机→引擎装载→油猴世界 eval→
+/// 删→消失（双评审 F6 收录;宽 match 临时探针，零外网）。
+#[tokio::test]
+async fn e2e_userscript_manage_and_eval() {
+    if !gated() {
+        eprintln!("skip: BROWSE_E2E 未设 1");
+        return;
+    }
+    let _seq = SEQ.lock().await;
+    clean_profile().await;
+    // 一次性页源(match 钉实测端口,引擎 URLPattern 口径本地端口直配)
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind");
+    let addr = listener.local_addr().expect("addr");
+    tokio::spawn(async move {
+        loop {
+            let Ok((mut sock, _)) = listener.accept().await else {
+                break;
+            };
+            tokio::spawn(async move {
+                use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
+                let mut buf = [0u8; 4096];
+                let _ = sock.read(&mut buf).await;
+                let body = "<html><body><p>us</p></body></html>";
+                let head = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                    body.len()
+                );
+                let _ = sock.write_all(head.as_bytes()).await;
+                let _ = sock.write_all(body.as_bytes()).await;
+            });
+        }
+    });
+    let probe = std::env::temp_dir().join("e2e-us-probe.user.js");
+    std::fs::write(
+        &probe,
+        format!(
+            "// ==UserScript==\n// @name e2e-us-probe\n// @match http://127.0.0.1:{port}/*\n// @grant GM_setValue\n// @run-at document-start\n// ==/UserScript==\ndocument.documentElement.setAttribute('e2e-us', 'loaded');\n",
+            port = addr.port()
+        ),
+    )
+    .expect("写探针");
+
+    let profile = browse_core::paths::engine_profile_dir();
+    let inst = browse_core::userscript_store::install(&profile, std::slice::from_ref(&probe))
+        .expect("装机");
+    let id = inst["installed"][0]["id"].as_str().expect("id").to_string();
+
+    let session = cdp::Session::new();
+    let host = JsHost::new(session.clone());
+    let engine = Engine::new(session.clone());
+    engine
+        .ensure(&EngineSpec::Auto {
+            chrome: None,
+            headless: true,
+            pipe: false,
+            profile: None,
+            proxy: None,
+            proxy_bypass: None,
+            isolated: false,
+            engine_args: Vec::new(),
+        })
+        .await
+        .expect("引擎");
+    let url = format!("http://{addr}/");
+    // 与全文件先例同道:方言片段 navigate(host 侧带会话初始化)
+    let nav = host
+        .eval_snippet(&format!(r#"await session.Page.navigate({{url:"{url}"}})"#))
+        .await
+        .expect("导航");
+    assert!(nav.get("frameId").is_some(), "navigate 回 frameId: {nav}");
+    // settle 单读:注入时序轮询(低频,20×300ms);双值带回 URL 辨 evaluate 落点
+    let mut attr = String::new();
+    for _ in 0..20 {
+        tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+        let v = session
+            .call(
+                "Runtime.evaluate",
+                serde_json::json!({ "expression": "[document.URL, document.documentElement.getAttribute('e2e-us')]", "returnByValue": true }),
+            )
+            .await;
+        if let Ok(v) = v
+            && let Some(pair) = v["result"]["value"].as_array()
+            && pair[1].as_str() == Some("loaded")
+        {
+            attr = "loaded".into();
+            break;
+        }
+    }
+    assert_eq!(attr, "loaded", "油猴脚本注入(装机→装载闭环)");
+
+    // 油猴世界定位(#81 同款底座):非 default context 特征探测
+    let _ = session.call("Runtime.enable", serde_json::json!({})).await;
+    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+    let evs = session
+        .peek_events("Runtime.executionContextCreated", 32)
+        .await;
+    let cands: Vec<u64> = evs
+        .iter()
+        .filter_map(|e| {
+            let ctx = &e["params"]["context"];
+            if ctx["auxData"]["isDefault"].as_bool().unwrap_or(false) {
+                None
+            } else {
+                ctx["id"].as_u64()
+            }
+        })
+        .collect();
+    assert!(!cands.is_empty(), "有隔离世界(探针世界)");
+    let probe_js = "typeof GM_info!=='undefined'||typeof __gm_bridge!=='undefined'";
+    let mut hit = false;
+    for cid in &cands {
+        let v = session
+            .call(
+                "Runtime.evaluate",
+                serde_json::json!({ "contextId": cid, "expression": probe_js, "returnByValue": true }),
+            )
+            .await;
+        if let Ok(v) = v
+            && v["result"]["value"].as_bool() == Some(true)
+        {
+            let gmv = session
+                .call(
+                    "Runtime.evaluate",
+                    serde_json::json!({ "contextId": cid, "expression": "GM_info.version", "returnByValue": true }),
+                )
+                .await;
+            let ver = gmv.expect("GM_info")["result"]["value"]
+                .as_str()
+                .unwrap_or_default()
+                .to_string();
+            assert!(ver.starts_with("155"), "GM_info.version={ver}");
+            hit = true;
+            break;
+        }
+    }
+    assert!(hit, "特征探测命中油猴世界");
+
+    // 删→引擎重启→消失
+    browse_core::userscript_store::remove(&profile, &id).expect("删");
+    engine.shutdown().await.expect("shutdown");
+    let session2 = cdp::Session::new();
+    let host2 = JsHost::new(session2.clone());
+    let engine2 = Engine::new(session2.clone());
+    engine2
+        .ensure(&EngineSpec::Auto {
+            chrome: None,
+            headless: true,
+            pipe: false,
+            profile: None,
+            proxy: None,
+            proxy_bypass: None,
+            isolated: false,
+            engine_args: Vec::new(),
+        })
+        .await
+        .expect("引擎2");
+    let nav2 = host2
+        .eval_snippet(&format!(r#"await session.Page.navigate({{url:"{url}"}})"#))
+        .await
+        .expect("导航2");
+    assert!(
+        nav2.get("frameId").is_some(),
+        "navigate2 回 frameId: {nav2}"
+    );
+    tokio::time::sleep(std::time::Duration::from_millis(1500)).await;
+    let gone = session2
+        .call(
+            "Runtime.evaluate",
+            serde_json::json!({ "expression": "document.documentElement.getAttribute('e2e-us')", "returnByValue": true }),
+        )
+        .await;
+    let v = gone.expect("eval")["result"]["value"]
+        .as_str()
+        .unwrap_or_default()
+        .to_string();
+    assert_ne!(v, "loaded", "删后重启不再注入");
+    engine2.shutdown().await.expect("shutdown2");
+    clean_profile().await;
+    let _ = std::fs::remove_file(&probe);
+}

@@ -748,6 +748,11 @@
       "docs": "描述 POST /rune 的请求体（账本 #67：Rune 编排面）。"
     },
     {
+      "path": "browse_core::server::UserscriptEvalRequest",
+      "kind": "struct",
+      "docs": "/userscript/eval 的请求体（#81 油猴世界直通求值）。"
+    },
+    {
       "path": "browse_core::server::UserscriptEvent",
       "kind": "struct",
       "docs": "一条油猴（userscript）事件回调（#77）：脚本经 `GM_xmlhttpRequest`\n`POST /events` 上报的页面事件，agent 侧经 `browse events` 消费。\n何时用：页面内事件要主动通知宿主（区别于轮询/快照拉取）的探针形\n集成。边界：只承载上报与消费，脚本安装管理归引擎面（Userscript.\\*\nCDP 域，clean-chrome 批 4），两者正交。"

@@ -34,6 +34,16 @@ pub struct CdpRequest {
     pub params: Value,
 }
 
+/// /userscript/eval 的请求体（#81 油猴世界直通求值）。
+#[derive(serde::Deserialize)]
+pub struct UserscriptEvalRequest {
+    /// 在油猴世界执行的 JS（return 值序列化回传）。
+    pub code: String,
+    /// 求值兜底硬界秒（缺省走全局）。
+    #[serde(default)]
+    pub timeout_s: Option<u64>,
+}
+
 /// 描述 POST /eval 的请求体。
 #[derive(Debug, Deserialize)]
 
@@ -542,6 +552,7 @@ pub async fn serve(daemon: Arc<Daemon>, bind: &str) -> anyhow::Result<()> {
         )
         .route("/userscript/stop", post(userscript_stop_handler))
         .route("/cdp", post(cdp_handler))
+        .route("/userscript/eval", post(userscript_eval_handler))
         .route("/quit", post(quit_handler))
         .with_state(state);
 
@@ -912,6 +923,104 @@ async fn cdp_handler(State(st): State<AppState>, Json(req): Json<CdpRequest>) ->
     match d.host.session().call(&req.method, req.params).await {
         Ok(v) => (axum::http::StatusCode::OK, Json(json!({ "result": v }))),
         Err(e) => err_response(e),
+    }
+}
+
+/// /userscript/eval（#81）：在**油猴世界**直通求值。定位法=事件缓存里的
+/// 非 default executionContext 逐个特征探测（`GM_info` 或 `__gm_bridge`，
+/// 前者引擎无条件给注入脚本、后者引擎桥对象只在油猴世界），命中后以该
+/// contextId 跑用户代码；页面无油猴脚本时明确报空并指引。
+async fn userscript_eval_handler(
+    State(st): State<AppState>,
+    Json(req): Json<UserscriptEvalRequest>,
+) -> impl IntoResponse {
+    let _ = st
+        .daemon
+        .last_activity
+        .lock()
+        .map(|mut t| *t = Instant::now());
+    let d = &st.daemon;
+    if !d.host.session().is_connected() {
+        let spec = d.spec.lock().unwrap_or_else(|e| e.into_inner()).clone();
+        if let Err(e) = d.engine.ensure(&spec).await {
+            return err_response(e);
+        }
+    }
+    let sess = d.host.session();
+    // Runtime.enable 幂等触发全量 context 补发;事件推送异步,轮询短等
+    if let Err(e) = sess.call("Runtime.enable", json!({})).await {
+        return err_response(e);
+    }
+    let mut ctxs: Vec<u64> = Vec::new();
+    for _ in 0..20 {
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        let evs = sess
+            .peek_events("Runtime.executionContextCreated", 32)
+            .await;
+        ctxs = evs
+            .iter()
+            .filter_map(|e| {
+                let ctx = &e["params"]["context"];
+                let is_default = ctx["auxData"]["isDefault"].as_bool().unwrap_or(false);
+                let id = ctx["id"].as_u64()?;
+                if is_default { None } else { Some(id) }
+            })
+            .collect();
+        if !ctxs.is_empty() {
+            break;
+        }
+    }
+    if ctxs.is_empty() {
+        return err_response(anyhow::anyhow!(
+            "页面无已注入的油猴脚本(无隔离世界);下一步:browse userscript install 后重启引擎,并核对 @match 命中当前页"
+        ));
+    }
+    let probe = "typeof GM_info!=='undefined'||typeof __gm_bridge!=='undefined'";
+    let mut world: Option<u64> = None;
+    for cid in &ctxs {
+        if let Ok(v) = sess
+            .call(
+                "Runtime.evaluate",
+                json!({"contextId": cid, "expression": probe, "returnByValue": true}),
+            )
+            .await
+            && v["result"]["value"].as_bool() == Some(true)
+        {
+            world = Some(*cid);
+            break;
+        }
+    }
+    let Some(cid) = world else {
+        return err_response(anyhow::anyhow!(
+            "页面的隔离世界都不是油猴世界(探测 {:?} 无 GM 面);下一步:确认脚本已注入且未 disable",
+            ctxs
+        ));
+    };
+    let bound = eval_timeout_for(req.timeout_s);
+    match tokio::time::timeout(
+        bound,
+        sess.call(
+            "Runtime.evaluate",
+            json!({"contextId": cid, "expression": req.code, "returnByValue": true, "awaitPromise": true}),
+        ),
+    )
+    .await
+    {
+        Ok(Ok(v)) => {
+            let r = &v["result"];
+            if v.get("exceptionDetails").is_some() {
+                return err_response(anyhow::anyhow!(
+                    "油猴世界求值抛错: {}",
+                    r["description"].as_str().unwrap_or("?")
+                ));
+            }
+            (axum::http::StatusCode::OK, Json(json!({ "result": r.clone() })))
+        }
+        Ok(Err(e)) => err_response(e),
+        Err(_) => err_response(anyhow::anyhow!(
+            "油猴世界求值超时({}s)",
+            bound.as_secs()
+        )),
     }
 }
 
