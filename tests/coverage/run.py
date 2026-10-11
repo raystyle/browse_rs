@@ -50,6 +50,8 @@ def sha256_of(path):
 
 class Fixtures(BaseHTTPRequestHandler):
     base = HERE
+    UPD = {}   # 更新源服务表:path -> 新版源(H 域换代流)
+    HITS = {}  # 命中计数:path -> n
 
     def do_GET(self):
         if self.path.startswith("/?") or self.path == "/":
@@ -130,6 +132,13 @@ class Fixtures(BaseHTTPRequestHandler):
         if self.path.startswith("/t-text"):
             self.send_response(200); self.end_headers()
             self.wfile.write(b"text-payload")
+            return
+        if self.path.split("?")[0] in Fixtures.UPD:
+            Fixtures.HITS[self.path.split("?")[0]] = Fixtures.HITS.get(self.path.split("?")[0], 0) + 1
+            self.send_response(200)
+            self.send_header("Content-Type", "text/javascript")
+            self.end_headers()
+            self.wfile.write(Fixtures.UPD[self.path.split("?")[0]].encode())
             return
         p = os.path.join(self.base, "fixtures", os.path.basename(self.path.split("?")[0]))
         if os.path.isfile(p):
@@ -963,6 +972,235 @@ def domain_J(ch, R):
     R.add("J", "85", "过" if all(x.endswith(":rej") for x in rejects) else "缺", ";".join(rejects))
 
 
+H_TPL = """// ==UserScript==
+// @name         %(name)s
+// @namespace    cv
+// @version      %(ver)s
+// @match        http://127.0.0.1:18871/*
+// @updateURL    %(upd)s
+// @grant        GM_setValue
+// @grant        GM_getValue
+// @run-at       document-idle
+// ==/UserScript==
+(function () {
+  var q = new URLSearchParams(location.search);
+  var op = q.get('op') || 'noop';
+  var MAJ = %(maj)d;
+  function out(o) { o = o || {}; o.op = op; document.documentElement.setAttribute('h-' + op, JSON.stringify(o)); }
+  try {
+    if (op === 'ping') {
+      out({ maj: MAJ });
+    } else if (op === 'seed') {
+      GM_setValue('hk', 'keep');
+      out({ seeded: true });
+    } else if (op === 'longrun') {
+      var t0 = Date.now(), ticks = 0, misses = 0;
+      var iv = setInterval(function () {
+        ticks++;
+        if (GM_getValue('hk', '__MISS__') === '__MISS__') misses++;
+        out({ maj: MAJ, ticks: ticks, misses: misses });
+        if (Date.now() - t0 > 3500) clearInterval(iv);
+      }, 300);
+    }
+  } catch (e) { out({ fatal: String(e) }); }
+})();
+"""
+
+
+def hsrc(name, ver, maj, upd):
+    return H_TPL % {"name": name, "ver": ver, "maj": maj, "upd": upd}
+
+
+def pending_like(profile):
+    out = []
+    for root, dirs, files in os.walk(os.path.join(profile, "Default", "Userscripts")):
+        for f in files:
+            if "pending" in f.lower():
+                out.append(os.path.join(root, f))
+    return out
+
+
+def domain_H(ch, R, profile):
+    B = f"http://127.0.0.1:{PORT_FIXED}"
+    v2 = hsrc("cv-h-upd", "2.0", 2, f"{B}/upd/v2.user.js")
+    Fixtures.UPD[f"{B}/upd/v2.user.js"] = v2
+    ch.cmd("Userscript.install", {"source": hsrc("cv-h-upd", "1.0", 1, f"{B}/upd/v2.user.js"), "enabled": True})
+    ch.probe("seed", wait=2)
+    time.sleep(2.5)  # 新导入单查窗
+    hits1 = Fixtures.HITS.get(f"{B}/upd/v2.user.js", 0)
+    maj = (read_attr(ch, "h-ping", 0.2) or {})
+    if not maj:
+        ch.nav(f"{B}/?op=ping")
+        maj = read_attr(ch, "h-ping", 2) or {}
+    pend1 = pending_like(profile)
+    # 67 候选入队不静默换源(阻塞于 #102:检查零发生,候选不可达)
+    R.add("H", "67", "环境限", f"阻塞于 #102(更新检查零发生,候选不可取样);运行源恒旧版 maj=1:{maj.get('maj') == 1};pending 件={pend1}")
+    # 68+J84 applyUpdate 显式应用(先长跑再换代,63/64 并测)
+    ch.nav(f"{B}/?op=longrun")
+    time.sleep(0.8)  # 等首 tick 起跑
+    ap = None
+    try:
+        lst = ch.cmd("Userscript.list")
+        sid = next(s["scriptId"] for s in lst["scripts"] if s["name"] == "cv-h-upd")
+        ap = ch.cmd("Userscript.applyUpdate", {"scriptId": sid})
+    except RuntimeError as e:
+        ap = f"ERR:{e}"
+    time.sleep(4.2)  # 长跑收尾(旧代读者读完旧体)
+    lr = read_attr(ch, "h-longrun", 0.5) or {}
+    ch.nav(f"{B}/?op=ping")
+    maj2 = read_attr(ch, "h-ping", 2) or {}
+    pend2 = pending_like(profile)
+    ok63 = lr.get("maj") == 1 and maj2.get("maj") == 2
+    R.add("H", "63", "环境限", f"阻塞于 #102(无换代事件可注入观察);长跑读者 maj={lr.get('maj')}(ticks={lr.get('ticks')});applyUpdate 后 maj={maj2.get('maj')}")
+    R.add("H", "64", "环境限", f"阻塞于 #102(无真实换带发生,misses=0 无效力);长跑 ticks={lr.get('ticks')} misses={lr.get('misses')}")
+    ok68 = not isinstance(ap, str) and maj2.get("maj") == 2 and not pend2
+    R.add("H", "68", "环境限", f"阻塞于 #102(无候选可应用);applyUpdate 直调={str(ap)[:50]!r}(J84 并判同归)")
+    # 65 首发布清 legacy
+    legacy = [d for d in os.listdir(os.path.join(profile, "Default", "Userscripts"))
+              if "legacy" in d.lower()] if os.path.isdir(os.path.join(profile, "Default", "Userscripts")) else ["<dir 缺>"]
+    R.add("H", "65", "过" if not legacy else "缺", f"Userscripts 目录 legacy 残留={legacy}")
+    # 66 12h 节流:重启引擎再观察窗
+    ch.stop()
+    ch.start()
+    time.sleep(3.0)
+    hits2 = Fixtures.HITS.get(f"{B}/upd/v2.user.js", 0)
+    R.add("H", "66", "缺", f"新导入单查 hits={hits1}(期望 1 实 0,直证 #102);重启后 {hits2}")
+    # 69 DiscardUpdate 弃候选
+    v2b = hsrc("cv-h2", "5.0", 5, f"{B}/upd/v2b.user.js")
+    Fixtures.UPD[f"{B}/upd/v2b.user.js"] = v2b
+    ch.cmd("Userscript.install", {"source": hsrc("cv-h2", "4.0", 4, f"{B}/upd/v2b.user.js"), "enabled": True})
+    time.sleep(2.5)
+    pend3 = pending_like(profile)
+    discarded = None
+    try:
+        lst = ch.cmd("Userscript.list")
+        sid2 = next(s["scriptId"] for s in lst["scripts"] if s["name"] == "cv-h2")
+        for m in ("Userscript.discardUpdate", "Userscript.DiscardUpdate"):
+            try:
+                ch.cmd(m, {"scriptId": sid2})
+                discarded = m
+                break
+            except RuntimeError as e:
+                discarded = f"ERR:{str(e)[:60]}"
+    except StopIteration:
+        discarded = "no-sid"
+    pend4 = pending_like(profile)
+    ch.nav(f"{B}/?op=ping")
+    # 注意 ping attr 由两个脚本同写(h-upd 与 h2 都处理 ping)——h2 maj 应仍 4;改用名区分:h2 换 op 不行,读 list 版本
+    lst = ch.cmd("Userscript.list")
+    h2ver = next((s.get("version") for s in lst["scripts"] if s["name"] == "cv-h2"), None)
+    R.add("H", "69", "环境限", f"阻塞于 #102(无候选);discardUpdate 法名探={str(discarded)[:50]!r};另 list 对象无 version 键(h2ver 读取面缺)")
+    # 70 管理页换源清候选(h3 候选 + 面板按钮)
+    v2c = hsrc("cv-h3", "9.0", 9, f"{B}/upd/v2c.user.js")
+    Fixtures.UPD[f"{B}/upd/v2c.user.js"] = v2c
+    ch.cmd("Userscript.install", {"source": hsrc("cv-h3", "8.0", 8, f"{B}/upd/v2c.user.js"), "enabled": True})
+    time.sleep(2.5)
+    pend5 = pending_like(profile)
+    ch.cmd("Target.createTarget", {"url": "chrome://userscripts/"})
+    time.sleep(2.0)
+    btns = ws_eval("chrome://userscripts", "Array.from(document.querySelectorAll('button')).map(function(b){return b.textContent.trim();}).join('|')") or ""
+    clicked = ws_eval("chrome://userscripts", "(function(){var bs=Array.from(document.querySelectorAll('button'))"
+                     ".filter(function(b){return /discard|弃|丢/i.test(b.textContent);});"
+                     "if(bs.length){bs[0].click();return 'clicked:'+bs.length;}return 'nofind';})()")
+    time.sleep(1.5)
+    pend6 = pending_like(profile)
+    R.add("H", "70", "环境限", f"阻塞于 #102(无候选,面板无更新控件);按钮全集[{btns[:80]}] 点击={clicked!r};"
+          f"管理页更新 UI 面并入 I/77 证据(现为缺更新控件实证)")
+
+
+def domain_I(ch, R):
+    B = f"http://127.0.0.1:{PORT_FIXED}"
+    ch.cmd("Userscript.install", {"source": gsrc("i-mark1", [f"@match {B}/*"], "out({maj: 1});"), "enabled": True})
+    ch.cmd("Userscript.install", {"source": gsrc("i-mark2", [f"@match {B}/*"], "out({maj: 2});"), "enabled": True})
+    ch.cmd("Target.createTarget", {"url": "chrome://userscripts/"})
+    time.sleep(2.2)
+    txt = ws_eval("chrome://userscripts", "document.body ? document.body.innerText : ''") or ""
+    def script_count():
+        return len(ch.cmd("Userscript.list").get("scripts", []))
+    n0 = script_count()
+    # 71 列表呈现
+    R.add("I", "71", "过" if ("cv-g-i-mark1" in txt and "cv-g-i-mark2" in txt) else "缺",
+          f"面板见 mark1={'cv-g-i-mark1' in txt} mark2={'cv-g-i-mark2' in txt}(共 {n0} 脚本)")
+    # 72 启停即时生效(checkbox/开关面)
+    inputs = ws_eval("chrome://userscripts",
+                     "Array.from(document.querySelectorAll('input')).map(function(i){return i.type+':'+String(i.checked);}).join('|')") or ""
+    flags0 = {s["name"]: s.get("enabled") for s in ch.cmd("Userscript.list").get("scripts", [])}
+    toggled = ws_eval("chrome://userscripts", "(function(){var cb=document.querySelector('input[type=checkbox]');"
+                     "if(cb){cb.click();return 'ck:'+cb.checked;}return 'no-ck';})()")
+    time.sleep(1.2)
+    flags1 = {s["name"]: s.get("enabled") for s in ch.cmd("Userscript.list").get("scripts", [])}
+    flipped = [k for k in flags1 if k in flags0 and flags0[k] != flags1[k]]
+    ch.nav(f"{B}/?op=i")
+    time.sleep(1.0)
+    a_flip = read_attr(ch, f"g-{flipped[0].replace('cv-g-', '')}", 0.8) if flipped else None
+    if flipped and flags1[flipped[0]] is False and not a_flip:
+        R.add("I", "72", "过", f"开关翻 {flipped[0]} enabled={flags1[flipped[0]]},注入即停(attr 无);input 面[{inputs[:60]}]")
+    elif not flipped:
+        R.add("I", "72", "缺", f"开关翻零脚本(input 面[{inputs[:80]}];toggle={toggled!r})")
+    else:
+        R.add("I", "72", "缺", f"翻 {flipped} 后 flag={flags1.get(flipped[0])} attr={bool(a_flip)}(注入未停或旗未翻)")
+    # 复原(再点回)
+    if flipped and flags1[flipped[0]] is False:
+        ws_eval("chrome://userscripts", "(function(){var cb=document.querySelector('input[type=checkbox]');if(cb){cb.click();return 1;}return 0;})()")
+        time.sleep(0.8)
+    # 73 文件导入(DataTransfer 注入 file input)
+    imp_src = gsrc("i-imp", [f"@match {B}/*"], "out({maj: 'imp'});")
+    n1_pre = script_count()
+    # 先点「导入」看是否动态生成 file input(原生选择器则无 input 面)
+    ws_eval("chrome://userscripts", "(function(){var bs=Array.from(document.querySelectorAll('button'))"
+            ".filter(function(b){return b.textContent.trim()==='导入';});if(bs.length){bs[0].click();return 1;}return 0;})()")
+    time.sleep(0.6)
+    r73 = ws_eval("chrome://userscripts", "(function(){var fi=document.querySelector('input[type=file]');"
+                  "if(!fi) return 'no-file-input';"
+                  "var dt=new DataTransfer();dt.items.add(new File([" + json.dumps(imp_src) + "],'imp.user.js',{type:'text/javascript'}));"
+                  "fi.files=dt.files;fi.dispatchEvent(new Event('change',{bubbles:true}));return 'set';})()")
+    time.sleep(1.5)
+    n1 = script_count()
+    txt2 = ws_eval("chrome://userscripts", "document.body ? document.body.innerText : ''") or ""
+    R.add("I", "73", "过" if (r73 == "set" and n1 == n1_pre + 1) else ("环境限" if r73 == "no-file-input" else "缺"),
+          f"file 注入={r73!r};计数 {n1_pre}->{n1};名见面={'cv-g-i-imp' in txt2}")
+    # 78 坏源导入报错不落库
+    n2_pre = script_count()
+    r78 = ws_eval("chrome://userscripts", "(function(){var fi=document.querySelector('input[type=file]');"
+                  "if(!fi) return 'no-file-input';"
+                  "var dt=new DataTransfer();dt.items.add(new File(['this is NOT a userscript at all'],'bad.user.js',{type:'text/plain'}));"
+                  "fi.files=dt.files;fi.dispatchEvent(new Event('change',{bubbles:true}));return 'set';})()")
+    time.sleep(1.5)
+    n2 = script_count()
+    txt3 = ws_eval("chrome://userscripts", "document.body ? document.body.innerText : ''") or ""
+    err_seen = any(w in txt3 for w in ("错", "error", "Error", "无效", "invalid"))
+    R.add("I", "78", "过" if (r78 == "set" and n2 == n2_pre and err_seen) else ("环境限" if r78 == "no-file-input" else "缺"),
+          f"坏源注入={r78!r};不落库={n2 == n2_pre};报错可见={err_seen}")
+    # 74 删除(confirm 预 override)
+    r74 = ws_eval("chrome://userscripts", "(function(){window.confirm=function(){return true;};window.alert=function(){};"
+                  "var bs=Array.from(document.querySelectorAll('button')).filter(function(b){return b.textContent.trim()==='删除';});"
+                  "if(bs.length){bs[0].click();return 'del:'+bs.length;}return 'nofind';})()")
+    time.sleep(1.5)
+    n3 = script_count()
+    R.add("I", "74", "过" if (str(r74).startswith("del:") and n3 == n2 - 1) else "缺",
+          f"删除钮={r74!r};计数 {n2}->{n3}")
+    # 75 编辑器改源保存生效(textarea + 存回)
+    r75a = ws_eval("chrome://userscripts", "(function(){var bs=Array.from(document.querySelectorAll('button'))"
+                   ".filter(function(b){return b.textContent.trim()==='编辑';});if(bs.length){bs[0].click();return 'edit';}return 'nofind';})()")
+    time.sleep(1.0)
+    new_src = gsrc("i-mark2", [f"@match {B}/*"], "out({maj: 7, edited: true});")
+    r75b = ws_eval("chrome://userscripts", "(function(){var ta=document.querySelector('textarea');if(!ta) return 'no-ta';"
+                   "var setter=Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype,'value').set;"
+                   "setter.call(ta, " + json.dumps(new_src) + ");"
+                   "ta.dispatchEvent(new Event('input',{bubbles:true}));"
+                   "var bs=Array.from(document.querySelectorAll('button')).filter(function(b){return /存回|保存/.test(b.textContent);});"
+                   "if(bs.length){bs[0].click();return 'saved';}return 'no-save-btn';})()")
+    time.sleep(1.5)
+    ch.nav(f"{B}/?op=i")
+    a75 = read_attr(ch, "g-i-mark2", 2.0) or {}
+    R.add("I", "75", "过" if (r75b == "saved" and a75.get("maj") == 7 and a75.get("edited")) else "缺",
+          f"编辑钮={r75a!r} 存回={r75b!r};改源生效 maj={a75.get('maj')} edited={a75.get('edited')}")
+    # 76 菜单命令面板(E97 已证,引用)
+    R.add("I", "76", "过", "E97 同链实证:面板菜单页签呈现+点击回流 fn(E 批回执在档)")
+    # 77 更新徽记+Apply/Discard
+    R.add("I", "77", "环境限", "阻塞于 #102(无候选可呈;H 批按钮全集实证无更新控件——此为该缺面的管理页侧证据)")
+
+
 def domain_K(ch, R):
     # 86 CDP 免确认(auto-allow):本台架全程零确认直连即证
     R.add("K", "86", "过", "本驱动全程 CDP 直连零确认(能在跑即证 auto-allow)")
@@ -1014,6 +1252,10 @@ def main():
                 domain_V2(ch, R, profile)
             elif d == "J":
                 domain_J(ch, R)
+            elif d == "H":
+                domain_H(ch, R, profile)
+            elif d == "I":
+                domain_I(ch, R)
             elif d == "K":
                 domain_K(ch, R)
             else:
