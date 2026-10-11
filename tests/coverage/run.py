@@ -1201,6 +1201,66 @@ def domain_I(ch, R):
     R.add("I", "77", "环境限", "阻塞于 #102(无候选可呈;H 批按钮全集实证无更新控件——此为该缺面的管理页侧证据)")
 
 
+def domain_K2(ch, R):
+    """K86 扩底座 spawn 面:无旗标 9222 / CLEAN_CHROME_DEBUG=both+显式优先 / address 绑定 / listen 失败存活"""
+    import socket
+
+    def port_open(host, p, t=0.6):
+        s = socket.socket()
+        s.settimeout(t)
+        try:
+            s.connect((host, p))
+            return True
+        except Exception:
+            return False
+        finally:
+            s.close()
+
+    def spawn(extra, env=None, prof=None):
+        prof = prof or tempfile.mkdtemp(prefix="cv-k2-")
+        e = dict(os.environ)
+        if env:
+            e.update(env)
+        p = subprocess.Popen([ch.bin, "--headless=new", "--no-sandbox", "--disable-gpu",
+                              "--user-data-dir=" + prof] + extra + ["about:blank"],
+                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, env=e)
+        return p, prof
+
+    # a) 无旗标默认 9222
+    if port_open("127.0.0.1", 9222):
+        R.add("K", "86a", "环境限", "9222 已被占(他有浏览器在跑),无旗标面不可独占判")
+    else:
+        p, prof = spawn([])
+        time.sleep(3.5)
+        R.add("K", "86a", "过" if port_open("127.0.0.1", 9222) else "缺", f"无旗标起 9222 开={port_open('127.0.0.1', 9222)}")
+        p.kill(); p.wait(); shutil.rmtree(prof, ignore_errors=True)
+    # b) 显式旗标恒优先(env both 下 18881 仍按显式开)
+    p, prof = spawn([f"--remote-debugging-port=18881"], env={"CLEAN_CHROME_DEBUG": "both"})
+    time.sleep(3.0)
+    okb = port_open("127.0.0.1", 18881)
+    # pipe 面无外部观察器,双通道并存以 ws 面在为准,pipe 面 K88 注
+    R.add("K", "86b", "过" if okb else "缺",
+          f"CLEAN_CHROME_DEBUG=both 下显式 --remote-debugging-port=18881 开={okb}(pipe 并存面无外部观察器,K88 注)")
+    p.kill(); p.wait(); shutil.rmtree(prof, ignore_errors=True)
+    # c) address 精确绑定
+    p, prof = spawn(["--remote-debugging-address=127.0.0.2", "--remote-debugging-port=18882"])
+    time.sleep(3.0)
+    okc = port_open("127.0.0.2", 18882) and not port_open("127.0.0.1", 18882)
+    R.add("K", "86c", "过" if okc else "缺",
+          f"127.0.0.2:18882 开={port_open('127.0.0.2', 18882)};127.0.0.1 同口不开={not port_open('127.0.0.1', 18882)}")
+    p.kill(); p.wait(); shutil.rmtree(prof, ignore_errors=True)
+    # d) listen 失败浏览器存活(占口再起)
+    occ = socket.socket()
+    occ.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    occ.bind(("127.0.0.1", 18883)); occ.listen(1)
+    p, prof = spawn(["--remote-debugging-port=18883"])
+    time.sleep(3.0)
+    alive = p.poll() is None
+    R.add("K", "86d", "过" if alive else "缺", f"口被占下浏览器存活={alive}(poll={p.poll()})")
+    p.kill(); p.wait(); shutil.rmtree(prof, ignore_errors=True)
+    occ.close()
+
+
 def domain_K(ch, R):
     # 86 CDP 免确认(auto-allow):本台架全程零确认直连即证
     R.add("K", "86", "过", "本驱动全程 CDP 直连零确认(能在跑即证 auto-allow)")
@@ -1256,6 +1316,8 @@ def main():
                 domain_H(ch, R, profile)
             elif d == "I":
                 domain_I(ch, R)
+            elif d == "K2":
+                domain_K2(ch, R)
             elif d == "K":
                 domain_K(ch, R)
             else:
