@@ -73,6 +73,13 @@ class Fixtures(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(("hdr=" + str(self.headers.get("X-Cv-Custom")) + ";body=" + body).encode())
             return
+        if self.path.startswith("/setck"):
+            self.send_response(200)
+            self.send_header("Set-Cookie", "cvp=page1; Path=/")
+            self.send_header("Content-Type", "text/html")
+            self.end_headers()
+            self.wfile.write(b"<html><body>ck</body></html>")
+            return
         if self.path.startswith("/slow"):
             time.sleep(3)
             self.send_response(200)
@@ -475,6 +482,85 @@ def domain_D(ch, R):
           f"d2 注入={bool(a2 and a2.get('alive'))} d2 初见={r2.get('first')!r} d 复读 n={(rd.get('d') or {}).get('n')} d2own={r2.get('own')!r}")
 
 
+def ws_eval(page_url_prefix, expr):
+    """在第二 target 上执行表达式(管理页检查,不动主 tab)"""
+    pages = http_get(f"http://127.0.0.1:{CDP_PORT}/json", timeout=3)
+    page = next((p for p in pages if p.get("type") == "page" and p.get("url", "").startswith(page_url_prefix)), None)
+    if not page:
+        return None
+    path = page["webSocketDebuggerUrl"].split(f"127.0.0.1:{CDP_PORT}", 1)[1]
+    ws = WS("127.0.0.1", CDP_PORT, path)
+    try:
+        ws.send_json({"id": 99001, "method": "Runtime.evaluate",
+                      "params": {"expression": expr, "returnByValue": True, "awaitPromise": True}})
+        deadline = time.time() + 10
+        while time.time() < deadline:
+            msg = ws.recv_text()
+            if not msg:
+                continue
+            m = json.loads(msg)
+            if m.get("id") == 99001:
+                return (m.get("result") or {}).get("result", {}).get("value")
+        return None
+    finally:
+        try:
+            ws.sock.close()
+        except Exception:
+            pass
+
+
+def domain_E(ch, R):
+    ch.cmd("Userscript.install", {"source": open(os.path.join(HERE, "fixtures/e-menu.user.js")).read(), "enabled": True})
+    if not (ch.probe("alive") or {}).get("alive"):
+        R.add("E", 0, "缺", "e-menu 未注入")
+        return
+    # 46:注册后面板可见(先点开「菜单」页签再读;+尝试点击回流)
+    ch.probe("menu-reg", wait=2)
+    ch.cmd("Target.createTarget", {"url": "chrome://userscripts/"})
+    time.sleep(2.0)
+    ws_eval("chrome://userscripts", "(function(){var els=Array.prototype.slice.call(document.querySelectorAll('*'))"
+            ".filter(function(e){return e.children.length===0&&e.textContent.trim()==='菜单';});"
+            "if(els.length){els[0].click();return 'tab-clicked';}return 'tab-nofind';})()")
+    time.sleep(1.2)
+    txt = ws_eval("chrome://userscripts", "document.body ? document.body.innerText : ''") or ""
+    has_a, has_b = "cv-menu-alpha" in txt, "cv-menu-beta" in txt
+    clicked = ws_eval("chrome://userscripts", "(function(){var els=Array.prototype.slice.call(document.querySelectorAll('*'))"
+                   ".filter(function(e){return e.children.length===0&&e.textContent.trim()==='cv-menu-alpha';});"
+                   "if(els.length){els[0].click();return 'clicked';}return 'nofind';})()")
+    time.sleep(1.0)
+    fired = (ch.probe("menu-status", wait=2) or {}).get("fired")
+    R.add("E", "46", "过" if (has_a and has_b) else "缺",
+          f"面板见 alpha={has_a} beta={has_b};点击 {clicked!r} 回流 fired={fired!r}")
+    # 47:注销后不再见(菜单页签已开,直接读)
+    ch.probe("menu-unreg", wait=2)
+    time.sleep(1.5)
+    txt2 = ws_eval("chrome://userscripts", "document.body ? document.body.innerText : ''") or ""
+    R.add("E", "47", "过" if "cv-menu-gamma" not in txt2 else "缺",
+          f"注册即注销后 gamma 不见面={'cv-menu-gamma' not in txt2}(面板快照 {txt2[:60]!r})")
+
+
+def domain_F(ch, R):
+    ch.cmd("Userscript.install", {"source": open(os.path.join(HERE, "fixtures/f-cookie.user.js")).read(), "enabled": True})
+    ch.nav(f"http://127.0.0.1:{PORT_FIXED}/setck")  # 服务端种 cvp cookie
+    if not (ch.probe("alive") or {}).get("alive"):
+        R.add("F", 0, "缺", "f-cookie 未注入")
+        return
+    r = ch.probe("ck-list", wait=4) or {}
+    ok48 = (not r.get("err")) and "cvp" in (r.get("names") or []) and r.get("filtN") == 1
+    R.add("F", "48", "过" if ok48 else "缺", f"err={r.get('err')} names={r.get('names')} filtN={r.get('filtN')}")
+    r = ch.probe("ck-set", wait=4) or {}
+    ok49 = (not r.get("setErr")) and (r.get("hasCvg") or "cvg" in (r.get("docCk") or ""))
+    R.add("F", "49", "过" if ok49 else "缺", f"setErr={r.get('setErr')} hasCvg={r.get('hasCvg')} docCk={r.get('docCk')!r}")
+    r = ch.probe("ck-del", wait=4) or {}
+    R.add("F", "50", "过" if ((not r.get("delErr")) and r.get("stillCvg") is False) else "缺",
+          f"delErr={r.get('delErr')} stillCvg={r.get('stillCvg')}")
+    r = ch.probe("ck-gate", wait=4) or {}
+    R.add("F", "51", "过" if r.get("refused") else "缺", f"越域 set 拒={r.get('refused')} err={r.get('gateErr')!r}")
+    r = ch.probe("ck-promise", wait=4) or {}
+    R.add("F", "52", "过" if (r.get("pn", -1) >= 0 and "cvp" in (r.get("names") or [])) else "缺",
+          f"promise n={r.get('pn')} names={r.get('names')} err={r.get('perr')!r}")
+
+
 def domain_K(ch, R):
     # 86 CDP 免确认(auto-allow):本台架全程零确认直连即证
     R.add("K", "86", "过", "本驱动全程 CDP 直连零确认(能在跑即证 auto-allow)")
@@ -516,6 +602,10 @@ def main():
                 domain_C(ch, R)
             elif d == "D":
                 domain_D(ch, R)
+            elif d == "E":
+                domain_E(ch, R)
+            elif d == "F":
+                domain_F(ch, R)
             elif d == "K":
                 domain_K(ch, R)
             else:
