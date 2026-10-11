@@ -39,12 +39,17 @@ fn collect_ids(args: &mut Args, sub: &str) -> (Vec<String>, bool) {
     (ids, restart)
 }
 
-/// userscript 族的目标 profile：显式 `--profile` 或当前实例缺省 engine-profile。
-fn engine_profile_path(profile: &Option<String>) -> PathBuf {
-    profile
-        .clone()
-        .map(PathBuf::from)
-        .unwrap_or_else(browse_core::paths::engine_profile_dir)
+/// userscript 族的目标 profile（#84 下腿）：显式 `--profile` > daemon 记录
+/// spec 的 profile（运行/最近一次 up 形态——盘上装改与引擎读写同库，
+/// 消 write-A-read-B）> 当前实例缺省 engine-profile。
+async fn engine_profile_path(profile: &Option<String>) -> PathBuf {
+    if let Some(p) = profile {
+        return PathBuf::from(p);
+    }
+    if let Some(p) = client::daemon_spec_profile().await {
+        return PathBuf::from(p);
+    }
+    browse_core::paths::engine_profile_dir()
 }
 
 /// #79 `--restart`：引擎级重启让盘上装改对引擎生效。#84 起 daemon 记录
@@ -1325,7 +1330,7 @@ async fn main() -> Result<()> {
         // ---- workspace 单仓（#50/#51 配套）：git 与文件系统操作，
         // 不经 daemon；blocking 全收 spawn_blocking（chrome_mgr 同构） ----
         Mode::UserscriptInstall(files, restart) => {
-            let prof = engine_profile_path(&profile);
+            let prof = engine_profile_path(&profile).await;
             let r = tokio::task::spawn_blocking(move || {
                 browse_core::userscript_store::install(
                     &prof,
@@ -1346,7 +1351,7 @@ async fn main() -> Result<()> {
             Ok(())
         }
         Mode::UserscriptList => {
-            let prof = engine_profile_path(&profile);
+            let prof = engine_profile_path(&profile).await;
             let l = tokio::task::spawn_blocking(move || browse_core::userscript_store::list(&prof))
                 .await
                 .map_err(|e| anyhow!("userscript list 任务崩了：{e}"))
@@ -1373,7 +1378,7 @@ async fn main() -> Result<()> {
             Ok(())
         }
         Mode::UserscriptSetEnabled(ids, on, restart) => {
-            let prof = engine_profile_path(&profile);
+            let prof = engine_profile_path(&profile).await;
             let mut rs = Vec::new();
             for id in &ids {
                 let r = tokio::task::spawn_blocking({
@@ -1395,7 +1400,7 @@ async fn main() -> Result<()> {
             Ok(())
         }
         Mode::UserscriptRemove(ids, restart) => {
-            let prof = engine_profile_path(&profile);
+            let prof = engine_profile_path(&profile).await;
             let mut rs = Vec::new();
             for id in &ids {
                 let r = tokio::task::spawn_blocking({
@@ -1432,7 +1437,7 @@ async fn main() -> Result<()> {
             Ok(())
         }
         Mode::UserscriptUpdate(id, file, restart) => {
-            let prof = engine_profile_path(&profile);
+            let prof = engine_profile_path(&profile).await;
             let r = tokio::task::spawn_blocking(move || {
                 browse_core::userscript_store::update(&prof, &id, &PathBuf::from(file))
             })
@@ -1448,7 +1453,7 @@ async fn main() -> Result<()> {
             Ok(())
         }
         Mode::UserscriptPath(id) => {
-            let prof = engine_profile_path(&profile);
+            let prof = engine_profile_path(&profile).await;
             let p = tokio::task::spawn_blocking(move || {
                 browse_core::userscript_store::script_path(&prof, &id)
             })

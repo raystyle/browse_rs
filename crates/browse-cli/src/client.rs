@@ -54,6 +54,21 @@ pub async fn daemon_alive() -> Option<Value> {
     resp.json::<Value>().await.ok()
 }
 
+/// daemon 记录 spec 的 profile 面（`/health` 的 `spec.profile`，#84 下腿）：
+/// daemon 在、记录为 Auto 形且带非隔离 profile 时返回之，否则 `None`——
+/// CLI userscript 族缺省装库目标按「运行/最近一次 up 形态」解析。
+pub async fn daemon_spec_profile() -> Option<String> {
+    let h = daemon_alive().await?;
+    let sp = h.get("spec")?;
+    if sp.get("kind")?.as_str()? != "auto" {
+        return None;
+    }
+    if sp.get("isolated").and_then(Value::as_bool).unwrap_or(false) {
+        return None;
+    }
+    sp.get("profile")?.as_str().map(str::to_string)
+}
+
 /// daemon 不在跑时 detached 拉起 `browse --serve` 并探活到通；已在跑则直接返回。
 ///
 /// # Errors

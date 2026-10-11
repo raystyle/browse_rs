@@ -27,6 +27,7 @@ daemon 客户端：本地 HTTP 调用 + 首次使用自动拉起 detached daemon
 - `cdp_call` — /cdp 直通（#80）：任意 CDP 域方法经 daemon 转发引擎会话，回
 - `daemon_alive` — 探测 daemon 是否在跑：GET /health 通即为在。
 - `daemon_bind` — 返回 daemon 监听的 `host:port` 串；多实例由 `BROWSE_NAME` 派生端口（ADR-0006）。
+- `daemon_spec_profile` — daemon 记录 spec 的 profile 面（`/health` 的 `spec.profile`，#84 下腿）：
 - `decode_arg_b64` — 解码 `-b/--b64` 通道的片段实参（#22）：标准 base64 解码为 UTF-8
 - `engine_restart` — /engine/restart（#84）：引擎级重启——daemon 按「最近一次 up 的记录
 - `engine_up` — 拉起引擎（`browse up` 面）：POST /engine/up 并校验 ok 回包。

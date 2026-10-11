@@ -1303,13 +1303,49 @@ fn err_response(e: anyhow::Error) -> (axum::http::StatusCode, Json<Value>) {
     )
 }
 
+/// health 回执并入 daemon 记录 spec 的用户面（#84 下腿）：CLI userscript
+/// 族缺省库按「运行/最近一次 up 形态」解析。只并 Auto 形的
+/// profile/headless/pipe/chrome（含 isolated 标——隔离库随引擎退场，
+/// 不得作装库目标）；Attach/Port 只标 kind。
+fn health_with_spec(spec: &EngineSpec, mut health: Value) -> Value {
+    let s = match spec {
+        EngineSpec::Auto {
+            chrome,
+            headless,
+            pipe,
+            profile,
+            isolated,
+            ..
+        } => json!({
+            "kind": "auto",
+            "profile": profile.as_ref().map(|p| p.display().to_string()),
+            "headless": headless,
+            "pipe": *pipe,
+            "isolated": *isolated,
+            "chrome": chrome.as_ref().map(|p| p.display().to_string()),
+        }),
+        EngineSpec::Attach { .. } => json!({"kind": "attach"}),
+        EngineSpec::Port(_) => json!({"kind": "port"}),
+    };
+    if let Some(o) = health.as_object_mut() {
+        o.insert("spec".into(), s);
+    }
+    health
+}
+
 async fn health_handler(State(st): State<AppState>) -> impl IntoResponse {
-    Json(
-        st.daemon
-            .engine
-            .health_json(st.daemon.started.elapsed(), &st.daemon.desc)
-            .await,
-    )
+    let spec = st
+        .daemon
+        .spec
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .clone();
+    let h = st
+        .daemon
+        .engine
+        .health_json(st.daemon.started.elapsed(), &st.daemon.desc)
+        .await;
+    Json(health_with_spec(&spec, h))
 }
 
 /// POST /engine/restart：引擎级重启（#84）——spawn 来源优雅关后按 daemon
@@ -1337,15 +1373,24 @@ async fn engine_restart_handler(State(st): State<AppState>) -> impl IntoResponse
         let _ = st.daemon.engine.shutdown().await;
     }
     match st.daemon.engine.ensure(&spec).await {
-        Ok(_) => (
-            axum::http::StatusCode::OK,
-            Json(
-                st.daemon
-                    .engine
-                    .health_json(st.daemon.started.elapsed(), &st.daemon.desc)
-                    .await,
-            ),
-        ),
+        Ok(_) => {
+            // spec 锁克隆先于 await(非 Send 守卫不得横跨 await,同 up 道)
+            let spec_now = st
+                .daemon
+                .spec
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .clone();
+            let h = st
+                .daemon
+                .engine
+                .health_json(st.daemon.started.elapsed(), &st.daemon.desc)
+                .await;
+            (
+                axum::http::StatusCode::OK,
+                Json(health_with_spec(&spec_now, h)),
+            )
+        }
         Err(e) => err_response(e),
     }
 }
@@ -1413,14 +1458,22 @@ async fn engine_up_handler(
             if let EngineSpec::Auto { .. } = &spec {
                 *st.daemon.spec.lock().unwrap_or_else(|e| e.into_inner()) = spec.clone();
             }
+            // 注意:spec 锁克隆必须先于 await(MutexGuard 非 Send,横跨
+            // await 会让 handler future 不满足 axum Handler 约束)
+            let spec_now = st
+                .daemon
+                .spec
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .clone();
+            let h = st
+                .daemon
+                .engine
+                .health_json(st.daemon.started.elapsed(), &st.daemon.desc)
+                .await;
             (
                 axum::http::StatusCode::OK,
-                Json(
-                    st.daemon
-                        .engine
-                        .health_json(st.daemon.started.elapsed(), &st.daemon.desc)
-                        .await,
-                ),
+                Json(health_with_spec(&spec_now, h)),
             )
         }
         Err(e) => err_response(e),

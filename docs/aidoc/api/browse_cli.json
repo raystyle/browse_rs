@@ -33,6 +33,11 @@
       "docs": "返回 daemon 监听的 `host:port` 串；多实例由 `BROWSE_NAME` 派生端口（ADR-0006）。\n\n# Examples\n\n```\n# // BROWSE_PORT/BROWSE_NAME 均未设时才是默认口（CI 干净环境成立）\nif std::env::var_os(\"BROWSE_PORT\").is_none() && std::env::var_os(\"BROWSE_NAME\").is_none() {\n    assert_eq!(browse_cli::client::daemon_bind(), \"127.0.0.1:9880\");\n}\n```"
     },
     {
+      "path": "browse_cli::client::daemon_spec_profile",
+      "kind": "function",
+      "docs": "daemon 记录 spec 的 profile 面（`/health` 的 `spec.profile`，#84 下腿）：\ndaemon 在、记录为 Auto 形且带非隔离 profile 时返回之，否则 `None`——\nCLI userscript 族缺省装库目标按「运行/最近一次 up 形态」解析。"
+    },
+    {
       "path": "browse_cli::client::decode_arg_b64",
       "kind": "function",
       "docs": "解码 `-b/--b64` 通道的片段实参（#22）：标准 base64 解码为 UTF-8\n字符串。PowerShell 与复杂 shell 的引号与编码面一并绕开（方言与\n`--js` 两形态通用）。\n\n# Errors\n\n实参不是合法 base64，或解码后不是 UTF-8 文本（错误带生成 base64 的\n可照抄命令 CTA）。\n\n# Examples\n\n```\nassert_eq!(browse_cli::client::decode_arg_b64(\"cmV0dXJuIDE=\").unwrap(), \"return 1\");\n// 空白容忍（PowerShell 折行形）\nassert_eq!(\n    browse_cli::client::decode_arg_b64(\"cmV0\\ndXJuIDE=\").unwrap(),\n    \"return 1\"\n);\nassert!(browse_cli::client::decode_arg_b64(\"!!!\").is_err());\n```"
