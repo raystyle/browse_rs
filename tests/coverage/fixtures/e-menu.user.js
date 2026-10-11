@@ -23,6 +23,12 @@
       var id = GM_registerMenuCommand('cv-menu-gamma', function () {});
       var u = GM_unregisterMenuCommand(id);
       out({ regThen: id !== undefined, unreg: u === undefined ? 'undef' : String(u) });
+    } else if (op === 'menu-ak') {
+      // v2 项 97:accessKey 形注册(触发链经管理页面板点击,CDP RunMenuCommand 面驱动侧另探)
+      var ak = GM_registerMenuCommand('cv-menu-ak', function () { GM_setValue('ak-fired', '1'); }, 'k');
+      out({ reg: ak !== undefined });
+    } else if (op === 'menu-ak-status') {
+      out({ fired: GM_getValue('ak-fired', 'no') });
     } else if (op === 'alive') {
       out({ alive: true });
     }

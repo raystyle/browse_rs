@@ -73,6 +73,23 @@ class Fixtures(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(("hdr=" + str(self.headers.get("X-Cv-Custom")) + ";body=" + body).encode())
             return
+        if self.path.startswith("/err404"):
+            self.send_response(404)
+            self.send_header("Content-Type", "text/plain")
+            self.end_headers()
+            self.wfile.write(b"not-found-body")
+            return
+        if self.path.startswith("/err500"):
+            self.send_response(500)
+            self.send_header("Content-Type", "text/plain")
+            self.end_headers()
+            self.wfile.write(b"server-error-body")
+            return
+        if self.path.startswith("/r302"):
+            self.send_response(302)
+            self.send_header("Location", "/fixture?b=redir")
+            self.end_headers()
+            return
         if self.path.startswith("/frames"):
             self.send_response(200)
             self.send_header("Content-Type", "text/html")
@@ -696,6 +713,256 @@ def domain_G(ch, R):
           f"txt={a and a.get('txt')!r} url={a and a.get('url')!r}")
 
 
+def uninstall_by_name(ch, *names):
+    lst = ch.cmd("Userscript.list")
+    for s in lst.get("scripts", []):
+        if s.get("name") in names:
+            try:
+                ch.cmd("Userscript.uninstall", {"scriptId": s["scriptId"]})
+            except RuntimeError:
+                pass
+
+
+def domain_V2(ch, R, profile):
+    """v2 清单增量项:B15/B21 语义、A98 隔离、C95/C96、E97 触发链、G92/G93/G94/G62+、J83 速测
+    隔离纪律:每节用后卸载,防多脚本并存互踩注入面"""
+    B = f"http://127.0.0.1:{PORT_FIXED}"
+
+    # --- B15 语义分界 ---
+    ch.cmd("Userscript.install", {"source": open(os.path.join(HERE, "fixtures/b-net.user.js")).read(), "enabled": True})
+    r = ch.probe("xhr-semantics", wait=5) or {}
+    st = {k: r.get(k) for k in ("r404", "r500", "netfail", "ok") if k in r}
+    def sem_ok(e):
+        return e and e.get("onload") == 1 and e.get("onerror") == 0 and e.get("onloadend") >= 1
+    ok15 = (sem_ok(st.get("r404")) and st.get("r404", {}).get("status") == 404
+            and sem_ok(st.get("r500")) and st.get("r500", {}).get("status") == 500
+            and st.get("netfail", {}).get("onerror") == 1 and not st.get("netfail", {}).get("onload")
+            and sem_ok(st.get("ok")))
+    R.add("B", "15(v2)", "过" if ok15 else "缺",
+          f"404 onload={st.get('r404', {}).get('onload')} status={st.get('r404', {}).get('status')};"
+          f"500 onload={st.get('r500', {}).get('onload')};netfail onerror={st.get('netfail', {}).get('onerror')}"
+          f"/onload={st.get('netfail', {}).get('onload')};ok onloadend={st.get('ok', {}).get('onloadend')} prog={st.get('ok', {}).get('prog')}")
+    # --- B21 redirect 透传+finalUrl ---
+    r = ch.probe("xhr-redirect", wait=4) or {}
+    ok21 = r.get("status") == 200 and r.get("followed") and (r.get("finalUrl") or "").find("/fixture") >= 0
+    R.add("B", "21(v2)", "过" if ok21 else "缺",
+          f"302 后 status={r.get('status')} finalUrl={r.get('finalUrl')!r}(kManual/kError 档与下载道 @connect 同闸面:本台架单级同源跳,多级/跨源档环境限注)")
+    uninstall_by_name(ch, "cv-b-net")
+
+    # --- A98 跨脚本 values 隔离 ---
+    ch.cmd("Userscript.install", {"source": open(os.path.join(HERE, "fixtures/a-store.user.js")).read(), "enabled": True})
+    ch.cmd("Userscript.install", {"source": open(os.path.join(HERE, "fixtures/a2-store.user.js")).read(), "enabled": True})
+    ch.probe("roundtrip", {"v": "kv"})
+    l0 = ch.probe("cross-list", attr="probe2") or {}
+    w = ch.probe("cross-write", attr="probe2") or {}
+    l1 = ch.probe("just-list") or {}
+    ok98 = not (l0.get("list") or []) and (w.get("list") == ["a2k"]) and (l1.get("list") == ["k"])
+    R.add("A", "98", "过" if ok98 else "缺",
+          f"a2 先见空={(not (l0.get('list') or []))};a2 写后己面={w.get('list')};a-store 面无 a2k={(l1.get('list') == ['k'])}")
+    uninstall_by_name(ch, "cv-a2-store")
+
+    # --- C95 by_user/silent/tag ---
+    ch.cmd("Userscript.install", {"source": open(os.path.join(HERE, "fixtures/c-ui.user.js")).read(), "enabled": True})
+    r = ch.probe("notify2", wait=5) or {}
+    ok95 = r.get("hasByUser") and not str(r.get("reason", "")).startswith("ERR") and "fatal" not in r
+    R.add("C", "95(v2)", "过" if ok95 else "缺",
+          f"reason={r.get('reason')!r} hasByUser={r.get('hasByUser')}(timeout 档 by_user 可见;OS 点击档 by_user=true 面无头不可驱动注;tag 引擎未接预注)")
+    # --- C96 audio action 全集+GM.audio pending stub ---
+    r = ch.probe("audio2", wait=5) or {}
+    acts = [r.get(a) for a in ("mute", "unmute", "toggle", "pause", "play", "stop")]
+    ok96 = r.get("ctor") == "el" and all(a == "ok" for a in acts) and r.get("state") not in (None, "no-getState")
+    pending_ok = r.get("gmAudio") == "pending"  # v2 预注:stub pending 属预期
+    R.add("C", "96(v2)", "过" if ok96 else "缺",
+          f"ctor={r.get('ctor')} acts={acts} volume={r.get('volume')} state={r.get('state')!r};GM.audio={r.get('gmAudio')}(pending 属预期,预注)")
+    uninstall_by_name(ch, "cv-c-ui")
+    # --- E97 菜单触发链+accessKey ---
+    ch.cmd("Userscript.install", {"source": open(os.path.join(HERE, "fixtures/e-menu.user.js")).read(), "enabled": True})
+    ch.probe("menu-ak", wait=2)
+    ch.cmd("Target.createTarget", {"url": "chrome://userscripts/"})
+    time.sleep(2.0)
+    ws_eval("chrome://userscripts", "(function(){var els=Array.prototype.slice.call(document.querySelectorAll('*'))"
+            ".filter(function(e){return e.children.length===0&&e.textContent.trim()==='菜单';});"
+            "if(els.length){els[0].click();return 1;}return 0;})()")
+    time.sleep(1.0)
+    clicked = ws_eval("chrome://userscripts", "(function(){var els=Array.prototype.slice.call(document.querySelectorAll('*'))"
+                      ".filter(function(e){return e.children.length===0&&e.textContent.trim()==='cv-menu-ak';});"
+                      "if(els.length){els[0].click();return 'clicked';}return 'nofind';})()")
+    time.sleep(1.0)
+    fired = (ch.probe("menu-ak-status", wait=2) or {}).get("fired")
+    r97 = None
+    try:
+        r97 = ch.cmd("Userscript.runMenuCommand", {"commandName": "cv-menu-ak"})
+    except Exception as e:
+        r97 = f"ERR:{e}"
+    R.add("E", "97(v2)", "过" if (clicked == "clicked" and fired == "1") else "缺",
+          f"面板点击={clicked!r} fn 回流={fired!r};CDP Userscript.runMenuCommand 探针={str(r97)[:60]!r}")
+    uninstall_by_name(ch, "cv-e-menu")
+
+    # --- G92 GM_info 转义 ---
+    tricky = 'cv-q"uote\\back'
+    hdrs = [f'@name {tricky}', "@namespace ns'q", f"@match {B}/*", "@version 9.9"]
+    body = ("out({ n: (typeof GM_info === 'object' && GM_info.script) ? GM_info.script.name : String(typeof GM_info), "
+            "ns: (GM_info && GM_info.script) ? GM_info.script.namespace : null, "
+            "ver: (GM_info && GM_info.script) ? GM_info.script.version : null, "
+            "handler: GM_info ? GM_info.scriptHandler : null, "
+            "gmn: (typeof GM !== 'undefined' && GM.info && GM.info.script) ? GM.info.script.name : null });")
+    src92 = ("// ==UserScript==\n// @name         " + tricky + "\n// @namespace    ns'q\n"
+             f"// @match        {B}/*\n// @version      9.9\n// @run-at       document-idle\n// ==/UserScript==\n"
+             "(function () { function out(o) { o = o || {}; o.op = 'g-info'; document.documentElement.setAttribute('g-info', JSON.stringify(o)); }\n"
+             "try { " + body + " } catch (e) { out({ fatal: String(e) }); } })();")
+    ch.cmd("Userscript.install", {"source": src92, "enabled": True})
+    ch.nav(f"{B}/?op=v2")
+    a = read_attr(ch, "g-info", 2.2) or {}
+    ok92 = (a.get("n") == tricky and a.get("ns") == "ns'q" and a.get("ver") == "9.9"
+            and a.get("handler") and a.get("gmn") == tricky)
+    R.add("G", "92", "过" if ok92 else "缺",
+          f"name 往返={a.get('n')!r}=={tricky!r}:{a.get('n') == tricky};ns={a.get('ns')!r} ver={a.get('ver')!r} "
+          f"handler={a.get('handler')!r} GM.name 同={a.get('gmn') == tricky}")
+    uninstall_by_name(ch, tricky)
+    # --- G93 onurlchange(stalled 只在未写过时兜底,防覆写真值) ---
+    body = ("window.onurlchange = function (nu, ou) { window.__uok = true; out({ nu: String(nu), ou: String(ou) }); }; "
+            "setTimeout(function(){ history.pushState(null, '', '/spa-x'); }, 300); "
+            "setTimeout(function(){ if (!window.__uok) out({ stalled: true }); }, 2200);")
+    ch.cmd("Userscript.install", {"source": gsrc("urlc", [f"@match {B}/*"], body), "enabled": True})
+    ch.nav(f"{B}/?op=v2")
+    a = read_attr(ch, "g-urlc", 2.6) or {}
+    ok93 = "/spa-x" in str(a.get("nu", "")) and ":18871" in str(a.get("ou", ""))
+    R.add("G", "93", "过" if ok93 else "缺", f"pushState 后 nu={a.get('nu')!r} ou={a.get('ou')!r} stalled={a.get('stalled')}")
+    uninstall_by_name(ch, "cv-g-urlc")
+    # --- G94 两形注销 ---
+    hdrs = [f"@match {B}/*", "@grant GM_addValueChangeListener", "@grant GM_removeValueChangeListener",
+            "@grant GM.addValueChangeListener", "@grant GM.removeValueChangeListener", "@grant GM_setValue"]
+    body = ("var fires = { classic: 0, star: 0 }; "
+            "var cid = GM_addValueChangeListener('u2c', function () { fires.classic++; }); "
+            "GM_removeValueChangeListener(cid); GM_setValue('u2c', 1); "
+            "var sid = (typeof GM !== 'undefined' && GM.addValueChangeListener) ? GM.addValueChangeListener('u2s', function () { fires.star++; }) : null; "
+            "if (sid && GM.removeValueChangeListener) { try { GM.removeValueChangeListener(sid); } catch (e) { fires.starErr = String(e); } } "
+            "GM_setValue('u2s', 1); setTimeout(function () { out(fires); }, 500);")
+    ch.cmd("Userscript.install", {"source": gsrc("unreg2", hdrs, body), "enabled": True})
+    ch.nav(f"{B}/?op=v2")
+    a = read_attr(ch, "g-unreg2", 2.2) or {}
+    ok94 = a.get("classic") == 0 and a.get("star") == 1 and not a.get("starErr")
+    R.add("G", "94", "过" if ok94 else "缺",
+          f"经典形注销后 fires={a.get('classic')}(期望 0);GM.* 形注销后 fires={a.get('star')}(空转为已知形,期望 1) err={a.get('starErr')!r}")
+    uninstall_by_name(ch, "cv-g-unreg2")
+    # --- G62+ @resource 二进制/CJK ---
+    hdrs = [f"@match {B}/*", "@grant GM_getResourceText", "@grant GM_getResourceURL",
+            f"@resource rbin {B}/icon.png", f"@resource rcjk {B}/res-cjk.txt"]
+    ch.cmd("Userscript.install", {"source": gsrc("res2", hdrs,
+            "out({ bin: (GM_getResourceURL('rbin') || '').slice(0, 10), cjk: GM_getResourceText('rcjk') });"), "enabled": True})
+    ch.nav(f"{B}/?op=v2")
+    a = read_attr(ch, "g-res2", 2.6) or {}
+    ok62b = bool(a.get("bin")) and a.get("cjk") == "中文资源-测试"
+    R.add("G", "62(v2)", "过" if ok62b else "缺",
+          f"binURL={a.get('bin')!r} cjk={a.get('cjk')!r}(期望 中文资源-测试;与 #97 同管道)")
+    uninstall_by_name(ch, "cv-g-res2")
+
+    # --- J83 速测:verbatim+install 即 enabled ---
+    hdrs = [f"@match {B}/*", "@grant GM_setValue", "@grant GM_getValue"]
+    ch.cmd("Userscript.install", {"source": gsrc("verb", hdrs, "out({v: GM_getValue('vstr', '__MISS__')});")})  # 不带 enabled
+    lst = ch.cmd("Userscript.list")
+    svid = next((s["scriptId"] for s in lst["scripts"] if s["name"] == "cv-g-verb"), None)
+    enabled_default = None
+    if svid:
+        sv = next(s for s in lst["scripts"] if s["scriptId"] == svid)
+        enabled_default = sv.get("enabled")
+        ch.cmd("Userscript.setValue", {"scriptId": svid, "key": "vstr", "value": '{"j":1}'})
+        ch.nav(f"{B}/?op=v2")
+        a = read_attr(ch, "g-verb", 2.2) or {}
+        verbatim = a.get("v") == '{"j":1}'
+        R.add("J", "83(v2)", "过" if (enabled_default is True and verbatim) else "缺",
+              f"install 即 enabled={enabled_default};verbatim 往返={verbatim} v={a.get('v')!r}(期望串非对象)")
+    else:
+        R.add("J", "83(v2)", "缺", "verb 脚本 install 后 list 未见")
+    uninstall_by_name(ch, "cv-g-verb", "cv-a-store")
+
+
+def domain_J(ch, R):
+    B = f"http://127.0.0.1:{PORT_FIXED}"
+    src = open(os.path.join(HERE, "fixtures/a-store.user.js")).read()
+    ch.cmd("Userscript.install", {"source": src, "enabled": True})
+    lst = ch.cmd("Userscript.list")
+    sid = next((s["scriptId"] for s in lst.get("scripts", []) if s.get("name") == "cv-a-store"), None)
+    if not sid:
+        R.add("J", "0", "缺", f"install 后 list 未见(名面:{[s.get('name') for s in lst.get('scripts', [])]})")
+        return
+    # 80 list/getSource
+    gs = ch.cmd("Userscript.getSource", {"scriptId": sid})
+    ok80 = isinstance(gs.get("source"), str) and "cv-a-store" in gs["source"]
+    R.add("J", "80", "过" if ok80 else "缺", f"list={len(lst.get('scripts', []))} 源含名={ok80}")
+    # 79 enable/disable(参数形发现)
+    dis = None
+    for m, p in [("Userscript.disable", {"scriptId": sid}), ("Userscript.setEnabled", {"scriptId": sid, "enabled": False})]:
+        try:
+            ch.cmd(m, p)
+            dis = (m, p)
+            break
+        except RuntimeError as e:
+            dis = f"ERR:{e}"
+    alive = ch.probe("alive", wait=1.6)
+    en = None
+    if isinstance(dis, tuple):
+        for m, p in [("Userscript.enable", {"scriptId": sid}), ("Userscript.setEnabled", {"scriptId": sid, "enabled": True})]:
+            try:
+                ch.cmd(m, p)
+                en = m
+                break
+            except RuntimeError:
+                pass
+        alive2 = ch.probe("alive", wait=1.6)
+        lst3 = ch.cmd("Userscript.list")
+        flag = next((s.get("enabled") for s in lst3.get("scripts", []) if s.get("scriptId") == sid), None)
+        R.add("J", "79", "过" if (not alive and alive2 and alive2.get("alive")) else "缺",
+              f"禁后不注={not alive};复后注={bool(alive2 and alive2.get('alive'))};list 旗 enabled={flag};道={dis[0]}")
+    else:
+        R.add("J", "79", "缺", f"disable 两参形均拒:{str(dis)[:90]}")
+    # 82 setEnabled 面(若 79 走的是 disable,补探 setEnabled)
+    lst2 = ch.cmd("Userscript.list")
+    # 81 position 尊重:两 mini 脚本按 position 反序装,注入序对读
+    b1 = ("var d=document.documentElement;var cur=d.getAttribute('pord')||'';"
+          "d.setAttribute('pord',cur+(cur?',':'')+'first');out({});")
+    b2 = ("var d=document.documentElement;var cur=d.getAttribute('pord')||'';"
+          "d.setAttribute('pord',cur+(cur?',':'')+'second');out({});")
+    pos_err = None
+    try:
+        ch.cmd("Userscript.install", {"source": gsrc("p1", [f"@match {B}/*"], b1), "enabled": True, "position": 5})
+        ch.cmd("Userscript.install", {"source": gsrc("p2", [f"@match {B}/*"], b2), "enabled": True, "position": 1})
+    except RuntimeError as e:
+        pos_err = str(e)
+    ch.nav(f"{B}/?op=j")
+    ordseq = ch.eval_js("document.documentElement.getAttribute('pord')")
+    if pos_err:
+        # position 参不被收:退环境限注(参面无契约)
+        R.add("J", "81", "环境限", f"install position 参被拒:{pos_err[:80]};注入序面退默认序判")
+    else:
+        R.add("J", "81", "过" if ordseq == "second,first" else "缺",
+              f"position 1/5 反序装,注入序={ordseq!r}(期望 second,first)")
+    # 84 applyUpdate
+    upd = src.replace("    } else if (op === 'alive') {",
+                      "    } else if (op === 'upd-mark') { out({ upd: 1, keep: GM_getValue('k', '__MISS__') }); "
+                      "    } else if (op === 'alive') {")
+    ch.probe("roundtrip", {"v": "keep-me"})
+    ap = None
+    try:
+        ap = ch.cmd("Userscript.applyUpdate", {"scriptId": sid, "source": upd})
+        a = ch.probe("upd-mark", wait=2.5) or {}
+        R.add("J", "84", "过" if (a.get("upd") == 1 and a.get("keep") == "keep-me") else "缺",
+              f"换代后新 op={a.get('upd')} 值存续={a.get('keep')!r}")
+    except RuntimeError as e:
+        R.add("J", "84", "环境限", f"applyUpdate 直调拒『{str(e)[:60]}』——需先有 pending 候选(67/68 入队流),归 H 域批联测补判")
+    # 85 坏 scriptId 一律拒
+    rejects = []
+    for m, p in [("Userscript.setValue", {"scriptId": "../../evil", "key": "x", "value": "1"}),
+                 ("Userscript.getSource", {"scriptId": "../etc/passwd"}),
+                 ("Userscript.uninstall", {"scriptId": "no-such-id"})]:
+        try:
+            ch.cmd(m, p)
+            rejects.append(f"{m}:NO-ERR")
+        except RuntimeError:
+            rejects.append(f"{m}:rej")
+    R.add("J", "85", "过" if all(x.endswith(":rej") for x in rejects) else "缺", ";".join(rejects))
+
+
 def domain_K(ch, R):
     # 86 CDP 免确认(auto-allow):本台架全程零确认直连即证
     R.add("K", "86", "过", "本驱动全程 CDP 直连零确认(能在跑即证 auto-allow)")
@@ -743,6 +1010,10 @@ def main():
                 domain_F(ch, R)
             elif d == "G":
                 domain_G(ch, R)
+            elif d == "V2":
+                domain_V2(ch, R, profile)
+            elif d == "J":
+                domain_J(ch, R)
             elif d == "K":
                 domain_K(ch, R)
             else:

@@ -66,8 +66,33 @@
       f.onload = function () { setTimeout(function () { out({ frameLoaded: f.contentDocument ? 'loaded' : 'denied' }); }, 200); };
       document.body.appendChild(f);
       setTimeout(function () { out({ timeoutNoCb: true }); }, 1500);
+    } else if (op === 'xhr-semantics') {
+      // v2 项 15 语义分界:404/500 走 onload 非 onerror;onerror 仅网络层;onloadend 恒火
+      var st = {};
+      function mk(label, url, timeout) {
+        var e = { onload: 0, onerror: 0, onloadend: 0, prog: 0, status: null };
+        st[label] = e;
+        GM_xmlhttpRequest({
+          method: 'GET', url: url, timeout: timeout || 0,
+          onload: function (r) { e.onload++; e.status = r.status; },
+          onerror: function (r) { e.onerror++; e.errStatus = r && r.status; },
+          onloadend: function () { e.onloadend++; },
+          onprogress: function (p) { e.prog++; if (p && p.loaded) e.loaded = true; }
+        });
+      }
+      mk('r404', BASE + '/err404');
+      mk('r500', BASE + '/err500');
+      mk('netfail', 'http://127.0.0.1:9/x', 4000);
+      mk('ok', BASE + '/fixture?b=sem');
+      setTimeout(function () { out(st); }, 3600);
+    } else if (op === 'xhr-redirect') {
+      GM_xmlhttpRequest({
+        method: 'GET', url: BASE + '/r302',
+        onload: function (r) { out({ status: r.status, finalUrl: r.finalUrl, followed: r.finalUrl !== BASE + '/r302' }); },
+        onerror: function () { out({ err: 'onerror' }); }
+      });
     } else if (op === 'alive') {
       out({ alive: true });
-    } else { out({}); }
+    }
   } catch (e) { out({ fatal: String(e) }); }
 })();

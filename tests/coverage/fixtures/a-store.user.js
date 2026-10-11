@@ -85,10 +85,10 @@
     } else if (op === 'badjson-default') {
       // 值文件被外部写坏:脚本仍跑,读到默认值,写失败不留新文件(判读在驱动侧看盘)
       out({ v: GM_getValue('poison', '__DEFAULT__') });
+    } else if (op === 'just-list') {
+      out({ list: GM_listValues() });
     } else if (op === 'alive') {
       out({ alive: true });
-    } else {
-      out({});
     }
   } catch (e) {
     out({ fatal: String(e) });

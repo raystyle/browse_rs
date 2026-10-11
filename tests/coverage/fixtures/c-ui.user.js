@@ -7,6 +7,7 @@
 // @grant        GM_addStyle
 // @grant        GM_addElement
 // @grant        GM_audio
+// @grant        GM.audio
 // @grant        GM_log
 // @run-at       document-idle
 // ==/UserScript==
@@ -68,8 +69,37 @@
     } else if (op === 'log') {
       GM_log('CVLOG_MARKER_7f3a');
       out({ logged: true });
+    } else if (op === 'notify2') {
+      // v2 项 95:by_user 终态+silent 形+tag 面(引擎未接预注)
+      var why = null;
+      GM_notification({ title: 'cv2', text: 'nv2', timeout: 800, silent: true, tag: 'cv-tag' }, function (w) { why = w; });
+      setTimeout(function () {
+        out({ reason: why === null || why === undefined ? 'none' : (typeof why === 'object' ? JSON.stringify(why) : String(why)),
+              hasByUser: !!(why && typeof why === 'object' && ('by_user' in why || 'byUser' in why)) });
+      }, 1800);
+    } else if (op === 'audio2') {
+      // v2 项 96:action 全集+getState+GM.audio promise 预期 pending stub
+      var v = {};
+      try {
+        var a = GM_audio(BASE + '/silence.wav');
+        v.ctor = a ? (a.play ? 'el' : String(a).slice(0, 24)) : 'null';
+        ['mute', 'unmute', 'toggle', 'pause', 'play', 'stop'].forEach(function (act) {
+          try { var r2 = (a && a[act]) ? a[act]() : 'no-method'; v[act] = r2 === undefined ? 'ok' : String(r2).slice(0, 20); }
+          catch (e) { v[act] = 'ERR:' + String(e).slice(0, 40); }
+        });
+        try { if (a && a.volume !== undefined) { a.volume = 0.5; v.volume = String(a.volume); } else v.volume = 'none'; }
+        catch (e) { v.volume = 'ERR:' + String(e).slice(0, 30); }
+        try { v.state = (a && a.getState) ? String(a.getState()) : 'no-getState'; }
+        catch (e) { v.state = 'ERR:' + String(e).slice(0, 30); }
+      } catch (e) { v.ctor = 'ERR:' + String(e).slice(0, 60); }
+      try {
+        var p = (GM.audio && GM.audio.play) ? GM.audio.play() : 'no-GM.audio';
+        if (p && p.then) { v.gmAudio = 'pending'; p.then(function () { v.gmAudio = 'settled'; }, function () { v.gmAudio = 'rejected'; }); }
+        else { v.gmAudio = String(p).slice(0, 30); }
+      } catch (e) { v.gmAudio = 'ERR:' + String(e).slice(0, 40); }
+      setTimeout(function () { out(v); }, 1500);
     } else if (op === 'alive') {
       out({ alive: true });
-    } else { out({}); }
+    }
   } catch (e) { out({ fatal: String(e) }); }
 })();
