@@ -920,7 +920,7 @@
     {
       "path": "browse_core::userscript_store",
       "kind": "module",
-      "docs": "油猴脚本盘上契约管理（REQ #79）：对引擎 `<profile>/Default/Userscripts/`\n的同构读写——安装、列表、启停、删除、换源、路径输出。\n\n引擎（clean-chrome `UserscriptStore`）启动时读盘，装改后需引擎重启生效\n（CLI `--restart` 自动 down/up）；批 4 `Userscript.*` CDP 域落地后升级为\n域优先、盘上兜底。id 与引擎 `MakeId` 同构：`SHA256(\"namespace@name\")`\n前 6 字节 hex（12 字符）。"
+      "docs": "油猴脚本盘上契约管理（REQ #79）：对引擎 `<profile>/Default/Userscripts/`\n的同构读写——安装、列表、启停、删除、换源、路径输出。\n\n引擎（clean-chrome `UserscriptStore`）启动时读盘，装改后需引擎重启生效\n（CLI `--restart` 引擎级重启，#84 起 daemon 记录 spec 复起不失 profile 形态）；\n批 4 `Userscript.*` CDP 域落地后升级为\n域优先、盘上兜底。id 与引擎 `MakeId` 同构：`SHA256(\"namespace@name\")`\n前 6 字节 hex（12 字符）。"
     },
     {
       "path": "browse_core::userscript_store::ScriptMeta",
@@ -930,7 +930,7 @@
     {
       "path": "browse_core::userscript_store::install",
       "kind": "function",
-      "docs": "安装一个或多个 `.user.js`：写 `scripts/<id>/{meta.json, script.user.js}`，\nindex 条目 upsert（幂等重装覆盖源码与 meta，`enabled` 保留现值）。\n\n# Errors\n\n源文件读失败或盘上写失败时返回带路径的错误串。"
+      "docs": "安装一个或多个 `.user.js`：写 `scripts/<id>/{meta.json, script.user.js}`，\nmeta 键面与引擎 CDP 写盘同构、脚本体**保留全文头**（引擎从头再读\nrequire/resource 等；#107 前剥头致引擎侧 run-at/update 检查/资源全失），\nindex 条目 upsert（幂等重装覆盖源码与 meta，`enabled` 保留现值）。\n\n# Errors\n\n源文件读失败或盘上写失败时返回带路径的错误串。"
     },
     {
       "path": "browse_core::userscript_store::list",

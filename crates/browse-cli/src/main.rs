@@ -47,25 +47,28 @@ fn engine_profile_path(profile: &Option<String>) -> PathBuf {
         .unwrap_or_else(browse_core::paths::engine_profile_dir)
 }
 
-/// #79 `--restart`：down+up（缺省 headless）让盘上装改对引擎生效。
+/// #79 `--restart`：引擎级重启让盘上装改对引擎生效。#84 起 daemon 记录
+/// spec 复起（`up --profile` 等形态不失，headed 也不被强转 headless）；
+/// daemon 不在时拉起后按本参 up（无记录面可循）。
 async fn restart_engine(profile: Option<String>) -> anyhow::Result<()> {
     if client::daemon_alive().await.is_some() {
-        client::quit().await?;
+        client::engine_restart().await?;
+    } else {
+        client::ensure_daemon().await?;
+        client::engine_up(client::UpParams {
+            headless: true,
+            chrome: None,
+            ws: None,
+            port: None,
+            pipe: false,
+            profile,
+            proxy: None,
+            proxy_bypass: None,
+            isolated: false,
+            engine_args: vec![],
+        })
+        .await?;
     }
-    client::ensure_daemon().await?;
-    client::engine_up(client::UpParams {
-        headless: true,
-        chrome: None,
-        ws: None,
-        port: None,
-        pipe: false,
-        profile,
-        proxy: None,
-        proxy_bypass: None,
-        isolated: false,
-        engine_args: vec![],
-    })
-    .await?;
     println!("引擎已重启（装改生效）");
     Ok(())
 }

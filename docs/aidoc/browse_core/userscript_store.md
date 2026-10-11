@@ -4,7 +4,8 @@
 的同构读写——安装、列表、启停、删除、换源、路径输出。
 
 引擎（clean-chrome `UserscriptStore`）启动时读盘，装改后需引擎重启生效
-（CLI `--restart` 自动 down/up）；批 4 `Userscript.*` CDP 域落地后升级为
+（CLI `--restart` 引擎级重启，#84 起 daemon 记录 spec 复起不失 profile 形态）；
+批 4 `Userscript.*` CDP 域落地后升级为
 域优先、盘上兜底。id 与引擎 `MakeId` 同构：`SHA256("namespace@name")`
 前 6 字节 hex（12 字符）。
 

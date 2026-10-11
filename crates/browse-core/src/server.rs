@@ -544,6 +544,7 @@ pub async fn serve(daemon: Arc<Daemon>, bind: &str) -> anyhow::Result<()> {
         .route("/rune/stop", post(rune_stop_handler))
         .route("/health", get(health_handler))
         .route("/engine/up", post(engine_up_handler))
+        .route("/engine/restart", post(engine_restart_handler))
         .route(
             "/events",
             post(events_create_handler)
@@ -1309,6 +1310,44 @@ async fn health_handler(State(st): State<AppState>) -> impl IntoResponse {
             .health_json(st.daemon.started.elapsed(), &st.daemon.desc)
             .await,
     )
+}
+
+/// POST /engine/restart：引擎级重启（#84）——spawn 来源优雅关后按 daemon
+/// 记录 spec（#61「最近一次 up 的形态」）复起，profile/headless 形不失，
+/// 不再让 CLI `--restart` quit 整个 daemon 把记录面陪葬（那会把引擎回落
+/// env 缺省 profile，盘上装改 write-A-read-B）；Attach 来源只重连不杀浏览器。
+/// 与求值共用单飞槽（同闲置回收机评审 F1）：不撕断在跑的求值。
+async fn engine_restart_handler(State(st): State<AppState>) -> impl IntoResponse {
+    let _ = st
+        .daemon
+        .last_activity
+        .lock()
+        .map(|mut t| *t = Instant::now());
+    let _slot = st.daemon.eval_lock.lock().await;
+    let spec = st
+        .daemon
+        .spec
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .clone();
+    if matches!(
+        st.daemon.engine.source().await,
+        crate::engine::EngineSource::Spawned { .. }
+    ) {
+        let _ = st.daemon.engine.shutdown().await;
+    }
+    match st.daemon.engine.ensure(&spec).await {
+        Ok(_) => (
+            axum::http::StatusCode::OK,
+            Json(
+                st.daemon
+                    .engine
+                    .health_json(st.daemon.started.elapsed(), &st.daemon.desc)
+                    .await,
+            ),
+        ),
+        Err(e) => err_response(e),
+    }
 }
 
 async fn engine_up_handler(

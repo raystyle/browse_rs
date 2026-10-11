@@ -28,6 +28,7 @@ daemon 客户端：本地 HTTP 调用 + 首次使用自动拉起 detached daemon
 - `daemon_alive` — 探测 daemon 是否在跑：GET /health 通即为在。
 - `daemon_bind` — 返回 daemon 监听的 `host:port` 串；多实例由 `BROWSE_NAME` 派生端口（ADR-0006）。
 - `decode_arg_b64` — 解码 `-b/--b64` 通道的片段实参（#22）：标准 base64 解码为 UTF-8
+- `engine_restart` — /engine/restart（#84）：引擎级重启——daemon 按「最近一次 up 的记录
 - `engine_up` — 拉起引擎（`browse up` 面）：POST /engine/up 并校验 ok 回包。
 - `ensure_daemon` — daemon 不在跑时 detached 拉起 `browse --serve` 并探活到通；已在跑则直接返回。
 - `ensure_daemon_with_env` — 同 [`ensure_daemon`]，但给新拉起的 daemon 进程注入环境变量
@@ -637,7 +638,8 @@ session 方法**只在这一处登记为数据**，JSON Schema 与 LLM 清单
 的同构读写——安装、列表、启停、删除、换源、路径输出。
 
 引擎（clean-chrome `UserscriptStore`）启动时读盘，装改后需引擎重启生效
-（CLI `--restart` 自动 down/up）；批 4 `Userscript.*` CDP 域落地后升级为
+（CLI `--restart` 引擎级重启，#84 起 daemon 记录 spec 复起不失 profile 形态）；
+批 4 `Userscript.*` CDP 域落地后升级为
 域优先、盘上兜底。id 与引擎 `MakeId` 同构：`SHA256("namespace@name")`
 前 6 字节 hex（12 字符）。
 

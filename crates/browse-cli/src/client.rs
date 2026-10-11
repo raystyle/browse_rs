@@ -786,6 +786,24 @@ pub async fn events_clear() -> Result<Value> {
         .map_err(|e| anyhow!("browse: events 清空失败：{e}"))
 }
 
+/// /engine/restart（#84）：引擎级重启——daemon 按「最近一次 up 的记录
+/// spec」复起引擎（profile/headless 等形态不失）；daemon 不在时由调用
+/// 方走 ensure_daemon + up 道。
+///
+/// # Errors
+///
+/// daemon 不可达或 HTTP 失败时返回错误。
+pub async fn engine_restart() -> Result<Value> {
+    client()
+        .post(format!("{}/engine/restart", http()))
+        .send()
+        .await?
+        .error_for_status()?
+        .json::<Value>()
+        .await
+        .map_err(|e| anyhow!("browse: 引擎重启失败：{e}"))
+}
+
 /// `engine_up` 的参数面：CLI up 旗标直通（字段名即 /engine/up 请求键）。
 pub struct UpParams {
     /// spawn 时无头。

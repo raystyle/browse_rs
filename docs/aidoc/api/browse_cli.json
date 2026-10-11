@@ -38,6 +38,11 @@
       "docs": "解码 `-b/--b64` 通道的片段实参（#22）：标准 base64 解码为 UTF-8\n字符串。PowerShell 与复杂 shell 的引号与编码面一并绕开（方言与\n`--js` 两形态通用）。\n\n# Errors\n\n实参不是合法 base64，或解码后不是 UTF-8 文本（错误带生成 base64 的\n可照抄命令 CTA）。\n\n# Examples\n\n```\nassert_eq!(browse_cli::client::decode_arg_b64(\"cmV0dXJuIDE=\").unwrap(), \"return 1\");\n// 空白容忍（PowerShell 折行形）\nassert_eq!(\n    browse_cli::client::decode_arg_b64(\"cmV0\\ndXJuIDE=\").unwrap(),\n    \"return 1\"\n);\nassert!(browse_cli::client::decode_arg_b64(\"!!!\").is_err());\n```"
     },
     {
+      "path": "browse_cli::client::engine_restart",
+      "kind": "function",
+      "docs": "/engine/restart（#84）：引擎级重启——daemon 按「最近一次 up 的记录\nspec」复起引擎（profile/headless 等形态不失）；daemon 不在时由调用\n方走 ensure_daemon + up 道。\n\n# Errors\n\ndaemon 不可达或 HTTP 失败时返回错误。"
+    },
+    {
       "path": "browse_cli::client::engine_up",
       "kind": "function",
       "docs": "拉起引擎（`browse up` 面）：POST /engine/up 并校验 ok 回包。\n\n# Errors\n\ndaemon 不可达、HTTP 失败或回包 ok 非真时返回错误。"

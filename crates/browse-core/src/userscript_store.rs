@@ -2,7 +2,8 @@
 //! 的同构读写——安装、列表、启停、删除、换源、路径输出。
 //!
 //! 引擎（clean-chrome `UserscriptStore`）启动时读盘，装改后需引擎重启生效
-//! （CLI `--restart` 自动 down/up）；批 4 `Userscript.*` CDP 域落地后升级为
+//! （CLI `--restart` 引擎级重启，#84 起 daemon 记录 spec 复起不失 profile 形态）；
+//! 批 4 `Userscript.*` CDP 域落地后升级为
 //! 域优先、盘上兜底。id 与引擎 `MakeId` 同构：`SHA256("namespace@name")`
 //! 前 6 字节 hex（12 字符）。
 
@@ -49,8 +50,12 @@ pub struct ScriptMeta {
     pub grants: Vec<String>,
     /// `@noframes`。
     pub noframes: bool,
-    /// `@run-at`（引擎注入时机，meta 不落盘、由脚本体头外字段自行携带）。
+    /// `@run-at`（引擎注入时机；#107 起 meta 落盘，与引擎 CDP 写盘同构）。
     pub run_at: Option<String>,
+    /// `@version`（引擎更新比较位；#107 起 meta 落盘）。
+    pub version: Option<String>,
+    /// `@updateURL`（引擎更新检查源；#107 起 meta 落盘为 `update-url` 键）。
+    pub update_url: Option<String>,
 }
 
 /// 解析 `==UserScript==` 头；无头块时按全缺省 meta 返回（仍可安装，等于
@@ -66,6 +71,8 @@ pub fn parse_header(src: &str, file_stem: &str) -> ScriptMeta {
         grants: Vec::new(),
         noframes: false,
         run_at: None,
+        version: None,
+        update_url: None,
     };
     let Some(block) = header_block(src) else {
         return m;
@@ -93,6 +100,11 @@ pub fn parse_header(src: &str, file_stem: &str) -> ScriptMeta {
             "grant" => m.grants.push(v.to_string()),
             "noframes" => m.noframes = true,
             "run-at" => m.run_at = Some(v.to_string()),
+            "version" => m.version = Some(v.to_string()),
+            // 头拼写两形都收（@updateURL 驼峰 / @update-url 连字），meta 键统一 update-url
+            _ if k.eq_ignore_ascii_case("updateurl") || k.eq_ignore_ascii_case("update-url") => {
+                m.update_url = Some(v.to_string())
+            }
             _ => {}
         }
     }
@@ -120,7 +132,7 @@ pub fn script_body(src: &str) -> &str {
 fn read_index(root: &Path) -> Result<Value, String> {
     let p = root.join("index.json");
     let Some(txt) = fs::read_to_string(&p).ok() else {
-        return Ok(json!({"scripts": []}));
+        return Ok(json!({"scripts": [], "version": 1}));
     };
     let v: Value = serde_json::from_str(&txt)
         .map_err(|e| format!("{} 形坏: {e}(不覆盖;手工修复或删除该文件重来)", p.display()))?;
@@ -133,6 +145,16 @@ fn read_index(root: &Path) -> Result<Value, String> {
 /// 原子写 index：同目录临时文件写稳后 rename 覆盖——崩溃窗口不留半截
 /// 真名文件（评审 F2；`fs::write` 直写的截断窗口会让下次读把坏盘当空册）。
 fn write_index(root: &Path, idx: &Value) -> Result<(), String> {
+    // 引擎写盘带顶层 version 键（同构 #107）：旧册缺则补 1
+    let stamped;
+    let idx = if idx["version"].is_null() {
+        let mut v = idx.clone();
+        v["version"] = json!(1);
+        stamped = v;
+        &stamped
+    } else {
+        idx
+    };
     let p = root.join("index.json");
     let tmp = root.join("index.json.tmp");
     let s = serde_json::to_string_pretty(idx).map_err(|e| format!("index 序列化失败: {e}"))?;
@@ -140,14 +162,32 @@ fn write_index(root: &Path, idx: &Value) -> Result<(), String> {
     fs::rename(&tmp, &p).map_err(|e| format!("落 {} 失败: {e}", p.display()))
 }
 
+/// meta.json 键面与引擎 CDP 写盘（userscript_store.cc MetaToJson）同构：
+/// 恒有 name/namespace/match/include/exclude/connect/noframes/grant，
+/// 可选 run-at/update-url/version 缺省不落键；require/resource/download-url
+/// 不入 meta——由脚本体保留的全文头携带（#107）。
 fn meta_json(m: &ScriptMeta) -> Value {
-    json!({
+    let mut v = json!({
+        "name": m.name, "namespace": m.namespace,
         "match": m.matches, "include": m.includes, "exclude": m.excludes,
         "connect": m.connects, "noframes": m.noframes, "grant": m.grants,
-    })
+    });
+    let o = v.as_object_mut().expect("json! 字面量必是对象");
+    if let Some(ra) = &m.run_at {
+        o.insert("run-at".into(), json!(ra));
+    }
+    if let Some(u) = &m.update_url {
+        o.insert("update-url".into(), json!(u));
+    }
+    if let Some(ver) = &m.version {
+        o.insert("version".into(), json!(ver));
+    }
+    v
 }
 
 /// 安装一个或多个 `.user.js`：写 `scripts/<id>/{meta.json, script.user.js}`，
+/// meta 键面与引擎 CDP 写盘同构、脚本体**保留全文头**（引擎从头再读
+/// require/resource 等；#107 前剥头致引擎侧 run-at/update 检查/资源全失），
 /// index 条目 upsert（幂等重装覆盖源码与 meta，`enabled` 保留现值）。
 ///
 /// # Errors
@@ -174,8 +214,7 @@ pub fn install(profile: &Path, files: &[PathBuf]) -> Result<Value, String> {
         let meta_s =
             serde_json::to_string(&meta_json(&m)).map_err(|e| format!("meta 序列化失败: {e}"))?;
         fs::write(dir.join("meta.json"), &meta_s).map_err(|e| format!("写 meta 失败: {e}"))?;
-        fs::write(dir.join("script.user.js"), script_body(&src))
-            .map_err(|e| format!("写脚本体失败: {e}"))?;
+        fs::write(dir.join("script.user.js"), &src).map_err(|e| format!("写脚本体失败: {e}"))?;
         let existing = scripts
             .iter()
             .position(|e| e["id"].as_str() == Some(id.as_str()));
@@ -399,7 +438,7 @@ mod tests {
 
     #[test]
     fn 头解析全键与缺省() {
-        let src = "// ==UserScript==\n// @name  t1 \n// @namespace ns\n// @match http://a/*\n// @connect 127.0.0.1\n// @grant GM_xmlhttpRequest\n// @grant unsafeWindow\n// @noframes\n// @run-at document-start\n// ==/UserScript==\nbody();\n";
+        let src = "// ==UserScript==\n// @name  t1 \n// @namespace ns\n// @version 2.3\n// @match http://a/*\n// @connect 127.0.0.1\n// @grant GM_xmlhttpRequest\n// @grant unsafeWindow\n// @noframes\n// @run-at document-start\n// @updateURL http://u/x.user.js\n// ==/UserScript==\nbody();\n";
         let m = parse_header(src, "stem");
         assert_eq!((m.name.as_str(), m.namespace.as_str()), ("t1", "ns"));
         assert_eq!(m.matches, ["http://a/*"]);
@@ -407,11 +446,38 @@ mod tests {
         assert_eq!(m.grants, ["GM_xmlhttpRequest", "unsafeWindow"]);
         assert!(m.noframes);
         assert_eq!(m.run_at.as_deref(), Some("document-start"));
+        assert_eq!(m.version.as_deref(), Some("2.3"));
+        assert_eq!(m.update_url.as_deref(), Some("http://u/x.user.js"));
         assert_eq!(script_body(src), "body();\n");
 
         let d = parse_header("no header", "stem");
         assert_eq!((d.name.as_str(), d.namespace.as_str()), ("stem", "file"));
+        assert!(d.version.is_none() && d.update_url.is_none());
         assert_eq!(script_body("no header"), "no header");
+    }
+
+    #[test]
+    fn meta键面同构引擎写盘() {
+        // #107:meta.json 键面=引擎 CDP 装(userscript_store.cc MetaToJson)——
+        // 恒 name/namespace/match/include/exclude/connect/noframes/grant,
+        // 可选 run-at/update-url/version 缺省不落键
+        let m = parse_header(
+            "// ==UserScript==\n// @name mv\n// @namespace ns\n// @version 3.1\n// @run-at document-end\n// @updateURL http://u/v.user.js\n// @match http://a/*\n// ==/UserScript==\n",
+            "s",
+        );
+        let j = meta_json(&m);
+        assert_eq!(j["name"], "mv");
+        assert_eq!(j["namespace"], "ns");
+        assert_eq!(j["run-at"], "document-end");
+        assert_eq!(j["update-url"], "http://u/v.user.js");
+        assert_eq!(j["version"], "3.1");
+        let bare = meta_json(&parse_header(
+            "// ==UserScript==\n// @name b\n// ==/UserScript==\n",
+            "s",
+        ));
+        for k in ["run-at", "update-url", "version"] {
+            assert!(bare.get(k).is_none(), "缺省不落键: {k}");
+        }
     }
 
     #[test]
@@ -420,12 +486,13 @@ mod tests {
         let _ = fs::remove_dir_all(&tmp);
         let js = tmp.join("a.user.js");
         fs::create_dir_all(&tmp).unwrap();
-        fs::write(&js, "// ==UserScript==\n// @name a\n// @match http://x/*\n// @grant GM_setValue\n// ==/UserScript==\nrun();").unwrap();
+        let src = "// ==UserScript==\n// @name a\n// @version 1.2\n// @match http://x/*\n// @grant GM_setValue\n// @updateURL http://u/a.user.js\n// ==/UserScript==\nrun();";
+        fs::write(&js, src).unwrap();
 
         let r = install(&tmp, std::slice::from_ref(&js)).unwrap();
         let id = r["installed"][0]["id"].as_str().unwrap().to_string();
         assert_eq!(r["installed"][0]["replaced"], false);
-        // meta 落盘带 grant
+        // meta 落盘带 grant + 同构三键
         let meta = fs::read_to_string(
             tmp.join("Default/Userscripts/scripts")
                 .join(&id)
@@ -433,6 +500,9 @@ mod tests {
         )
         .unwrap();
         assert!(meta.contains("GM_setValue"));
+        assert!(meta.contains("\"update-url\""));
+        assert!(meta.contains("1.2"));
+        // #107:脚本体保留全文头（引擎从头读 require/resource）
         assert_eq!(
             fs::read_to_string(
                 tmp.join("Default/Userscripts/scripts")
@@ -440,8 +510,11 @@ mod tests {
                     .join("script.user.js")
             )
             .unwrap(),
-            "run();"
+            src
         );
+        // index 同构带顶层 version
+        let idx = fs::read_to_string(tmp.join("Default/Userscripts/index.json")).unwrap();
+        assert!(idx.contains("\"version\""));
 
         // 幂等重装:enabled 保留
         let off = set_enabled(&tmp, &id, false).unwrap();
