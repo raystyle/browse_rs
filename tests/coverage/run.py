@@ -73,6 +73,18 @@ class Fixtures(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(("hdr=" + str(self.headers.get("X-Cv-Custom")) + ";body=" + body).encode())
             return
+        if self.path.startswith("/frames"):
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html")
+            self.end_headers()
+            self.wfile.write(b'<html><body>f<iframe src="/framed?op=g"></iframe></body></html>')
+            return
+        if self.path.startswith("/framed"):
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html")
+            self.end_headers()
+            self.wfile.write(b"<html><body>framed</body></html>")
+            return
         if self.path.startswith("/setck"):
             self.send_response(200)
             self.send_header("Set-Cookie", "cvp=page1; Path=/")
@@ -561,6 +573,129 @@ def domain_F(ch, R):
           f"promise n={r.get('pn')} names={r.get('names')} err={r.get('perr')!r}")
 
 
+G_TPL = """// ==UserScript==
+// @name         cv-g-%(n)s
+// @namespace    cv
+%(hdr)s// @run-at       %(ra)s
+// ==/UserScript==
+(function () {
+  function out(o) { o = o || {}; o.op = 'g-%(n)s'; document.documentElement.setAttribute('g-%(n)s', JSON.stringify(o)); }
+  try { %(body)s } catch (e) { out({ fatal: String(e) }); }
+})();
+"""
+
+
+def gsrc(n, hdrs, body, ra="document-idle"):
+    hdr = "".join(f"// {h}\n" for h in hdrs)
+    return G_TPL % {"n": n, "hdr": hdr, "ra": ra, "body": body}
+
+
+def read_attr(ch, attr, wait=1.5):
+    expr = f"document.documentElement.getAttribute('{attr}')"
+    deadline = time.time() + wait
+    while time.time() < deadline:
+        r = ch.cmd("Runtime.evaluate", {"expression": expr, "returnByValue": True})
+        v = (r.get("result") or {}).get("value")
+        if v:
+            try:
+                return json.loads(v)
+            except Exception:
+                return {"raw": v}
+        time.sleep(0.25)
+    return None
+
+
+def domain_G(ch, R):
+    def gi(n, hdrs, body, ra="document-idle"):
+        ch.cmd("Userscript.install", {"source": gsrc(n, hdrs, body, ra), "enabled": True})
+
+    def attr_on(url, attr, wait=1.8):
+        ch.nav(url)
+        return read_attr(ch, attr, wait)
+
+    B = f"http://127.0.0.1:{PORT_FIXED}"
+    hit = "out({hit: location.pathname});"
+    rs_body = "out({rs: document.readyState, hasBody: !!document.body});"
+    # 53:@match 路径段精确
+    gi("exact", [f"@match {B}/gexact/*"], hit)
+    a = attr_on(f"{B}/gexact/x?op=g", "g-exact")
+    b = attr_on(f"{B}/other?op=g", "g-exact")
+    R.add("G", "53", "过" if (a and not b) else "缺", f"/gexact 命中={bool(a)};/other 不注={not b}")
+    # 54:PSL 语义(localhost 非 PSL 后缀=假后缀档:单标签通配,双标签不注;co.uk 多标签环境限)
+    gi("wl", ["@match http://*.localhost/*"], hit)
+    gi("wlp", ["@match http://*.localhost:18871/*"], hit)
+    one = attr_on("http://a.localhost:18871/?op=g", "g-wl", 2.2) or attr_on("http://a.localhost:18871/?op=g", "g-wlp", 2.2)
+    two = attr_on("http://a.b.localhost:18871/?op=g", "g-wl", 2.2) or attr_on("http://a.b.localhost:18871/?op=g", "g-wlp", 2.2)
+    if one and not two:
+        R.add("G", "54", "过", "a.localhost 命中;a.b.localhost 不注(非 PSL 后缀单标签,假后缀拒语义成立;co.uk 多标签展开环境限:台架无多级真域)")
+    else:
+        R.add("G", "54", "缺", f"a.localhost 命={bool(one)};a.b.localhost 不注={not two}(期望单标签)")
+    # 55:通配 scheme
+    gi("sch", ["@match *://127.0.0.1/*"], hit)
+    a = attr_on(f"{B}/?op=g", "g-sch")
+    R.add("G", "55", "过" if a else "缺", f"http 命中={bool(a)}(ws/ftp 面台架无源,注记)")
+    # 56:@include glob + @exclude
+    gi("glob", [f"@include {B}/inc*", "@exclude *excl*"], hit)
+    i1 = attr_on(f"{B}/inc-y?op=g", "g-glob")
+    i2 = attr_on(f"{B}/plain?op=g", "g-glob")
+    i3 = attr_on(f"{B}/inc-excluded?op=g", "g-glob")
+    R.add("G", "56", "过" if (i1 and not i2 and not i3) else "缺",
+          f"inc-y 命={bool(i1)};plain 不注={not i2};inc-excluded 排除={not i3}")
+    # 57:@run-at 四档
+    start_body = ("var iv=setInterval(function(){if(document.documentElement){clearInterval(iv);"
+                  "out({rs:document.readyState,hasBody:!!document.body});}},0);")
+    gi("ras", [f"@match {B}/*"], start_body, "document-start")
+    gi("rab", [f"@match {B}/*"], rs_body, "document-body")
+    gi("rae", [f"@match {B}/*"], rs_body, "document-end")
+    gi("rai", [f"@match {B}/*"], rs_body, "document-idle")
+    ras = attr_on(f"{B}/?op=g", "g-ras", 2.5)
+    rab = attr_on(f"{B}/?op=g", "g-rab", 2.5)
+    rae = attr_on(f"{B}/?op=g", "g-rae", 2.5)
+    rai = attr_on(f"{B}/?op=g", "g-rai", 2.5)
+    ok_s = ras and ras.get("rs") == "loading" and not ras.get("hasBody")
+    ok_b = rab and rab.get("hasBody") and rab.get("rs") in ("loading", "interactive")
+    ok_e = rae and rae.get("hasBody") and rae.get("rs") in ("loading", "interactive")
+    ok_i = rai and rai.get("rs") in ("complete", "interactive")
+    R.add("G", "57", "过" if (ok_s and ok_b and ok_e and ok_i) else "缺",
+          f"start={ras and (ras.get('rs'), ras.get('hasBody'))} body={rab and (rab.get('rs'), rab.get('hasBody'))} "
+          f"end={rae and rae.get('rs')} idle={rai and rai.get('rs')}")
+    # 58:@noframes
+    gi("nf", [f"@match {B}/*", "@noframes"], "out({isTop: window.top === window.self});")
+    a = attr_on(f"{B}/frames?op=g", "g-nf", 2.2)
+    fr = ch.eval_js("document.querySelector('iframe') && document.querySelector('iframe').contentDocument.documentElement.getAttribute('g-nf')")
+    R.add("G", "58", "过" if (a and a.get("isTop") and fr is None) else "缺",
+          f"顶层注={bool(a and a.get('isTop'))};子帧不注={fr is None}")
+    # 59:@grant none 主世界 raw
+    gi("none", [f"@match {B}/*", "@grant none"], "window.cvNone='raw'; out({gm: typeof GM_setValue});")
+    a = attr_on(f"{B}/?op=g", "g-none", 2.2)
+    w = ch.eval_js("window.cvNone")
+    R.add("G", "59", "过" if (a and a.get("gm") == "undefined" and w == "raw") else "缺",
+          f"主世界可见={w!r};GM 面缺={a and a.get('gm')}")
+    # 60:unsafeWindow 显式 @grant 通道
+    gi("uw", [f"@match {B}/*", "@grant unsafeWindow", "@grant GM_setValue"],
+       "unsafeWindow.cvUnsafe='uw'; out({uw: typeof unsafeWindow});")
+    gi("nouw", [f"@match {B}/*", "@grant GM_setValue"], "out({uw: typeof unsafeWindow});")
+    ch.nav(f"{B}/?op=g")
+    time.sleep(1.2)
+    auw = read_attr(ch, "g-uw", 1.2)
+    anouw = read_attr(ch, "g-nouw", 0.8)
+    wu = ch.eval_js("window.cvUnsafe")
+    R.add("G", "60", "过" if (auw and auw.get("uw") == "object" and wu == "uw" and anouw and anouw.get("uw") == "undefined") else "缺",
+          f"授权侧 typeof={auw and auw.get('uw')} 主世界={wu!r};未授权侧 typeof={anouw and anouw.get('uw')}")
+    # 61:@require 多库顺序
+    gi("req", [f"@match {B}/*", f"@require {B}/lib1.js", f"@require {B}/lib2.js"],
+       "out({seq: window.__seq ? window.__seq.join(',') : null, l2: (typeof LIB2 !== 'undefined') ? LIB2 : null});")
+    a = attr_on(f"{B}/?op=g", "g-req", 3)
+    R.add("G", "61", "过" if (a and a.get("seq") == "lib1,lib2" and a.get("l2") == 2) else "缺",
+          f"seq={a and a.get('seq')} l2={a and a.get('l2')}")
+    # 62:@resource
+    gi("res", [f"@match {B}/*", "@grant GM_getResourceText", "@grant GM_getResourceURL", f"@resource r1 {B}/res1.txt"],
+       "out({txt: GM_getResourceText('r1'), url: (GM_getResourceURL('r1')||'').slice(0,12)});")
+    a = attr_on(f"{B}/?op=g", "g-res", 3)
+    R.add("G", "62", "过" if (a and a.get("txt") == "res-one-body" and a.get("url")) else "缺",
+          f"txt={a and a.get('txt')!r} url={a and a.get('url')!r}")
+
+
 def domain_K(ch, R):
     # 86 CDP 免确认(auto-allow):本台架全程零确认直连即证
     R.add("K", "86", "过", "本驱动全程 CDP 直连零确认(能在跑即证 auto-allow)")
@@ -606,6 +741,8 @@ def main():
                 domain_E(ch, R)
             elif d == "F":
                 domain_F(ch, R)
+            elif d == "G":
+                domain_G(ch, R)
             elif d == "K":
                 domain_K(ch, R)
             else:
