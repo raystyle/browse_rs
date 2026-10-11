@@ -130,9 +130,16 @@ pub fn collect_pairs_multi(roots: &[std::path::PathBuf]) -> Vec<SkillPair> {
                 continue;
             }
             seen.push(name.to_string());
-            let detect = std::fs::read_to_string(d.join("probe.user.js"))
-                .map(|src| extract_detect_block(&src))
-                .unwrap_or_default();
+            // 两段式对 @detect 在骨架件;逐探针件取首个非空块
+            let mut detect = String::new();
+            for pf in crate::workspace::probe_files(&d) {
+                if let Ok(src) = std::fs::read_to_string(d.join(&pf)) {
+                    detect = extract_detect_block(&src);
+                    if !detect.is_empty() {
+                        break;
+                    }
+                }
+            }
             pairs.push((name.to_string(), detect));
         }
     }
@@ -143,10 +150,10 @@ pub fn collect_pairs_multi(roots: &[std::path::PathBuf]) -> Vec<SkillPair> {
         .collect()
 }
 
-/// 目录是否成对（`mech.rn` 与 `probe.user.js` 同时在；缺一跳过，daemon
+/// 目录是否成对（`mech.rn` 与任一合法探针形同时在；缺一跳过，daemon
 /// 日志不刷——静默跳过是该目录不构成技能的语义本身）。
 fn is_pair_dir(d: &std::path::Path) -> bool {
-    d.join("mech.rn").is_file() && d.join("probe.user.js").is_file()
+    d.join("mech.rn").is_file() && !crate::workspace::probe_files(d).is_empty()
 }
 
 /// 抽 `/* @detect */` 到 `/* @enddetect */` 之间的正文（纯函数）：无标记

@@ -209,13 +209,31 @@ pub fn list_json(root: &Path) -> serde_json::Value {
     json!({ "domains": domains, "pages": pages })
 }
 
-/// 目录里的对文件清单（排序）：`mech.rn` 与 `probe.user.js` 同时在才
+/// 探针文件形（REQ-041 P0 两段式）：单件 `probe.user.js`，或
+/// `probe.skeleton.user.js` + `probe.heavy.user.js` 双件（骨架采样收齐 +
+/// heavy 按需富集）；空 vec = 无合法探针形。
+pub fn probe_files(dir: &Path) -> Vec<String> {
+    if dir.join("probe.user.js").is_file() {
+        return vec!["probe.user.js".to_string()];
+    }
+    if dir.join("probe.skeleton.user.js").is_file() && dir.join("probe.heavy.user.js").is_file() {
+        return vec![
+            "probe.skeleton.user.js".to_string(),
+            "probe.heavy.user.js".to_string(),
+        ];
+    }
+    Vec::new()
+}
+
+/// 目录里的对文件清单（排序）：`mech.rn` 与任一合法探针形同时在才
 /// 非空（附 README.md 若在）；不成对返回空 vec（list 层跳过）。
 fn pair_files(dir: &Path) -> Vec<String> {
-    if !(dir.join("mech.rn").is_file() && dir.join("probe.user.js").is_file()) {
+    let probes = probe_files(dir);
+    if !dir.join("mech.rn").is_file() || probes.is_empty() {
         return Vec::new();
     }
-    let mut files = vec!["mech.rn".to_string(), "probe.user.js".to_string()];
+    let mut files = vec!["mech.rn".to_string()];
+    files.extend(probes);
     if dir.join("README.md").is_file() {
         files.push("README.md".to_string());
     }
@@ -224,7 +242,7 @@ fn pair_files(dir: &Path) -> Vec<String> {
 
 /// 目录是否成对（list 的 page 层过滤：不成对目录不算技能）。
 fn is_pair_dir_name(dir: &Path) -> bool {
-    dir.join("mech.rn").is_file() && dir.join("probe.user.js").is_file()
+    dir.join("mech.rn").is_file() && !probe_files(dir).is_empty()
 }
 
 /// #63 多根 site 读：序首命中根优先（根内逻辑同 [`read_site`]）；全根
@@ -561,6 +579,28 @@ mod tests {
 
     /// status_json：git init 临时仓（离线）锁 installed 形——branch 有值、
     /// 无 origin 时 remote 为 null（不报错），计数正确（评审 G8 补单测）。
+    #[test]
+    fn two_part_pair_shape() {
+        // 两段式对(REQ-041 P0):skeleton+heavy 双件同算成对;半套(缺 heavy)不成对
+        let dir = std::env::temp_dir().join(format!("bw-two-part-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let two = dir.join("two");
+        std::fs::create_dir_all(&two).unwrap();
+        std::fs::write(two.join("mech.rn"), "// mech").unwrap();
+        std::fs::write(two.join("probe.skeleton.user.js"), "// sk").unwrap();
+        std::fs::write(two.join("probe.heavy.user.js"), "// hv").unwrap();
+        assert_eq!(
+            pair_files(&two),
+            vec!["mech.rn", "probe.skeleton.user.js", "probe.heavy.user.js"]
+        );
+        let half = dir.join("half");
+        std::fs::create_dir_all(&half).unwrap();
+        std::fs::write(half.join("mech.rn"), "// mech").unwrap();
+        std::fs::write(half.join("probe.skeleton.user.js"), "// sk").unwrap();
+        assert!(pair_files(&half).is_empty());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     #[test]
     fn status_git_repo_shape() {
         let root = temp_root("gitrepo");

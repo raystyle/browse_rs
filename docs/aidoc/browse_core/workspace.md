@@ -18,6 +18,7 @@ list/site/page）。git 维护走 shell-out `git`（不引 git crate）：instal
 - `install` — `browse workspace install`：git clone 种子仓到 `root`。clone 不带
 - `list_json` — `browse workspace list` 的机器面：`{domains: [{segment, files}],
 - `list_json_multi` — #63 多根清单：domain 段与 page slug 跨根并集（首见序，段名重复以
+- `probe_files` — 探针文件形（REQ-041 P0 两段式）：单件 `probe.user.js`，或
 - `read_page` — `browse workspace page <slug>`：交出该对（有 README 附全文，无给
 - `read_page_multi` — #63 多根 page 读：序首命中根优先。
 - `read_site` — `browse workspace site <段>[/<文件>]`：只给段时打该段清单（每行

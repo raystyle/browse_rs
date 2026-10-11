@@ -1013,6 +1013,11 @@
       "docs": "#63 多根清单：domain 段与 page slug 跨根并集（首见序，段名重复以\n序首仓的文件清单为准）；`roots` 面给配置态可见性。"
     },
     {
+      "path": "browse_core::workspace::probe_files",
+      "kind": "function",
+      "docs": "探针文件形（REQ-041 P0 两段式）：单件 `probe.user.js`，或\n`probe.skeleton.user.js` + `probe.heavy.user.js` 双件（骨架采样收齐 +\nheavy 按需富集）；空 vec = 无合法探针形。"
+    },
+    {
       "path": "browse_core::workspace::read_page",
       "kind": "function",
       "docs": "`browse workspace page <slug>`：交出该对（有 README 附全文，无给\n路径摘要；清仓重建后不再读 `page-skills/<slug>.md` 旧形）。\n\n# Errors\n\nslug 不存在或不成对（CTA 指回 list）；路径越出仓根；仓根未安装。"
