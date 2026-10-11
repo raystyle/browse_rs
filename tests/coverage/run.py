@@ -481,7 +481,7 @@ def domain_D(ch, R):
     base_n = page_targets()
     # 40+42:开+句柄 onload/onclose+close 关 tab
     r = ch.probe("open-handle", wait=7) or {}
-    ok40 = r.get("hasHandle") and (r.get("onloadFired") or r.get("loadEvt"))
+    ok40 = r.get("hasHandle") and r.get("oncloseFired")  # v2:句柄 onclose-only(onload 面 v2 已撤,#91 重分类)
     R.add("D", "40", "过" if ok40 else "缺",
           f"handle={r.get('hasHandle')} onload={r.get('onloadFired')} loadEvt={r.get('loadEvt')} onclose={r.get('oncloseFired')} "
           f"desc={r.get('onloadDesc')} own={r.get('onloadOwn')}")
@@ -1245,9 +1245,13 @@ def domain_K2(ch, R):
     # c) address 精确绑定
     p, prof = spawn(["--remote-debugging-address=127.0.0.2", "--remote-debugging-port=18882"])
     time.sleep(3.0)
-    okc = port_open("127.0.0.2", 18882) and not port_open("127.0.0.1", 18882)
-    R.add("K", "86c", "过" if okc else "缺",
-          f"127.0.0.2:18882 开={port_open('127.0.0.2', 18882)};127.0.0.1 同口不开={not port_open('127.0.0.1', 18882)}")
+    p2, p1 = port_open("127.0.0.2", 18882), port_open("127.0.0.1", 18882)
+    if p2 and not p1:
+        R.add("K", "86c", "过", "127.0.0.2:18882 开且 127.0.0.1 同口不开")
+    elif not p2 and not p1:
+        R.add("K", "86c", "环境限", "127.0.0.2 不可达且 .1 亦不开——macOS 等平台缺 loopback 别名(需 ifconfig alias),绑定语义无从判;别名补设后复测")
+    else:
+        R.add("K", "86c", "缺", f"绑定被忽略:.2={p2} .1={p1}(期望仅 .2 开)")
     p.kill(); p.wait(); shutil.rmtree(prof, ignore_errors=True)
     # d) listen 失败浏览器存活(占口再起)
     occ = socket.socket()

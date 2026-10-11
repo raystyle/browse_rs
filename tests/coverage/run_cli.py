@@ -87,10 +87,17 @@ def main():
     l5 = browse("userscript", "list")
     relisted = "cv-cli-mark" in l5.stdout
     # 引擎真实 user-data-dir 断言(ps 参)
+    def engine_args_text():
+        if os.name == "nt":
+            r = subprocess.run(["powershell", "-NoProfile", "-Command",
+                                "(Get-CimInstance Win32_Process -Filter \"Name='chrome.exe'\" | ForEach-Object CommandLine) -join [char]10"],
+                               capture_output=True, text=True, timeout=20)
+            return r.stdout or ""
+        return subprocess.run(["ps", "-eo", "args"], capture_output=True, text=True).stdout
+
     engine_on_pinned = False
     for _ in range(12):  # --restart 重启窗,轮询采样
-        ps = subprocess.run(["ps", "-eo", "args"], capture_output=True, text=True).stdout
-        if any(("user-data-dir=" + pinned) in ln for ln in ps.splitlines()):
+        if ("user-data-dir=" + pinned) in engine_args_text():
             engine_on_pinned = True
             break
         time.sleep(1.0)
