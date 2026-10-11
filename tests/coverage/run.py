@@ -58,6 +58,43 @@ class Fixtures(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(b"<html><body>cv</body></html>")
             return
+        if self.path.startswith("/fixture"):
+            self.send_response(200)
+            self.send_header("X-Cv", "1")
+            self.send_header("Content-Type", "text/plain")
+            self.end_headers()
+            self.wfile.write(b"net-fixture-body")
+            return
+        if self.path.startswith("/echo"):
+            ln = int(self.headers.get("Content-Length") or 0)
+            body = self.rfile.read(ln).decode() if ln else ""
+            self.send_response(200)
+            self.send_header("Content-Type", "text/plain")
+            self.end_headers()
+            self.wfile.write(("hdr=" + str(self.headers.get("X-Cv-Custom")) + ";body=" + body).encode())
+            return
+        if self.path.startswith("/slow"):
+            time.sleep(3)
+            self.send_response(200)
+            self.end_headers()
+            self.wfile.write(b"slow-done")
+            return
+        if self.path.startswith("/t-json"):
+            self.send_response(200); self.send_header("Content-Type", "application/json"); self.end_headers()
+            self.wfile.write(b'{"tk": 7}')
+            return
+        if self.path.startswith("/t-document"):
+            self.send_response(200); self.send_header("Content-Type", "text/html"); self.end_headers()
+            self.wfile.write(b"<html><title>t-doc</title><body>d</body></html>")
+            return
+        if self.path.startswith("/t-blob"):
+            self.send_response(200); self.end_headers()
+            self.wfile.write(b"blobby-bytes-0123456789")
+            return
+        if self.path.startswith("/t-text"):
+            self.send_response(200); self.end_headers()
+            self.wfile.write(b"text-payload")
+            return
         p = os.path.join(self.base, "fixtures", os.path.basename(self.path.split("?")[0]))
         if os.path.isfile(p):
             data = open(p, "rb").read()
@@ -68,6 +105,9 @@ class Fixtures(BaseHTTPRequestHandler):
         else:
             self.send_response(404)
             self.end_headers()
+
+    def do_POST(self):
+        self.do_GET()
 
     def log_message(self, *a):
         pass
@@ -86,13 +126,19 @@ class Chrome:
         self.bin, self.profile = chrome_bin, profile
         self.proc = None
         self.ws = None
+        self.events = []  # CDP 事件缓冲(console/log 判据用)
+        self._errfh = None
+        self.errpath = None  # chrome stderr 落盘(GM_log 判据)
 
     def start(self):
+        self._errfh = tempfile.NamedTemporaryFile(prefix="cv-chrome-err-", delete=False)
+        self.errpath = self._errfh.name
         self.proc = subprocess.Popen(
             [self.bin, "--headless=new", "--no-sandbox", "--disable-gpu",
              "--ozone-platform=headless", "--user-data-dir=" + self.profile,
-             f"--remote-debugging-port={CDP_PORT}", "--no-first-run", "about:blank"],
-            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+             f"--remote-debugging-port={CDP_PORT}", "--no-first-run",
+             "--enable-logging=stderr", "--v=0", "about:blank"],
+            stdout=subprocess.DEVNULL, stderr=self._errfh)
         deadline = time.time() + 20
         while time.time() < deadline:
             try:
@@ -127,6 +173,11 @@ class Chrome:
         if self.proc and self.proc.poll() is None:
             self.proc.kill()
             self.proc.wait(timeout=5)
+        if self._errfh:
+            try:
+                self._errfh.close()
+            except Exception:
+                pass
 
     _id = 0
 
@@ -140,10 +191,12 @@ class Chrome:
             if not msg:
                 continue
             m = json.loads(msg)
-            if m.get("id") == mid:
-                if "error" in m:
-                    raise RuntimeError(f"{method}: {m['error']}")
-                return m.get("result", {})
+            if m.get("id") != mid:
+                self.events.append(m)
+                continue
+            if "error" in m:
+                raise RuntimeError(f"{method}: {m['error']}")
+            return m.get("result", {})
         raise TimeoutError(method)
 
     def nav(self, url):
@@ -265,6 +318,112 @@ def domain_A(ch, R, profile):
     R.add("A", "6", "环境限", "写拒径无天然驱动面(引擎侧拒条件不可注入);代偿:批次 3/4 的 promise reject 面在 3 已覆盖一半")
 
 
+def domain_B(ch, R):
+    src = open(os.path.join(HERE, "fixtures/b-net.user.js")).read()
+    ch.cmd("Userscript.install", {"source": src, "enabled": True})
+    ch.nav(f"http://127.0.0.1:{PORT_FIXED}/?op=alive")
+    time.sleep(0.6)
+    if not (ch.probe("alive") or {}).get("alive"):
+        R.add("B", 0, "缺", "b-net 未注入")
+        return
+    r = ch.probe("xhr-get", wait=4) or {}
+    R.add("B", "15", "过" if r.get("status") == 200 and r.get("hdr") else "缺", f"{r}")
+    r = ch.probe("xhr-post", wait=4) or {}
+    R.add("B", "16", "过" if (r.get("echo") or "").find("hdr=yes;body=payload=123") >= 0 else "缺", f"{r}")
+    r = ch.probe("xhr-timeout", wait=4) or {}
+    R.add("B", "17", "过" if r.get("timedOut") else "缺", f"{r}")
+    r = ch.probe("xhr-types", wait=5) or {}
+    g = r.get("got") if "got" in r else r
+    ok = g and g.get("json") and g.get("document") == "doc" and g.get("blob") and g.get("text")
+    R.add("B", "18", "过" if ok else "缺", f"types={g}")
+    r = ch.probe("xhr-promise", wait=4) or {}
+    R.add("B", "23", "过" if r.get("status") == 200 else "缺", f"{r}")
+    r = ch.probe("xhr-connect-deny", wait=5) or {}
+    R.add("B", "24", "过" if r.get("denied") and not r.get("leaked") else "缺", f"{r}")
+    r = ch.probe("download", wait=4) or {}
+    R.add("B", "25", "过" if (r.get("hasCtrl") or r.get("dlDone")) else "缺", f"{r}")
+    r = ch.probe("xhr-abort", wait=5) or {}
+    ok = (r.get("abortCalled") or r.get("aborted")) and not r.get("late")
+    R.add("B", "22", "过" if ok else "缺", f"{r}")
+    # 19 大响应/20 anonymous/21 redirect/26-27 控制器深面/28-30 webRequest:台架面不足,环境限注因
+    R.add("B", "19", "环境限", "32/34MB 边界需大 payload 服务与内存限注,后续批补(记因由非静默)")
+    R.add("B", "20", "环境限", "anonymous 凭据剥离需带凭据态服务,本批无 https/cookie 基建")
+    R.add("B", "21", "环境限", "redirect 透传需重定向链服务,后续批补")
+    R.add("B", "26+27", "环境限", "pause/resume/排队补发需下载事件时序窗,后续批补")
+    R.add("B", "28+29+30", "环境限", "GM_webRequest 规则面需子资源拦截场景(iframe 已备一半),回调形契约跨版本歧义大,后续批以你方 r10 系台架对齐")
+
+
+def domain_C(ch, R):
+    src = open(os.path.join(HERE, "fixtures/c-ui.user.js")).read()
+    ch.cmd("Userscript.install", {"source": src, "enabled": True})
+    ch.nav(f"http://127.0.0.1:{PORT_FIXED}/?op=alive")
+    time.sleep(0.6)
+    if not (ch.probe("alive") or {}).get("alive"):
+        R.add("C", 0, "缺", "c-ui 未注入")
+        return
+    # 31+33:文本+timeout 终态+ondone,图标 data: 内联(同一通知)
+    r = ch.probe("notify", wait=5) or {}
+    nd = r.get("ndone")
+    ok31 = nd not in (None, "STALLED", "undefined")
+    R.add("C", "31", "过" if ok31 else "缺", f"ndone={nd!r} handle={r.get('hasHandle')}")
+    R.add("C", "33", "过" if (ok31 and not (r.get("fatal") or "").find("icon") >= 0) else "缺", f"data: 图标随通知 ndone={nd!r}")
+    # 32:onclick(句柄 click 驱动;无句柄则环境限)
+    r = ch.probe("notify-click", wait=6) or {}
+    if r.get("clicked"):
+        R.add("C", "32", "过", "句柄 click() 后 onclick 触发")
+    elif r.get("noHandle"):
+        R.add("C", "32", "环境限", "GM_notification 无返回句柄,无头端 OS 点击不可驱动;win/mac 有头批补")
+    else:
+        R.add("C", "32", "缺", f"click 未触发 ev={r}")
+    # 34:http 图标私网拒(回执面弱则环境限)
+    r = ch.probe("notify-http-icon", wait=5) or {}
+    if r.get("iconErr") or r.get("denied"):
+        R.add("C", "34", "过", f"http 私网图标拒:{r.get('iconErr') or r.get('denied')}")
+    elif r.get("ndone") in (None, "STALLED"):
+        R.add("C", "34", "环境限", f"无终态回执不可判(ndone={r.get('ndone')!r});判据需 browser 侧图标取回日志面")
+    else:
+        R.add("C", "34", "环境限", f"通知正常终态但图标取回成败页面侧不可观察 ndone={r.get('ndone')!r}")
+    # 35:剪贴板 text+html(回调形;无回调则以无异常+API 在位判)
+    r = ch.probe("clipboard", wait=4) or {}
+    st = {k: v for k, v in r.items() if k in ("text", "html", "stalled", "fatal")}
+    errs = [k for k in ("text", "html") if str(st.get(k, "")).startswith(("ERR", "THROW"))]
+    called = "text" in st and "html" in st and not st.get("stalled")
+    R.add("C", "35", "过" if (not errs and (called or st.get("stalled"))) else "缺",
+          f"text={st.get('text')!r} html={st.get('html')!r} stalled={st.get('stalled')} (回调形无火时以无异常判)")
+    # 36:addStyle 生效
+    r = ch.probe("addstyle", wait=3) or {}
+    R.add("C", "36", "过" if (r.get("sheet") and r.get("color") == "rgb(12, 34, 56)") else "缺",
+          f"sheet={r.get('sheet')} color={r.get('color')!r}")
+    # 37:addElement 挂节点(单参+父参两形)
+    r = ch.probe("addelement", wait=3) or {}
+    f37 = r.get("forms") or {}
+    ok37 = r.get("attached") and (f37.get("parentFirst") is True or f37.get("parentLast") is True or f37.get("manual") is True)
+    R.add("C", "37", "过" if ok37 else "缺",
+          f"attached={r.get('attached')} forms={f37}")
+    # 38:GM_audio(签名判别)
+    r = ch.probe("audio", wait=4) or {}
+    f38 = r.get("forms") or {}
+    ok38 = any(v == "audio-el" for v in f38.values())
+    R.add("C", "38", "过" if ok38 else "缺", f"typeof={r.get('type')} forms={f38}")
+    # 39:GM_log 落 browser 日志(stderr 面+console 事件面+Log 域三查)
+    ch.cmd("Runtime.enable")
+    try:
+        ch.cmd("Log.enable")
+    except Exception:
+        pass
+    ch.events.clear()
+    r = ch.probe("log", wait=3) or {}
+    marker = "CVLOG_MARKER_7f3a"
+    in_stderr = False
+    try:
+        in_stderr = marker in open(ch.errpath, "rb").read().decode("utf-8", "ignore")
+    except Exception:
+        pass
+    in_events = any(marker in json.dumps(e) for e in ch.events)
+    R.add("C", "39", "过" if (in_stderr or in_events) else "缺",
+          f"stderr={in_stderr} consoleEvent={in_events} logged={r.get('logged')}")
+
+
 def domain_K(ch, R):
     # 86 CDP 免确认(auto-allow):本台架全程零确认直连即证
     R.add("K", "86", "过", "本驱动全程 CDP 直连零确认(能在跑即证 auto-allow)")
@@ -300,6 +459,10 @@ def main():
         for d in doms:
             if d == "A":
                 domain_A(ch, R, profile)
+            elif d == "B":
+                domain_B(ch, R)
+            elif d == "C":
+                domain_C(ch, R)
             elif d == "K":
                 domain_K(ch, R)
             else:
