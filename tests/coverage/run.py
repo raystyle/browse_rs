@@ -203,10 +203,10 @@ class Chrome:
         self.cmd("Page.navigate", {"url": url})
         time.sleep(1.2)
 
-    def probe(self, op, payload=None, wait=2.0):
+    def probe(self, op, payload=None, wait=2.0, attr="probe"):
         q = f"?op={op}" + (f"&payload={urllib.request.quote(json.dumps(payload))}" if payload else "")
         self.nav(f"http://127.0.0.1:{PORT_FIXED}/{q}")
-        expr = "document.documentElement.getAttribute('probe')"
+        expr = f"document.documentElement.getAttribute('{attr}')"
         deadline = time.time() + wait
         while time.time() < deadline:
             r = self.cmd("Runtime.evaluate", {"expression": expr, "returnByValue": True})
@@ -424,6 +424,57 @@ def domain_C(ch, R):
           f"stderr={in_stderr} consoleEvent={in_events} logged={r.get('logged')}")
 
 
+def domain_D(ch, R):
+    ch.cmd("Userscript.install", {"source": open(os.path.join(HERE, "fixtures/d-tab.user.js")).read(), "enabled": True})
+    ch.nav(f"http://127.0.0.1:{PORT_FIXED}/?op=alive")
+    time.sleep(0.6)
+    if not (ch.probe("alive") or {}).get("alive"):
+        R.add("D", 0, "缺", "d-tab 未注入")
+        return
+    def page_targets():
+        return len([t for t in ch.cmd("Target.getTargets").get("targetInfos", []) if t.get("type") == "page"])
+    base_n = page_targets()
+    # 40+42:开+句柄 onload/onclose+close 关 tab
+    r = ch.probe("open-handle", wait=7) or {}
+    ok40 = r.get("hasHandle") and (r.get("onloadFired") or r.get("loadEvt"))
+    R.add("D", "40", "过" if ok40 else "缺",
+          f"handle={r.get('hasHandle')} onload={r.get('onloadFired')} loadEvt={r.get('loadEvt')} onclose={r.get('oncloseFired')} "
+          f"desc={r.get('onloadDesc')} own={r.get('onloadOwn')}")
+    time.sleep(2.5)  # close 异步窗后再点数
+    n_after = page_targets()
+    urls = [t.get("url", "")[-40:] for t in ch.cmd("Target.getTargets").get("targetInfos", []) if t.get("type") == "page"]
+    R.add("D", "42", "过" if (n_after <= base_n and not r.get("closeErr")) else "缺",
+          f"close 无炸={not r.get('closeErr')} closedField={r.get('closedField')}; targets {base_n}->{n_after} {urls}")
+    # 41:active 参数(开页自报 vis/focus)
+    ra = ch.probe("open-active", wait=6) or {}
+    rp = ch.probe("open-passive", wait=6) or {}
+    va = (ra.get("rep") or {}).get("vis")
+    vp = (rp.get("rep") or {}).get("vis")
+    if va == "visible" and vp in ("hidden", "prerender"):
+        R.add("D", "41", "过", f"active 开页 vis={va};passive 开页 vis={vp}")
+    elif not (ra.get("rep") or {}) or not (rp.get("rep") or {}):
+        R.add("D", "41", "环境限", f"开页回执未达(active rep={ra.get('rep')} passive rep={rp.get('rep')});无头后台节流疑因")
+    else:
+        R.add("D", "41", "缺", f"active vis={va!r} passive vis={vp!r} 无区分")
+    # 43:GM_getTab/GM_saveTab 往返
+    r = ch.probe("tab-save", wait=5) or {}
+    ok43 = (r.get("round") or {}).get("n") == 42
+    R.add("D", "43", "过" if ok43 else "缺", f"round={r.get('round')!r} prevType={r.get('prevType')}")
+    # 44:多 tab 聚合
+    r = ch.probe("tabs-agg", wait=6) or {}
+    ok44 = (r.get("cnt") or 0) >= 2
+    R.add("D", "44", "过" if ok44 else "缺", f"cnt={r.get('cnt')} m={json.dumps(r.get('m'))[:120]}")
+    # 45:两脚本同 tab 数据互不可见
+    ch.cmd("Userscript.install", {"source": open(os.path.join(HERE, "fixtures/d2-tab2.user.js")).read(), "enabled": True})
+    a2 = ch.probe("tab2-alive", attr="probe2")
+    r43b = ch.probe("tab-save", wait=5) or {}  # d 再存一次确保有值
+    r2 = ch.probe("tab2-read", wait=5, attr="probe2") or {}
+    rd = ch.probe("tab-reread", wait=5) or {}
+    ok45 = a2 and a2.get("alive") and str(r2.get("first", "")).startswith(("isolated", "none")) and ((rd.get("d") or {}).get("n") == 42)
+    R.add("D", "45", "过" if ok45 else "缺",
+          f"d2 注入={bool(a2 and a2.get('alive'))} d2 初见={r2.get('first')!r} d 复读 n={(rd.get('d') or {}).get('n')} d2own={r2.get('own')!r}")
+
+
 def domain_K(ch, R):
     # 86 CDP 免确认(auto-allow):本台架全程零确认直连即证
     R.add("K", "86", "过", "本驱动全程 CDP 直连零确认(能在跑即证 auto-allow)")
@@ -463,6 +514,8 @@ def main():
                 domain_B(ch, R)
             elif d == "C":
                 domain_C(ch, R)
+            elif d == "D":
+                domain_D(ch, R)
             elif d == "K":
                 domain_K(ch, R)
             else:
