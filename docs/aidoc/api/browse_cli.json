@@ -1,6 +1,6 @@
 {
   "crate": "browse-cli",
-  "version": "0.34.0",
+  "version": "0.35.0",
   "items": [
     {
       "path": "browse_cli::client",
@@ -105,7 +105,7 @@
     {
       "path": "browse_cli::client::quit",
       "kind": "function",
-      "docs": "POST /quit 退 daemon，daemon 侧顺带只终结自起引擎（附着来源不动）。\n\n# Errors\n\ndaemon 不在（幂等场景调用方先判活）或 HTTP 失败。"
+      "docs": "POST /quit 退 daemon，daemon 侧顺带只终结自起引擎（附着来源不动）；\n并等退净（#112：不等会让调用方在引擎收尸窗内动 profile 悬孤儿童）。\n\n# Errors\n\ndaemon 不在（幂等场景调用方先判活）或 HTTP 失败。"
     },
     {
       "path": "browse_cli::client::render_js_template",

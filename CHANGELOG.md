@@ -4,7 +4,15 @@
 
 ## Unreleased
 
-（无；最新封版 0.34.0）
+（无；最新封版 0.35.0）
+
+## 0.35.0（2026-10-12，REQ-042）
+
+- **引擎级重启与 profile 管道双腿**（#84）：`POST /engine/restart` 按 daemon 记录 spec 复起（profile/headless 形不失，headed 不强转），`--restart` 不再 quit daemon 陪葬记录面；装库目标解析序为显式 `--profile` 优先，次 daemon 记录 spec（隔离库不作目标），末实例缺省；盘上装改与引擎读写同库，write-A-read-B 双向消灭
+- **装库器 meta 同构引擎写盘**（#107）：meta.json 六键升十一键面（补 name/namespace/run-at/update-url/version，缺省不落键），脚本体保留全文头，index 顶层 version；双道同源安装 diff 零
+- **down 等退净**（#112）：`client::quit` 补等待面（15s 界，/health 停收为净）；POST 返回不等于引擎已死，竞态动 profile 不再悬孤儿树
+- **rune VM 共享句柄自修**（#113，vendored third_party/rune 加 [patch.crates-io]）：`AnyObj::downcast` 共享静态串参毒化 access 格（首调 Err 后同字面量再调 Cannot take M-000000），String 面借读加 TryClone 建新值；附 `BROWSE_RUNE_VMDEBUG=1` 全量 VmError 指令转储诊断道；纯 VM 五锚加 e2e 实弹锚（BROWSE_E2E=1）
+- gen8-r3 兼容面：coverage-01 v2 清单三平台全表验收在档（receipt-r3-*）
 
 ## 0.34.0（2026-10-10，REQ-039）
 
