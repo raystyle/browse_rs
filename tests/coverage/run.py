@@ -1261,7 +1261,7 @@ def domain_I(ch, R):
         ws_eval("chrome://userscripts", "(function(){var bs=Array.from(document.querySelectorAll('button'))"
                 ".filter(function(b){return b.textContent.trim()==='导入';});if(bs.length){bs[0].click();return 1;}return 0;})()")
         time.sleep(0.8)
-        r = ws_eval("chrome://userscripts", "(function(){var ta=document.querySelector('textarea');if(!ta) return 'no-ta';"
+        r = ws_eval("chrome://userscripts", "(function(){var ta=document.querySelector('#editor-source') || document.querySelector('textarea');if(!ta) return 'no-ta';"
                     "var setter=Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype,'value').set;"
                     "setter.call(ta, " + json.dumps(text) + ");"
                     "ta.dispatchEvent(new Event('input',{bubbles:true}));return 'set:' + ta.value.length;})()")
@@ -1299,7 +1299,7 @@ def domain_I(ch, R):
                    ".filter(function(b){return b.textContent.trim()==='编辑';});if(bs.length){bs[0].click();return 'edit';}return 'nofind';})()")
     time.sleep(1.0)
     new_src = gsrc("i-mark2", [f"@match {B}/*"], "out({maj: 7, edited: true});")
-    r75b = ws_eval("chrome://userscripts", "(function(){var ta=document.querySelector('textarea');if(!ta) return 'no-ta';"
+    r75b = ws_eval("chrome://userscripts", "(function(){var ta=document.querySelector('#editor-source') || document.querySelector('textarea');if(!ta) return 'no-ta';"
                    "var setter=Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype,'value').set;"
                    "setter.call(ta, " + json.dumps(new_src) + ");"
                    "ta.dispatchEvent(new Event('input',{bubbles:true}));"
