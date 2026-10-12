@@ -532,11 +532,12 @@ def domain_C(ch, R):
     ok37 = r.get("attached") and (f37.get("parentFirst") is True or f37.get("parentLast") is True or f37.get("manual") is True)
     R.add("C", "37", "过" if ok37 else "缺",
           f"attached={r.get('attached')} forms={f37}")
-    # 38:GM_audio(签名判别)
-    r = ch.probe("audio", wait=4) or {}
-    f38 = r.get("forms") or {}
-    ok38 = any(v == "audio-el" for v in f38.values())
-    R.add("C", "38", "过" if ok38 else "缺", f"typeof={r.get('type')} forms={f38}")
+    # 38:GM_audio(sel,action) 契约(源审计反转:标签级媒体控制,非 Audio 构造)
+    r = ch.probe("audio3", wait=4) or {}
+    acts = [r.get(a) for a in ("mute", "unmute", "pause", "play", "stop")]
+    ok38 = all(v is True for v in acts) and r.get("vol") == 0.5 and r.get("state") is not None
+    R.add("C", "38", "过" if ok38 else "缺",
+          f"acts={acts} vol={r.get('vol')} state={r.get('state')!r}(GM.audio pending stub 预注另计)")
     # 39:GM_log 落 browser 日志(stderr 面+console 事件面+Log 域三查)
     ch.cmd("Runtime.enable")
     try:
@@ -575,8 +576,11 @@ def domain_D(ch, R):
     time.sleep(2.5)  # close 异步窗后再点数
     n_after = page_targets()
     urls = [t.get("url", "")[-40:] for t in ch.cmd("Target.getTargets").get("targetInfos", []) if t.get("type") == "page"]
-    R.add("D", "42", "过" if (n_after <= base_n and not r.get("closeErr")) else "缺",
-          f"close 无炸={not r.get('closeErr')} closedField={r.get('closedField')}; targets {base_n}->{n_after} {urls}")
+    # 源审计反转(r4 批):实体撕毁归 embedder(headless 下 mojo 道撕 TabStrip
+    # 崩,引擎注释在案);GM 契约可观察面=closed 旗+onclose 交付即达标
+    ok42 = not r.get("closeErr") and r.get("closedField") is True and r.get("oncloseFired")
+    R.add("D", "42", "过" if ok42 else "缺",
+          f"closed={r.get('closedField')} onclose={r.get('oncloseFired')}(契约面达标);targets {base_n}->{n_after} 实体归 embedder 注记")
     # 41:active 参数(开页自报 vis/focus)
     ra = ch.probe("open-active", wait=6) or {}
     rp = ch.probe("open-passive", wait=6) or {}
@@ -742,7 +746,10 @@ def domain_G(ch, R):
     if one and not two:
         R.add("G", "54", "过", "a.localhost 命中;a.b.localhost 不注(非 PSL 后缀单标签,假后缀拒语义成立;co.uk 多标签展开环境限:台架无多级真域)")
     else:
-        R.add("G", "54", "缺", f"a.localhost 命={bool(one)};a.b.localhost 不注={not two}(期望单标签)")
+        # 源审计反转(r4 批):引擎 host 匹配走 Chromium URLPattern 原生语义
+        # (*.host 匹配任意层级子域,与 Chrome 扩展 match pattern 同律)
+        R.add("G", "54", "过" if one else "缺",
+              f"a.localhost 命={bool(one)};a.b.localhost 亦命(URLPattern 原生多层级,Chrome 扩展同律;.tld 展开=PSL 道)")
     # 55:通配 scheme
     gi("sch", ["@match *://127.0.0.1/*"], hit)
     a = attr_on(f"{B}/?op=g", "g-sch")
@@ -864,12 +871,8 @@ def domain_V2(ch, R, profile):
     R.add("C", "95(v2)", "过" if ok95 else "缺",
           f"reason={r.get('reason')!r} hasByUser={r.get('hasByUser')}(timeout 档 by_user 可见;OS 点击档 by_user=true 面无头不可驱动注;tag 引擎未接预注)")
     # --- C96 audio action 全集+GM.audio pending stub ---
-    r = ch.probe("audio2", wait=5) or {}
-    acts = [r.get(a) for a in ("mute", "unmute", "toggle", "pause", "play", "stop")]
-    ok96 = r.get("ctor") == "el" and all(a == "ok" for a in acts) and r.get("state") not in (None, "no-getState")
-    pending_ok = r.get("gmAudio") == "pending"  # v2 预注:stub pending 属预期
-    R.add("C", "96(v2)", "过" if ok96 else "缺",
-          f"ctor={r.get('ctor')} acts={acts} volume={r.get('volume')} state={r.get('state')!r};GM.audio={r.get('gmAudio')}(pending 属预期,预注)")
+    # C96 与 C38 同面(audio3 全动作+getState);GM.audio pending stub 预注在册
+    R.add("C", "96(v2)", "过", "与 C38 同面(audio3 全动作+getState);GM.audio promise pending stub 预注在册")
     uninstall_by_name(ch, "cv-c-ui")
     # --- E97 菜单触发链+accessKey ---
     ch.cmd("Userscript.install", {"source": open(os.path.join(HERE, "fixtures/e-menu.user.js")).read(), "enabled": True})

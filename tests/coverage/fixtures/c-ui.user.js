@@ -98,6 +98,22 @@
         else { v.gmAudio = String(p).slice(0, 30); }
       } catch (e) { v.gmAudio = 'ERR:' + String(e).slice(0, 40); }
       setTimeout(function () { out(v); }, 1500);
+    } else if (op === 'audio3') {
+      // GM_audio(sel,action) 契约形(源审计后正判据):页面放 audio 元素,按动作驱动
+      var au = document.createElement('audio');
+      au.id = 'cv-audio3';
+      document.body.appendChild(au);
+      var v = {};
+      v.mute = GM_audio('#cv-audio3', 'mute');
+      v.state = GM_audio('#cv-audio3');
+      v.unmute = GM_audio('#cv-audio3', 'unmute');
+      au.volume = 0.7;
+      GM_audio('#cv-audio3', 'volume', 0.5);
+      v.vol = au.volume;
+      v.pause = GM_audio('#cv-audio3', 'pause');
+      v.play = GM_audio('#cv-audio3', 'play');
+      v.stop = GM_audio('#cv-audio3', 'stop');
+      out(v);
     } else if (op === 'alive') {
       out({ alive: true });
     }
