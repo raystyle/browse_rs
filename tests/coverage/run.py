@@ -1226,34 +1226,36 @@ def domain_I(ch, R):
     if flipped and flags1[flipped[0]] is False:
         ws_eval("chrome://userscripts", "(function(){var cb=document.querySelector('input[type=checkbox]');if(cb){cb.click();return 1;}return 0;})()")
         time.sleep(0.8)
-    # 73 文件导入(DataTransfer 注入 file input)
+    # 73 导入(粘贴道:导入钮开「粘贴 .user.js 全文」textarea,非原生选择器)
+    def paste_import(text, mid):
+        ws_eval("chrome://userscripts", "(function(){var bs=Array.from(document.querySelectorAll('button'))"
+                ".filter(function(b){return b.textContent.trim()==='导入';});if(bs.length){bs[0].click();return 1;}return 0;})()")
+        time.sleep(0.8)
+        r = ws_eval("chrome://userscripts", "(function(){var ta=document.querySelector('textarea');if(!ta) return 'no-ta';"
+                    "var setter=Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype,'value').set;"
+                    "setter.call(ta, " + json.dumps(text) + ");"
+                    "ta.dispatchEvent(new Event('input',{bubbles:true}));return 'set:' + ta.value.length;})()")
+        time.sleep(0.4)
+        # 确认钮=第二枚「导入」(对话内)
+        c = ws_eval("chrome://userscripts", "(function(){var bs=Array.from(document.querySelectorAll('button'))"
+                    ".filter(function(b){return b.textContent.trim()==='导入';});if(bs.length>1){bs[bs.length-1].click();return 'ok';}return 'no-confirm';})()")
+        time.sleep(1.5)
+        return r, c
     imp_src = gsrc("i-imp", [f"@match {B}/*"], "out({maj: 'imp'});")
     n1_pre = script_count()
-    # 先点「导入」看是否动态生成 file input(原生选择器则无 input 面)
-    ws_eval("chrome://userscripts", "(function(){var bs=Array.from(document.querySelectorAll('button'))"
-            ".filter(function(b){return b.textContent.trim()==='导入';});if(bs.length){bs[0].click();return 1;}return 0;})()")
-    time.sleep(0.6)
-    r73 = ws_eval("chrome://userscripts", "(function(){var fi=document.querySelector('input[type=file]');"
-                  "if(!fi) return 'no-file-input';"
-                  "var dt=new DataTransfer();dt.items.add(new File([" + json.dumps(imp_src) + "],'imp.user.js',{type:'text/javascript'}));"
-                  "fi.files=dt.files;fi.dispatchEvent(new Event('change',{bubbles:true}));return 'set';})()")
-    time.sleep(1.5)
+    r73, c73 = paste_import(imp_src, 73)
     n1 = script_count()
     txt2 = ws_eval("chrome://userscripts", "document.body ? document.body.innerText : ''") or ""
-    R.add("I", "73", "过" if (r73 == "set" and n1 == n1_pre + 1) else ("环境限" if r73 == "no-file-input" else "缺"),
-          f"file 注入={r73!r};计数 {n1_pre}->{n1};名见面={'cv-g-i-imp' in txt2}")
-    # 78 坏源导入报错不落库
+    R.add("I", "73", "过" if (str(r73).startswith("set:") and c73 == "ok" and n1 == n1_pre + 1) else "缺",
+          f"粘贴道={r73!r} 确认={c73!r};计数 {n1_pre}->{n1};名见面={'cv-g-i-imp' in txt2}")
+    # 78 坏源粘贴导入报错不落库
     n2_pre = script_count()
-    r78 = ws_eval("chrome://userscripts", "(function(){var fi=document.querySelector('input[type=file]');"
-                  "if(!fi) return 'no-file-input';"
-                  "var dt=new DataTransfer();dt.items.add(new File(['this is NOT a userscript at all'],'bad.user.js',{type:'text/plain'}));"
-                  "fi.files=dt.files;fi.dispatchEvent(new Event('change',{bubbles:true}));return 'set';})()")
-    time.sleep(1.5)
+    r78, c78 = paste_import("this is NOT a userscript at all", 78)
     n2 = script_count()
     txt3 = ws_eval("chrome://userscripts", "document.body ? document.body.innerText : ''") or ""
-    err_seen = any(w in txt3 for w in ("错", "error", "Error", "无效", "invalid"))
-    R.add("I", "78", "过" if (r78 == "set" and n2 == n2_pre and err_seen) else ("环境限" if r78 == "no-file-input" else "缺"),
-          f"坏源注入={r78!r};不落库={n2 == n2_pre};报错可见={err_seen}")
+    err_seen = any(w in txt3 for w in ("错", "error", "Error", "无效", "invalid", "失败", "UserScript=="))
+    R.add("I", "78", "过" if (str(r78).startswith("set:") and c78 == "ok" and n2 == n2_pre and err_seen) else "缺",
+          f"坏源粘贴={r78!r};不落库={n2 == n2_pre};报错可见={err_seen}(文本面摘:{txt3[:60]!r})")
     # 74 删除(confirm 预 override)
     r74 = ws_eval("chrome://userscripts", "(function(){window.confirm=function(){return true;};window.alert=function(){};"
                   "var bs=Array.from(document.querySelectorAll('button')).filter(function(b){return b.textContent.trim()==='删除';});"
