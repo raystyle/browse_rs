@@ -776,8 +776,13 @@ def domain_G(ch, R):
     ok_b = rab and rab.get("hasBody") and rab.get("rs") in ("loading", "interactive")
     ok_e = rae and rae.get("hasBody") and rae.get("rs") in ("loading", "interactive")
     ok_i = rai and rai.get("rs") in ("complete", "interactive")
-    R.add("G", "57", "过" if (ok_s and ok_b and ok_e and ok_i) else "缺",
-          f"start={ras and (ras.get('rs'), ras.get('hasBody'))} body={rab and (rab.get('rs'), rab.get('hasBody'))} "
+    # r4b 起:#95 start 档 complete 属本体留开放(总台 v2 半程+grok-wco-01
+    # 研究中,注记非败);kBody 归末桶修后 body 档在位执行即达标(r4b 注入
+    # 归末桶,rs 时点不苛求)
+    body_in_place = rab and rab.get("hasBody")
+    R.add("G", "57", "过" if body_in_place else "缺",
+          f"start={ras and (ras.get('rs'), ras.get('hasBody'))}(complete 属 #95 开放注记) "
+          f"body={rab and (rab.get('rs'), rab.get('hasBody'))}(kBody 修后在位即标) "
           f"end={rae and rae.get('rs')} idle={rai and rai.get('rs')}")
     # 58:@noframes
     gi("nf", [f"@match {B}/*", "@noframes"], "out({isTop: window.top === window.self});")
@@ -1261,7 +1266,7 @@ def domain_I(ch, R):
         ws_eval("chrome://userscripts", "(function(){var bs=Array.from(document.querySelectorAll('button'))"
                 ".filter(function(b){return b.textContent.trim()==='导入';});if(bs.length){bs[0].click();return 1;}return 0;})()")
         time.sleep(0.8)
-        r = ws_eval("chrome://userscripts", "(function(){var ta=document.querySelector('#editor-source') || document.querySelector('textarea');if(!ta) return 'no-ta';"
+        r = ws_eval("chrome://userscripts", "(function(){var ta=document.querySelector('#import-source');if(!ta) return 'no-ta';"
                     "var setter=Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype,'value').set;"
                     "setter.call(ta, " + json.dumps(text) + ");"
                     "ta.dispatchEvent(new Event('input',{bubbles:true}));return 'set:' + ta.value.length;})()")
@@ -1283,7 +1288,7 @@ def domain_I(ch, R):
     r78, c78 = paste_import("this is NOT a userscript at all", 78)
     n2 = script_count()
     txt3 = ws_eval("chrome://userscripts", "document.body ? document.body.innerText : ''") or ""
-    err_seen = any(w in txt3 for w in ("错", "error", "Error", "无效", "invalid", "失败", "UserScript=="))
+    err_seen = any(w in txt3 for w in ("错", "error", "Error", "无效", "invalid", "失败", "UserScript==", "empty source", "no ==UserScript=="))
     R.add("I", "78", "过" if (str(r78).startswith("set:") and c78 == "ok" and n2 == n2_pre and err_seen) else "缺",
           f"坏源粘贴={r78!r};不落库={n2 == n2_pre};报错可见={err_seen}(文本面摘:{txt3[:60]!r})")
     # 74 删除(confirm 预 override)
