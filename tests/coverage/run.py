@@ -20,6 +20,7 @@ import sys
 import tempfile
 import threading
 import time
+import urllib.parse
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
@@ -28,6 +29,7 @@ sys.path.insert(0, HERE)
 from minicdp import WS, http_get  # noqa: E402
 
 PORT_FIXED = 18871  # fixture 服务(@match 锚)
+PORT2 = 18873  # 第二源(B29 跨源重定向判据:同 host 异 port 即异源)
 CDP_PORT = 18872
 
 
@@ -104,6 +106,35 @@ class Fixtures(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(b"<html><body>framed</body></html>")
             return
+        if self.path.startswith("/xorigin"):
+            self.send_response(200)
+            self.send_header("Content-Type", "application/javascript")
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.end_headers()
+            self.wfile.write(b"window.__wrMarker='xorigin';")
+            return
+        if self.path.startswith("/blocked-img"):
+            self.send_response(200); self.send_header("Content-Type", "image/png"); self.end_headers()
+            self.wfile.write(b"\x89PNG\r\n\x1a\n")
+            return
+        if self.path.startswith("/blocked-fetch"):
+            self.send_response(200); self.send_header("Content-Type", "application/json"); self.end_headers()
+            self.wfile.write(b'{"ok":1}')
+            return
+        if self.path.startswith("/blocked-frame"):
+            self.send_response(200); self.send_header("Content-Type", "text/html"); self.end_headers()
+            self.wfile.write(b"<html><body>fr</body></html>")
+            return
+        if self.path.startswith("/blocked-dl"):
+            self.send_response(200); self.send_header("Content-Type", "application/octet-stream"); self.end_headers()
+            self.wfile.write(b"dl-body-bytes")
+            return
+        if self.path.startswith("/blocked-nav"):
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html")
+            self.end_headers()
+            self.wfile.write(b"<html><body>nav-landed</body></html>")
+            return
         if self.path.startswith("/setck"):
             self.send_response(200)
             self.send_header("Set-Cookie", "cvp=page1; Path=/")
@@ -128,6 +159,55 @@ class Fixtures(BaseHTTPRequestHandler):
         if self.path.startswith("/t-blob"):
             self.send_response(200); self.end_headers()
             self.wfile.write(b"blobby-bytes-0123456789")
+            return
+        if self.path.startswith("/big"):
+            q = urllib.parse.parse_qs(self.path.split("?", 1)[1] if "?" in self.path else "")
+            mb = min(int(q.get("mb", ["1"])[0]), 64)
+            self.send_response(200)
+            self.send_header("Content-Type", "application/octet-stream")
+            self.end_headers()
+            chunk = b"A" * (1 << 20)
+            for _ in range(mb):
+                self.wfile.write(chunk)
+            return
+        if self.path.startswith("/ckprobe"):
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(json.dumps({"cookie": self.headers.get("Cookie") or ""}).encode())
+            return
+        if self.path.startswith("/dlslow"):
+            self.send_response(200)
+            self.send_header("Content-Type", "application/octet-stream")
+            self.end_headers()
+            for _ in range(16):
+                self.wfile.write(b"S" * 4096)
+                self.wfile.flush()
+                time.sleep(0.3)
+            return
+        if self.path.startswith("/redir-src3"):
+            self.send_response(200)
+            self.send_header("Content-Type", "application/javascript")
+            self.end_headers()
+            self.wfile.write(b"window.__wrMarker='src3';")
+            return
+        if self.path.startswith("/redir-src2"):
+            self.send_response(200)
+            self.send_header("Content-Type", "application/javascript")
+            self.end_headers()
+            self.wfile.write(b"window.__wrMarker='src2';")
+            return
+        if self.path.startswith("/redir-tgt"):
+            self.send_response(200)
+            self.send_header("Content-Type", "application/javascript")
+            self.end_headers()
+            self.wfile.write(b"window.__wrMarker='tgt';")
+            return
+        if self.path.startswith("/redir-src"):
+            self.send_response(200)
+            self.send_header("Content-Type", "application/javascript")
+            self.end_headers()
+            self.wfile.write(b"window.__wrMarker='src';")
             return
         if self.path.startswith("/t-text"):
             self.send_response(200); self.end_headers()
@@ -161,6 +241,9 @@ class Fixtures(BaseHTTPRequestHandler):
 def start_fixtures():
     srv = ThreadingHTTPServer(("127.0.0.1", PORT_FIXED), Fixtures)
     threading.Thread(target=srv.serve_forever, daemon=True).start()
+    srv2 = ThreadingHTTPServer(("127.0.0.1", PORT2), Fixtures)  # 跨源位(B29)
+    threading.Thread(target=srv2.serve_forever, daemon=True).start()
+    srv.srv2 = srv2
     return srv
 
 
@@ -1265,6 +1348,77 @@ def domain_K2(ch, R):
     occ.close()
 
 
+def domain_B2(ch, R):
+    """B 域环境限批补(v2 续单):19 大响应门/20 凭据/26 下载控制器/28-30 webRequest"""
+    B = f"http://127.0.0.1:{PORT_FIXED}"
+    ch.cmd("Userscript.install", {"source": open(os.path.join(HERE, "fixtures/b-net.user.js")).read(), "enabled": True})
+    ch.nav(f"{B}/setck")
+    ch.nav(f"{B}/?op=alive")
+    time.sleep(0.6)
+    if not (ch.probe("alive") or {}).get("alive"):
+        R.add("B", 0, "缺", "b-net 未注入")
+        return
+    # 19 大响应(32 过/34 拒)
+    r = ch.probe("big", wait=60) or {}
+    ok32 = r.get("b32") == 32 * 1024 * 1024
+    v34 = r.get("b34")
+    refused34 = isinstance(v34, str) and str(v34).startswith("ERR")
+    R.add("B", "19", "过" if (ok32 and refused34) else "缺",
+          f"32MB={r.get('b32')}({ok32});34MB={v34!r}(拒={refused34};若满载则上限门未实现)")
+    # 20 anonymous 凭据剥离
+    r = ch.probe("anon", wait=5) or {}
+    ok20 = "cvp" in str(r.get("plain", "")) and "cvp" not in str(r.get("anon", ""))
+    R.add("B", "20", "过" if ok20 else "缺", f"明文面 cookie={r.get('plain')!r};anonymous 面={r.get('anon')!r}")
+    # 26 下载控制器 pause/resume/abort
+    r = ch.probe("dlctl", wait=8) or {}
+    ok26 = (r.get("hasCtrl") and r.get("pauseOk") and r.get("resumeOk") and r.get("abortOk")
+            and (r.get("err") or r.get("timeout")) and not r.get("done"))
+    R.add("B", "26", "过" if ok26 else "缺",
+          f"ctrl={r.get('hasCtrl')} pause={r.get('pauseOk')}(窗内进度 +{r.get('duringPause')}) "
+          f"resume={r.get('resumeOk')} abort={r.get('abortOk')} 终态 err={r.get('err')!r} done={r.get('done')}")
+    # 27 未到 id 排队补发:内部竞态无外部驱动面
+    R.add("B", "27", "不适用", "未到 id 竞态属引擎内部时序(控制器 id 派发窗口),无外部可注入观察面;控制器事件到达面由 26 覆盖")
+    # 28 cancel 规则(子资源三探)
+    r = ch.probe("wr2", wait=6) or {}
+    ok28 = r.get("imgBlocked") is True and ("fetchBlocked" in r or r.get("fetchOk") == 0) and r.get("frameDoc") in ("denied", "onerror")
+    R.add("B", "28", "过" if ok28 else "缺",
+          f"img 拦={r.get('imgBlocked')};fetch 拦={r.get('fetchBlocked') or r.get('fetchOk')};iframe={r.get('frameDoc')!r};规则回执={r.get('ruleCb')!r}")
+    # 29 redirect 规则(同源/跨源体保/坏 scheme)
+    r = ch.probe("wr3", wait=6) or {}
+    same_applied = r.get("sameMarker") == "tgt"
+    cross = r.get("crossMarker")
+    bad = r.get("badMarker")
+    ok29 = same_applied and cross in ("none", "xorigin") and bad in ("src3", "none", "net-err")
+    R.add("B", "29", "过" if ok29 else "缺",
+          f"同源重定向生效={same_applied}(marker={r.get('sameMarker')});跨源体={cross!r}(http(s) 限内跨源丢体→none 属契约);"
+          f"坏 scheme 目标={bad!r}(chrome:// 不应重定向);规则回执 same/cross/bad={r.get('sameRule')!r}/{r.get('crossRule')!r}/{r.get('badRule')!r}")
+    # 30 属主世界回推+@grant 闸+导航/下载工厂不包
+    # (a) 无 GM_webRequest grant 的脚本
+    gi_ok = None
+    ch.cmd("Userscript.install", {"source": gsrc("nogrant", [f"@match {B}/*"],
+               "out({wr: typeof GM_webRequest});"), "enabled": True})
+    ch.nav(f"{B}/?op=b30")
+    a30 = read_attr(ch, "g-nogrant", 2.0) or {}
+    uninstall_by_name(ch, "cv-g-nogrant")
+    # (b)+(c) 规则活性跨页(hold tab 持规则)+导航/下载不拦
+    ch.cmd("Target.createTarget", {"url": f"{B}/?op=wr-arm-hold"})
+    time.sleep(1.5)
+    ch.nav(f"{B}/blocked-nav")
+    nav_landed = None
+    for _ in range(8):
+        nav_landed = read_attr(ch, "probe", 0.6)
+        if nav_landed and nav_landed.get("op") == "wr-nav-report":
+            break
+        time.sleep(0.4)
+    rdl = ch.probe("wr-dl", wait=7) or {}
+    ok30 = (a30.get("wr") == "undefined"
+            and (nav_landed or {}).get("path") == "/blocked-nav"
+            and rdl.get("dlDone") is True)
+    R.add("B", "30", "过" if ok30 else "缺",
+          f"@grant 闸(未授权 undefined)={a30.get('wr')!r};顶层导航不被拦={ (nav_landed or {}).get('path') };"
+          f"GM_download 不被拦={rdl.get('dlDone')}(err={rdl.get('dlErr')!r});属主世界回推=28/29 规则回调在脚本世界有火(ruleCb 在案)")
+
+
 def domain_K(ch, R):
     # 86 CDP 免确认(auto-allow):本台架全程零确认直连即证
     R.add("K", "86", "过", "本驱动全程 CDP 直连零确认(能在跑即证 auto-allow)")
@@ -1302,6 +1456,8 @@ def main():
                 domain_A(ch, R, profile)
             elif d == "B":
                 domain_B(ch, R)
+            elif d == "B2":
+                domain_B2(ch, R)
             elif d == "C":
                 domain_C(ch, R)
             elif d == "D":
@@ -1329,6 +1485,7 @@ def main():
     finally:
         ch.stop()
         srv.shutdown()
+        getattr(srv, "srv2", None) and srv.srv2.shutdown()
         shutil.rmtree(profile, ignore_errors=True)
     fails = [r for r in R.rows if r["verdict"] == "缺"]
     limited = [r for r in R.rows if r["verdict"] == "环境限"]
