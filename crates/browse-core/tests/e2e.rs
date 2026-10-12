@@ -383,11 +383,25 @@ l`.length === 3].join(\"|\")", returnByValue:true})).result.value"#;
     // panic 之外——panic 时临时仓仍在盘、后续块域名段不命中，无观测面）
     let ws = std::env::temp_dir().join(format!("browse-ws-e2e-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&ws);
+    // 52f5593 起域名段=双脚本对目录（mech.rn+probe.user.js 成对才算，
+    // 裸 .md 不再列清单）；fixture 随现行契约
     let seg_dir = ws.join("domain-skills").join("skill");
     std::fs::create_dir_all(&seg_dir).unwrap();
+    std::fs::write(seg_dir.join("mech.rn"), "# mech\n").unwrap();
     std::fs::write(
-        seg_dir.join("notes.md"),
-        "# skill 站要点\n- 登录走 cookie\n",
+        seg_dir.join("probe.user.js"),
+        "// ==UserScript==\n// @name skill-probe\n// ==/UserScript==\n",
+    )
+    .unwrap();
+    // 页层对(fingerprint-watch 在 FROZEN_PAGE_SLUGS 白名单):@detect 咬
+    // 特征页的 password 输入——52f5593 起内置 DOM 探针退役,页层正道是
+    // workspace 对的 @detect(本仓静默降级律不变)
+    let pair_dir = ws.join("page-skills").join("fingerprint-watch");
+    std::fs::create_dir_all(&pair_dir).unwrap();
+    std::fs::write(pair_dir.join("mech.rn"), "# mech\n").unwrap();
+    std::fs::write(
+        pair_dir.join("probe.user.js"),
+        "// ==UserScript==\n/* @detect */\nfunction browseDetect(facts) {\n  if (document.querySelector(\"input[type=password]\")) {\n    return { slug: 'fingerprint-watch', confidence: 'CONFIRMED' };\n  }\n  return null;\n}\n/* @enddetect */\n// ==/UserScript==\n",
     )
     .unwrap();
     // SAFETY: SEQ 互斥下本块独占改 env，其余 e2e 测试不读这三个变量
@@ -422,7 +436,7 @@ l`.length === 3].join(\"|\")", returnByValue:true})).result.value"#;
         .expect("goto 技能页");
     assert_eq!(
         sk.get("domain_skills"),
-        Some(&json!(["notes.md"])),
+        Some(&json!(["mech.rn", "probe.user.js"])),
         "域名命中应点名: {sk}"
     );
     assert!(
@@ -472,26 +486,8 @@ l`.length === 3].join(\"|\")", returnByValue:true})).result.value"#;
             })
     };
     assert!(
-        slugs(&pf, "iframe")
-            && slugs(&pf, "iframe-cross-origin")
-            && slugs(&pf, "captcha")
-            && slugs(&pf, "shadow-dom"),
-        "特征页应命中 CONFIRMED 档: {pf}"
-    );
-    let plausible = |receipt: &Value, slug: &str| {
-        receipt
-            .get("page_skills")
-            .and_then(Value::as_array)
-            .is_some_and(|a| {
-                a.iter().any(|e| {
-                    e.get("slug") == Some(&json!(slug))
-                        && e.get("confidence") == Some(&json!("PLAUSIBLE"))
-                })
-            })
-    };
-    assert!(
-        plausible(&pf, "login-wall") && plausible(&pf, "lazy-scroll"),
-        "软信号应 PLAUSIBLE 档（login-wall 与 lazy-scroll）: {pf}"
+        slugs(&pf, "fingerprint-watch"),
+        "特征页应经 workspace 对 @detect 命中 fingerprint-watch CONFIRMED 档: {pf}"
     );
     assert!(
         pf.get("page_skills_hint")
@@ -866,8 +862,9 @@ l`.length === 3].join(\"|\")", returnByValue:true})).result.value"#;
         Some(&json!("login-wall")),
         "密码页应 login-wall: {detl}"
     );
-    // ---- #56 detect 判读映射 page-skill 点名 ----
-    // login-wall 判读映射 login-wall 配方（PLAUSIBLE：判读是行为推断）
+    // ---- #56 detect 判读映射 page-skill 点名（清仓重建后映射表）----
+    // login-wall 判读零映射（无新对承接，verdict_page_slugs 在册）：
+    // 回执不应带 page_skills 键
     let det_slugs = |receipt: &Value, slug: &str| {
         receipt
             .get("page_skills")
@@ -880,16 +877,11 @@ l`.length === 3].join(\"|\")", returnByValue:true})).result.value"#;
             })
     };
     assert!(
-        det_slugs(&detl, "login-wall"),
-        "login-wall 判读应点名 login-wall 配方: {detl}"
+        detl.get("page_skills").is_none(),
+        "login-wall 判读零映射（清仓后无对承接）: {detl}"
     );
-    assert!(
-        detl.get("page_skills_hint")
-            .and_then(Value::as_str)
-            .is_some_and(|h| h.contains("browse workspace page login-wall")),
-        "判读 hint 应给读全文命令: {detl}"
-    );
-    // 挑战页：标题关键词加短正文判 challenged，映射 bot-shield 与 captcha
+    // 挑战页：标题关键词加短正文判 challenged，映射 challenge-stop
+    // （PLAUSIBLE 恒档：判读是行为推断非 DOM 实证）
     host.eval_snippet(r#"await goto("data:text/html,<title>Just a moment...</title>")"#)
         .await
         .expect("goto 挑战页");
@@ -903,8 +895,14 @@ l`.length === 3].join(\"|\")", returnByValue:true})).result.value"#;
         "挑战标题加短正文应 challenged: {detc}"
     );
     assert!(
-        det_slugs(&detc, "bot-shield") && det_slugs(&detc, "captcha"),
-        "challenged 判读应点名 bot-shield 与 captcha: {detc}"
+        det_slugs(&detc, "challenge-stop"),
+        "challenged 判读应点名 challenge-stop: {detc}"
+    );
+    assert!(
+        detc.get("page_skills_hint")
+            .and_then(Value::as_str)
+            .is_some_and(|h| h.contains("browse workspace page challenge-stop")),
+        "判读 hint 应给读全文命令: {detc}"
     );
     // 无映射判读（ok/blank）零新增键：回执键集恰为判读三键
     for (name, d) in [("ok", &det), ("blank", &detb)] {
@@ -944,8 +942,8 @@ l`.length === 3].join(\"|\")", returnByValue:true})).result.value"#;
         .await
         .expect("detect page 复开面");
     assert!(
-        det_slugs(&det_on, "bot-shield"),
-        "还原后点名恢复（同页复测）: {det_on}"
+        det_slugs(&det_on, "challenge-stop"),
+        "还原后点名恢复（同页复测，challenged 页应点名 challenge-stop）: {det_on}"
     );
 
     // ---- #42 storage 颗粒度 CRUD ----
