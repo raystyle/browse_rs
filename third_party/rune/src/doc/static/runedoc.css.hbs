@@ -1,0 +1,312 @@
+
+:root {
+    --text-color: #dddddd;
+    --background-color: #353535;
+    --link-color: #d2991d;
+    --headings-border-bottom-color: #d2d2d2;
+    --type-link-color: #2dbfb8;
+    --any-color: #c03bca;
+    --fn-link-color: #2bab63;
+    --method-link-color: #2bab63;
+    --macro-link-color: #09bd00;
+    --mod-link-color: #d2991d;
+    --search-result-border-color: #aaa3;
+    --border-color: #e0e0e0;
+    --button-background-color: #f0f0f0;
+    --search-color: #111;
+    --search-input-focused-border-color: #008dfd;
+    --search-result-link-focus-background-color: #616161;
+    --keyword-async-color: rgb(70, 43, 241);
+    --code-background-color: rgb(42, 42, 42);
+    --code-block-background-color: #2a2a2a;
+    --deprecated-color: #39261c;
+    --deprecated-background-color: #da9347;
+}
+
+@font-face {
+    font-family: 'Fira Sans';
+    font-style: normal;
+    font-weight: 400;
+    src: local('Fira Sans'),url("{{path "fonts/FiraSans-Regular.woff2"}}") format("woff2");
+    font-display: swap;
+}
+
+@font-face {
+    font-family: 'Fira Sans';
+    font-style: normal;
+    font-weight: 500;
+    src: local('Fira Sans Medium'),url("{{path "fonts/FiraSans-Medium.woff2"}}") format("woff2");
+    font-display: swap;
+}
+
+@font-face {
+    font-family: 'Source Serif 4';
+    font-style: normal;
+    font-weight: 400;
+    src: local('Source Serif 4'),url("{{path "fonts/SourceSerif4-Regular.woff2"}}") format("woff2");
+    font-display: swap;
+}
+
+@font-face {
+    font-family: 'Source Serif 4';
+    font-style: italic;
+    font-weight: 400;
+    src: local('Source Serif 4 Italic'),url("{{path "fonts/SourceSerif4-It.woff2"}}") format("woff2");
+    font-display: swap;
+}
+
+@font-face {
+    font-family: 'Source Serif 4';
+    font-style: normal;
+    font-weight: 700;
+    src: local('Source Serif 4 Bold'),url("{{path "fonts/SourceSerif4-Bold.woff2"}}") format("woff2");
+    font-display: swap;
+}
+
+@font-face {
+    font-family: 'Source Code Pro';
+    font-style: normal;
+    font-weight: 400;
+    src: url("{{path "fonts/SourceCodePro-Regular.woff2"}}") format("woff2");
+    font-display: swap;
+}
+
+@font-face {
+    font-family: 'Source Code Pro';
+    font-style: italic;
+    font-weight: 400;
+    src: url("{{path "fonts/SourceCodePro-It.woff2"}}") format("woff2");
+    font-display: swap;
+}
+
+@font-face {
+    font-family: 'Source Code Pro';
+    font-style: normal;
+    font-weight: 600;
+    src: url("{{path "fonts/SourceCodePro-Semibold.woff2"}}") format("woff2");
+    font-display: swap;
+}
+
+@font-face {
+    font-family: 'NanumBarunGothic';
+    src: url("{{path "fonts/NanumBarunGothic-Regular.woff2"}}") format("woff2");
+    font-display: swap;
+    unicode-range: U+AC00-D7AF,U+1100-11FF,U+3130-318F,U+A960-A97F,U+D7B0-D7FF;
+}
+
+* {
+    box-sizing: border-box;
+}
+
+#search-input, .search-result, h1, h2, h3, h4, h5, h6, .signature, .item-title {
+    font-family: "Fira Sans",Arial,NanumBarunGothic,sans-serif;
+}
+
+pre, code, .signature {
+    font-family: "Source Code Pro",monospace;
+}
+
+#container {
+    max-width: 960px;
+}
+
+.hidden {
+    display: none;
+}
+
+#search {
+    display: none;
+}
+
+#search.visible {
+    display: block !important;
+}
+
+#search-form {
+    display: flex;
+}
+
+#search-input {
+    outline: none;
+    border: 1px solid var(--border-color);
+    border-radius: 2px;
+    padding: 8px;
+    font-size: 1rem;
+    flex-grow: 1;
+    background-color: var(--button-background-color);
+    color: var(--search-color);
+}
+
+#search-input:focus {
+    border-color: var(--search-input-focused-border-color);
+}
+
+.search-result {
+    display: flex;
+    margin-left: 2px;
+    margin-right: 2px;
+    border-bottom: 1px solid var(--search-result-border-color);
+    gap: 1em;
+}
+
+.search-result a {
+    color: var(--text-color);
+}
+
+.search-result:hover {
+    background-color: var(--search-result-link-focus-background-color);
+}
+
+body {
+    color: var(--text-color);
+    background-color: var(--background-color);
+    font-size: 1rem;
+    line-height: 1.5;
+    font-family: "Source Serif 4", NanumBarunGothic, serif;
+    margin: 20px;
+}
+
+a {
+    color: var(--link-color);
+}
+
+pre, .signature {
+    line-height: 1.5;
+    font-size: 1em;
+    background-color: var(--code-background-color);
+    padding: 14px;
+    overflow-x: auto;
+}
+
+.deprecated {
+    color: var(--deprecated-color);
+    background-color: var(--deprecated-background-color);
+    border-radius: 3px;
+    padding: 0.1em 0.2em;
+    font-size: 80%;
+    margin-top: 0.5em;
+    margin-bottom: 0.5em;
+}
+
+.deprecated .heading {
+    font-weight: bold;
+    margin-right: 0.5em;
+}
+
+p > code {
+    background-color: var(--code-block-background-color);
+    border-radius: 3px;
+    padding: 0 0.125em;
+}
+
+.overview {
+    color: var(--link-color);
+}
+
+.title-wrapper {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.title {
+    font-size: 1.5rem;
+    line-height: 1.25;
+    font-weight: 500;
+    margin: 25px 0 25px 0;
+    padding: 0;
+}
+
+.section-title {
+    font-size: 1.375rem;
+    line-height: 1.25;
+    font-weight: 500;
+    margin: 25px 0 25px 0;
+    padding: 0;
+    padding-bottom: 10px;
+    border-bottom: 1px solid var(--headings-border-bottom-color);
+}
+
+.item-entry {
+    font-size: 1.2rem;
+    line-height: 1.25;
+    font-weight: 500;
+    margin: 5px 0;
+    padding: 0;
+}
+
+.inline-sep {
+    margin-left: 0.5rem;
+    margin-right: 0.5rem;
+}
+
+.inline-docs p {
+    display: inline;
+    margin: 0;
+}
+
+.inline-docs div {
+    display: inline;
+    margin: 0;
+}
+
+a {
+    text-decoration: none;
+}
+
+.type {
+    color: var(--type-link-color);
+}
+
+.struct {
+    color: var(--type-link-color);
+}
+
+.enum {
+    color: var(--type-link-color);
+}
+
+.trait {
+    color: var(--type-link-color);
+}
+
+.fn {
+    color: var(--fn-link-color);
+}
+
+.method {
+    color: var(--method-link-color);
+}
+
+.macro {
+    color: var(--macro-link-color);
+}
+
+.module {
+    color: var(--mod-link-color);
+}
+
+.protocol {
+    color: var(--fn-link-color);
+}
+
+.any {
+    color: var(--any-color);
+}
+
+.item-title {
+    font-size: 1.2rem;
+    line-height: 1.25;
+    font-weight: 500;
+    margin: 15px 0 15px 0;
+    padding: 0;
+}
+
+.docs h1, .docs h2, .docs h3, .docs h4, .docs h5, .docs h6 {
+    font-size: 1.2rem;
+    color: var(--link-color);
+}
+
+.attribute {
+    color: var(--text-color);
+}

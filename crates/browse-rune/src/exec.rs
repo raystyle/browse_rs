@@ -193,9 +193,19 @@ async fn run_raw(
     let limited = rune::alloc::limit::with(caps.memory, budgeted);
     let result: rune::runtime::VmResult<rune::runtime::Value> = limited.await;
     if let Err(e) = result.into_result() {
+        // #113 诊断道：BROWSE_RUNE_VMDEBUG=1 时附全量 Debug（指令流/帧栈，
+        // 定位 VM 级缺陷用；Display 只有一句不够）
+        let dbg = if std::env::var("BROWSE_RUNE_VMDEBUG")
+            .map(|v| v == "1")
+            .unwrap_or(false)
+        {
+            format!("\n[vmdebug] {e:?}")
+        } else {
+            String::new()
+        };
         return (
             Err(anyhow!(
-                "Rune VM 终态错误（不重试）：{}；下一步：看脚本逻辑与限额（指令 {}、分配 {}）",
+                "Rune VM 终态错误（不重试）：{}；下一步：看脚本逻辑与限额（指令 {}、分配 {}）{dbg}",
                 enrich_missing_fn(&e.to_string()),
                 caps.instructions,
                 caps.memory

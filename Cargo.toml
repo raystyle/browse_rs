@@ -44,3 +44,7 @@ zip = { version = "2", default-features = false, features = ["deflate"] }
 [profile.release]
 lto = "thin"
 strip = "symbols"
+
+[patch.crates-io]
+# #113 自修:rune 0.14.2 上游停更,异步宿主调用编组 MOVED 态泄漏本地修补
+rune = { path = "third_party/rune" }

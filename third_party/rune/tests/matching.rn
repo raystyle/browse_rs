@@ -1,0 +1,253 @@
+
+#[test]
+fn test_match_primitives() {
+    let out = match false {
+        false => true,
+        _ => false,
+    };
+    assert!(out);
+
+    let out = match b'a' {
+        b'a' => true,
+        _ => false,
+    };
+    assert!(out);
+
+    let out = match 'a' {
+        'a' => true,
+        _ => false,
+    };
+    assert!(out);
+
+    let out = match "hello world" {
+        "hello world" => true,
+        _ => false,
+    };
+    assert!(out);
+
+    let out = match b"hello world" {
+        b"hello world" => true,
+        _ => false,
+    };
+    assert!(out);
+
+    let out = match 42 {
+        42 => true,
+        _ => false,
+    };
+    assert!(out);
+
+    let out = match -42 {
+        -42 => true,
+        _ => false,
+    };
+    assert!(out);
+}
+
+#[test]
+fn test_path_type_match() {
+    enum Tuple {
+        A,
+        B(a),
+    }
+
+    let out = match Tuple::A {
+        Tuple::A => true,
+        _ => false,
+    };
+    assert_eq!(out, true);
+
+    let out = match Tuple::B(0) {
+        Tuple::A => true,
+        _ => false,
+    };
+    assert_eq!(out, false);
+
+    let out = match Tuple::B(0) {
+        Tuple::B(0) => true,
+        _ => false,
+    };
+    assert_eq!(out, true);
+
+    enum Struct {
+        A,
+        B {
+            a,
+        },
+    }
+    let out = match (Struct::B { a: 0 }) {
+        Struct::B { a: 0 } => true,
+        _ => false,
+    };
+    assert_eq!(out, true);
+
+    fn test(a) {
+        a == 0
+    }
+    let out = match (Struct::B { a: 0 }) {
+        Struct::B { a } if test(a) => true,
+        _ => false,
+    };
+    assert_eq!(out, true);
+}
+
+#[test]
+fn test_struct_matching() {
+    struct Foo {
+        a,
+        b,
+    }
+
+    let foo = Foo { a: 1, b: 2 };
+
+    let out = match foo {
+        Foo { a, b } => a + b,
+        _ => 0,
+    };
+
+    assert_eq!(out, 3);
+
+    let b = 2;
+
+    let foo = Foo { a: 1, b };
+
+    let out = match foo {
+        Foo { a, b } => a + b,
+        _ => 0,
+    };
+
+    assert_eq!(out, 3);
+}
+
+#[test]
+fn match_enums() {
+    enum Enum {
+        First(a),
+        Second(a),
+        Third,
+        Fourth {
+            a,
+            b,
+        },
+        Output(a),
+        Wrong,
+    }
+
+    fn foo(v) {
+        match v {
+            Enum::First(value) => Enum::Output(value * 1),
+            Enum::Second(value) => Enum::Output(value * 2),
+            Enum::Third => Enum::Output(3),
+            Enum::Fourth { a, b } => Enum::Output((a * b) * 4),
+            _ => Enum::Wrong,
+        }
+    }
+
+    assert_eq!(foo(Enum::Output(10)), Enum::Wrong);
+    assert_eq!(foo(Enum::First(1)), Enum::Output(1));
+    assert_eq!(foo(Enum::Second(2)), Enum::Output(4));
+    assert_eq!(foo(Enum::Third), Enum::Output(3));
+    assert_eq!(foo(Enum::Fourth { a: 4, b: 5 }), Enum::Output(4 * 5 * 4));
+}
+
+#[test]
+fn match_enum2() {
+    enum Enum {
+        First,
+        Second,
+        Right,
+        Wrong1,
+        Wrong2,
+    }
+
+    let out = match Enum::Second {
+        Enum::First => Enum::Wrong1,
+        Enum::Second => Enum::Right,
+        _ => Enum::Wrong2,
+    };
+
+    assert_eq!(out, Enum::Right);
+}
+
+#[test]
+fn match_extraction_vec() {
+    let v = [42];
+
+    fn inner(v) {
+        match v {
+            [a] => a,
+            _ => 0,
+        }
+    }
+
+    assert_eq!(inner(v), 42);
+}
+
+#[test]
+fn match_extraction_tuple() {
+    let v = (42,);
+
+    fn inner(v) {
+        match v {
+            (a,) => a,
+            _ => 0,
+        }
+    }
+
+    assert_eq!(inner(v), 42);
+}
+
+#[test]
+fn match_extraction_struct() {
+    struct Struct {
+        a,
+    }
+
+    fn inner(v) {
+        match v {
+            Struct { a, .. } => a,
+            _ => 0,
+        }
+    }
+
+    let v = Struct { a: 42 };
+
+    assert_eq!(inner(v), 42);
+}
+
+/// This tests that matching against a built-in type with a value which is not
+/// the same type does not error due to a type mismatch.
+#[test]
+fn match_builtin_non_err() {
+    let outcome = match 42 {
+        Some(42) => false,
+        42 => true,
+        _ => false,
+    };
+
+    assert!(outcome, "built-in Option::Some should match");
+
+    let outcome = match 42 {
+        None => false,
+        42 => true,
+        _ => false,
+    };
+
+    assert!(outcome, "built-in Option::None should match");
+
+    let outcome = match 42 {
+        Ok(42) => false,
+        42 => true,
+        _ => false,
+    };
+
+    assert!(outcome, "built-in Result::Ok should match");
+
+    let outcome = match 42 {
+        Err(42) => false,
+        42 => true,
+        _ => false,
+    };
+
+    assert!(outcome, "built-in Result::Err should match");
+}

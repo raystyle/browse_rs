@@ -1,0 +1,11 @@
+{{#> layout}}
+    <h3 class="title">Index</h3>
+
+    {{#if modules}}
+        <h4 class="section-title">Modules</h4>
+
+        {{#each modules}}
+            <div class="item-entry"><a href="{{this.path}}">{{this.item}}</a></div>
+        {{/each}}
+    {{/if}}
+{{/layout}}

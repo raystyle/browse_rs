@@ -1,0 +1,74 @@
+{{#> layout}}
+<div class="title-wrapper"><h3 class="title">Module {{literal module}}</h3><a class="overview" href="{{literal root_index}}">Overview</a></div>
+{{#if doc}}{{literal doc}}{{/if}}
+
+{{#if types}}
+<h4 class="section-title">Types</h4>
+
+{{#each types}}
+    <div class="item-entry">
+    <a class="type" href="{{literal this.path}}">{{this.name}}</a>{{#if this.doc}}<span class="inline-sep">&dash;</span><span class="inline-docs">{{literal this.doc}}</span>{{/if}}
+    </div>
+{{/each}}
+{{/if}}
+
+{{#if structs}}
+<h4 class="section-title">Structs</h4>
+
+{{#each structs}}
+    <div class="item-entry">
+    <a class="struct" href="{{literal this.path}}">{{this.name}}</a>{{#if this.doc}}<span class="inline-sep">&dash;</span><span class="inline-docs">{{literal this.doc}}</span>{{/if}}
+    </div>
+{{/each}}
+{{/if}}
+
+{{#if enums}}
+<h4 class="section-title">Enums</h4>
+
+{{#each enums}}
+    <div class="item-entry">
+    <a class="enum" href="{{literal this.path}}">{{this.name}}</a>{{#if this.doc}}<span class="inline-sep">&dash;</span><span class="inline-docs">{{literal this.doc}}</span>{{/if}}
+    </div>
+{{/each}}
+{{/if}}
+
+{{#if functions}}
+<h4 class="section-title">Functions</h4>
+
+{{#each functions}}
+    <div id="fn.{{this.name}}" class="item-entry">
+    <a class="fn" href="{{this.path}}">{{this.name}}</a>{{#if this.doc}}<span class="inline-sep">&dash;</span><span class="inline-docs">{{literal this.doc}}</span>{{/if}}
+    </div>
+{{/each}}
+{{/if}}
+
+{{#if macros}}
+<h4 class="section-title">Macros</h4>
+
+{{#each macros}}
+    <div id="macro.{{this.name}}" class="item-entry">
+    <a class="macro" href="{{this.path}}">{{this.name}}!</a>{{#if this.doc}}<span class="inline-sep">&dash;</span><span class="inline-docs">{{literal this.doc}}</span>{{/if}}
+    </div>
+{{/each}}
+{{/if}}
+
+{{#if traits}}
+<h4 class="section-title">Traits</h4>
+
+{{#each traits}}
+    <div class="item-entry">
+    <a class="type" href="{{literal this.path}}">{{this.name}}</a>{{#if this.doc}}<span class="inline-sep">&dash;</span><span class="inline-docs">{{literal this.doc}}</span>{{/if}}
+    </div>
+{{/each}}
+{{/if}}
+
+{{#if modules}}
+<h4 class="section-title">Modules</h4>
+
+{{#each modules}}
+    <div id="module.{{this.item}}" class="item-entry">
+    <a class="module" href="{{this.path}}">{{this.name}}</a>{{#if this.doc}}<span class="inline-sep">&dash;</span><span class="inline-docs">{{literal this.doc}}</span>{{/if}}
+    </div>
+{{/each}}
+{{/if}}
+{{/layout}}

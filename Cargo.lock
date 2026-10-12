@@ -1702,8 +1702,6 @@ dependencies = [
 [[package]]
 name = "rune"
 version = "0.14.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e7a577a0dc4b3e4cfe89247325b14b5f30096ddc82fa51fffb1d823fbc85b410"
 dependencies = [
  "anyhow",
  "codespan-reporting",
