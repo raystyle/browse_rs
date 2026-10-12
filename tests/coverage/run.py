@@ -25,6 +25,7 @@ import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+NO_CHROME_LOGGING = False  # #90 复验面开关(--no-chrome-logging)
 sys.path.insert(0, HERE)
 from minicdp import WS, http_get  # noqa: E402
 
@@ -54,6 +55,7 @@ class Fixtures(BaseHTTPRequestHandler):
     base = HERE
     UPD = {}   # 更新源服务表:path -> 新版源(H 域换代流)
     HITS = {}  # 命中计数:path -> n
+    STAT = {}  # 静态 fixtures per-path GET 计数(G61/G62 序列缺供料:取数端 vs 投递端分叉)
 
     def do_GET(self):
         if self.path.startswith("/?") or self.path == "/":
@@ -226,6 +228,7 @@ class Fixtures(BaseHTTPRequestHandler):
             return
         p = os.path.join(self.base, "fixtures", os.path.basename(self.path.split("?")[0]))
         if os.path.isfile(p):
+            Fixtures.STAT[os.path.basename(p)] = Fixtures.STAT.get(os.path.basename(p), 0) + 1
             data = open(p, "rb").read()
             self.send_response(200)
             self.send_header("Content-Type", "application/octet-stream")
@@ -267,12 +270,13 @@ class Chrome:
     def start(self):
         self._errfh = tempfile.NamedTemporaryFile(prefix="cv-chrome-err-", delete=False)
         self.errpath = self._errfh.name
-        self.proc = subprocess.Popen(
-            [self.bin, "--headless=new", "--no-sandbox", "--disable-gpu",
-             "--ozone-platform=headless", "--user-data-dir=" + self.profile,
-             f"--remote-debugging-port={CDP_PORT}", "--no-first-run",
-             "--enable-logging=stderr", "--v=0", "about:blank"],
-            stdout=subprocess.DEVNULL, stderr=self._errfh)
+        argv = [self.bin, "--headless=new", "--no-sandbox", "--disable-gpu",
+                "--ozone-platform=headless", "--user-data-dir=" + self.profile,
+                f"--remote-debugging-port={CDP_PORT}", "--no-first-run"]
+        if not NO_CHROME_LOGGING:  # #90 复验面:无旗标起,INFO 不落 stderr 属引擎语义非缺陷
+            argv += ["--enable-logging=stderr", "--v=0"]
+        argv.append("about:blank")
+        self.proc = subprocess.Popen(argv, stdout=subprocess.DEVNULL, stderr=self._errfh)
         deadline = time.time() + 20
         while time.time() < deadline:
             try:
@@ -751,7 +755,11 @@ def domain_G(ch, R):
     gi("exact", [f"@match {B}/gexact/*"], hit)
     a = attr_on(f"{B}/gexact/x?op=g", "g-exact")
     b = attr_on(f"{B}/other?op=g", "g-exact")
-    R.add("G", "53", "过" if (a and not b) else "缺", f"/gexact 命中={bool(a)};/other 不注={not b}")
+    # 错误页不注腿(常驻回归防复发:r4b 前 Fixtures 404 空体双 commit 曾致掷硬币,
+    # 卷宗 r14 B.1);连接拒绝即错页,location 保留原 http URL 而源不属匹配集
+    nf = attr_on("http://127.0.0.1:9/gexact/x?op=g", "g-exact", 2.5)
+    R.add("G", "53", "过" if (a and not b and not nf) else "缺",
+          f"/gexact 命中={bool(a)};/other 不注={not b};错误页不注={not nf}")
     # 54:PSL 语义(localhost 非 PSL 后缀=假后缀档:单标签通配,双标签不注;co.uk 多标签环境限)
     gi("wl", ["@match http://*.localhost/*"], hit)
     gi("wlp", ["@match http://*.localhost:18871/*"], hit)
@@ -824,15 +832,17 @@ def domain_G(ch, R):
     # 61:@require 多库顺序
     gi("req", [f"@match {B}/*", f"@require {B}/lib1.js", f"@require {B}/lib2.js"],
        "out({seq: window.__seq ? window.__seq.join(',') : null, l2: (typeof LIB2 !== 'undefined') ? LIB2 : null});")
+    h1 = Fixtures.STAT.get("lib1.js", 0); h2_ = Fixtures.STAT.get("lib2.js", 0)
     a = attr_on(f"{B}/?op=g", "g-req", 3)
     R.add("G", "61", "过" if (a and a.get("seq") == "lib1,lib2" and a.get("l2") == 2) else "缺",
-          f"seq={a and a.get('seq')} l2={a and a.get('l2')}")
+          f"seq={a and a.get('seq')} l2={a and a.get('l2')};GET lib1={Fixtures.STAT.get('lib1.js', 0) - h1} lib2={Fixtures.STAT.get('lib2.js', 0) - h2_}")
     # 62:@resource
     gi("res", [f"@match {B}/*", "@grant GM_getResourceText", "@grant GM_getResourceURL", f"@resource r1 {B}/res1.txt"],
        "out({txt: GM_getResourceText('r1'), url: (GM_getResourceURL('r1')||'').slice(0,12)});")
+    hr = Fixtures.STAT.get("res1.txt", 0)
     a = attr_on(f"{B}/?op=g", "g-res", 3)
     R.add("G", "62", "过" if (a and a.get("txt") == "res-one-body" and a.get("url")) else "缺",
-          f"txt={a and a.get('txt')!r} url={a and a.get('url')!r}")
+          f"txt={a and a.get('txt')!r} url={a and a.get('url')!r};GET res1={Fixtures.STAT.get('res1.txt', 0) - hr}")
 
 
 def clean_slate(ch, *keep):
@@ -984,11 +994,13 @@ def domain_V2(ch, R, profile):
             f"@resource rbin {B}/icon.png", f"@resource rcjk {B}/res-cjk.txt"]
     ch.cmd("Userscript.install", {"source": gsrc("res2", hdrs,
             "out({ bin: (GM_getResourceURL('rbin') || '').slice(0, 10), cjk: GM_getResourceText('rcjk') });"), "enabled": True})
+    hi = Fixtures.STAT.get("icon.png", 0); hc = Fixtures.STAT.get("res-cjk.txt", 0)
     ch.nav(f"{B}/?op=v2")
     a = read_attr(ch, "g-res2", 2.6) or {}
     ok62b = bool(a.get("bin")) and a.get("cjk") == "中文资源-测试"
     R.add("G", "62(v2)", "过" if ok62b else "缺",
-          f"binURL={a.get('bin')!r} cjk={a.get('cjk')!r}(期望 中文资源-测试;与 #97 同管道)")
+          f"binURL={a.get('bin')!r} cjk={a.get('cjk')!r}(期望 中文资源-测试;与 #97 同管道);"
+          f"GET icon={Fixtures.STAT.get('icon.png', 0) - hi} cjk={Fixtures.STAT.get('res-cjk.txt', 0) - hc}")
     uninstall_by_name(ch, "cv-g-res2")
 
     # --- J83 速测:verbatim+install 即 enabled ---
@@ -1505,8 +1517,12 @@ def main():
     ap.add_argument("--domains", default="A,K")
     ap.add_argument("--json", default=None)
     ap.add_argument("--retry", action="store_true", default=True)
+    ap.add_argument("--no-chrome-logging", action="store_true",
+                    help="#90 复验面:不带 --enable-logging 起 chrome,采 console 事件池(引擎修后旗标无关)")
     ap.add_argument("--no-retry", dest="retry", action="store_false")
     args = ap.parse_args()
+    global NO_CHROME_LOGGING
+    NO_CHROME_LOGGING = args.no_chrome_logging
 
     real = sha256_of(args.chrome)
     if args.sha and real != args.sha:
