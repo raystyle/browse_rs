@@ -951,7 +951,8 @@ pub async fn engine_up(p: UpParams) -> Result<Value> {
     }
 }
 
-/// POST /quit 退 daemon，daemon 侧顺带只终结自起引擎（附着来源不动）。
+/// POST /quit 退 daemon，daemon 侧顺带只终结自起引擎（附着来源不动）；
+/// 并等退净（#112：不等会让调用方在引擎收尸窗内动 profile 悬孤儿童）。
 ///
 /// # Errors
 ///
@@ -962,7 +963,17 @@ pub async fn quit() -> Result<()> {
         .send()
         .await
         .context("POST /quit")?;
-    Ok(())
+    // #112：POST 返回≠退净——daemon 退场含引擎优雅关+收尸（约 5s 优雅窗），
+    // 不等就返回会让调用方在引擎未死时动 profile，引擎悬成孤儿树。
+    // 等到 /health 不通（axum 停收），界 15s。
+    let deadline = std::time::Instant::now() + Duration::from_secs(15);
+    while std::time::Instant::now() < deadline {
+        if daemon_alive().await.is_none() {
+            return Ok(());
+        }
+        tokio::time::sleep(Duration::from_millis(150)).await;
+    }
+    anyhow::bail!("browse: daemon 15s 未退净（引擎收尸窗超时；查残留进程或 daemon 日志）")
 }
 
 #[cfg(test)]
