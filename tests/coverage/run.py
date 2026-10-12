@@ -444,6 +444,10 @@ def domain_A(ch, R, profile):
               f"死 id CDP 写拒={bool(werr)} err={werr!r}")
     # 8 坏 JSON(域尾:毒盘不再污染后续)
     # 8 坏 JSON(毒盘后脚本照跑默认值;盘字节不动;写失败不留新)
+    # A/10 卸后重装:r14 替换语义下单条卸即净;旧追加 bug 时代 A/8 靠 -2 残留
+    # 撑判据系台架隐依赖(r14 mac 全表实证 A/8 读=None),显式重装正形
+    ch.cmd("Userscript.install", {"source": open(os.path.join(HERE, "fixtures/a-store.user.js")).read(), "enabled": True})
+    time.sleep(0.3)
     vf = values_file(profile)
     os.makedirs(os.path.dirname(vf), exist_ok=True)
     open(vf, "w").write('{"poison": TRUNCATED')  # 毒:非法 JSON
