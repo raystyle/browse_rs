@@ -6,17 +6,15 @@
 
 ## 项目介绍
 
-browse 是给 agent（也给人）的浏览器驾驶 CLI：一条 JS 方言片段驱动
-clean-chrome（自编 Chromium），常驻 daemon 让会话、变量、活动 tab 与元素
-引用跨命令存活。错误自带下一步（可照抄 CTA），绝不关用户自己的浏览器。
+browse 是业界唯一把「自研 Chromium 内核」和「引擎内完整油猴接口」做成同一条驾驶面的浏览器 CLI。Agent（也给人）用一条 JS 方言驱动定制 Chrome 核，油猴脚本跑在引擎里而不是商店扩展上。常驻 daemon 让会话、变量、活动 tab 与元素引用跨命令存活。错误自带可照抄下一步，绝不关闭用户自己的浏览器。
 
-- 一条 JS 方言片段直调 CDP 全量 652 方法（`session.<Domain>.<method>`）
+- 定制 Chrome 核：内嵌 clean-chrome 版本管理（install/update/use/remove/list/doctor），镜像锚校验原子落位
+- 完整油猴接口：引擎原生 userscript 运行时（GM_*、@require/@resource、document-start/idle）
+- 一条 JS 方言直调 CDP 全量 652 方法（`session.<Domain>.<method>`）
 - 常驻 daemon：会话、变量、活动 tab 与元素引用跨命令存活
 - 页面级原语：snapshot/screenshot/pdf、clickRef/fillRef、路由拦截与假应答
-- workspace 技能仓：站点/机制知识外置（ADR-0008），goto/fetch/detect 回执
-  自动点名；`add` 登记自定义仓（格式同默认仓，多根加载序首优先）
-- 附着优先引擎策略：探测本机浏览器，缺则 spawn 隔离实例；绝不关用户浏览器
-- 内嵌 Chromium 版本管理器：install/update/use/remove/list/doctor，镜像锚校验原子落位
+- workspace 技能仓：油猴探针 + rune 编排外置，goto/fetch/detect 回执自动点名
+- 附着优先：探测本机浏览器，缺则 spawn 隔离实例；绝不关用户浏览器
 - agent 面：`--llms` 手册直出、错误带可照抄「下一步」、裸调用不弹交互
 - 自更新：`browse update` 双通道（镜像 stable 段优先）加锚校验加自证回滚
 
