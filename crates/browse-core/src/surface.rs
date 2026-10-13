@@ -98,7 +98,7 @@ pub const COMMANDS: &[CmdSpec] = &[
                 "--vars 键=值 可重复；@ 实参同给即模板道"
             ),
         ],
-        description: "求值命令方言片段（单步原语，无控制流）。自动拉起 daemon 与引擎。实参以 @ 开头则读文件；配 --vars 则按 Jinja 渲染（缺省 <%= 键 %>）。无实参且 stdin 非终端则从管道读取。",
+        description: "求值命令方言片段（单步原语，无控制流）。原生 CDP：session.Domain.method（652）。封装：goto、snapshot、clickRef 等。自动拉起 daemon 与引擎。实参以 @ 开头则读文件；配 --vars 则按 Jinja 渲染（缺省 <%= 键 %>）。无实参且 stdin 非终端则从管道读取。",
         example: "browse 'return await currentTab()'",
     },
     CmdSpec {
@@ -131,7 +131,7 @@ pub const COMMANDS: &[CmdSpec] = &[
                 "--vars 键=值 可重复；与 @ 实参同给即模板道"
             ),
         ],
-        description: "在页面主世界求值 JS（Runtime.evaluate）。方言管编排，--js 管页面逻辑。@ 文件、--vars 模板、空实参走管道。",
+        description: "在页面主世界求值 JS（Runtime.evaluate）。@ 文件、--vars 模板、空实参走管道。",
         example: r#"browse --js 'return (() => { const f = s => s.length; return f("ab"); })()'"#,
     },
     CmdSpec {
@@ -326,7 +326,7 @@ pub const COMMANDS: &[CmdSpec] = &[
                 "false（先清环再回执；序号不回卷，消费游标不失位）"
             ),
         ],
-        description: "读取油猴脚本上报的事件环。脚本 POST /events；满 1000 条丢最旧。",
+        description: "读取 userscript 上报的事件环。脚本 POST /events；满 1000 条丢最旧。",
         example: "browse events --since 41",
     },
     CmdSpec {
@@ -353,7 +353,7 @@ pub const COMMANDS: &[CmdSpec] = &[
                 "--root 旗标 > workspace scripts/（只对 @ 名生效）"
             ),
         ],
-        description: "运行图灵完备的 Rune 编排脚本。入口 pub async fn main() -> Result。可循环、分支、异步等待，经 cdp::goto、js、raw、dialect 操作浏览器。--vars k=v 按 Jinja 渲染，默认定界 <%= 键 %>。无实参时 stdin 作为脚本；有实参时 stdin 作为 cdp::stdin()。browse rune stop 停止执行。",
+        description: "运行图灵完备的 Rune 编排脚本。入口 pub async fn main() -> Result。可循环、分支、异步等待。原生 CDP：cdp::raw。封装：cdp::goto、js、dialect。--vars k=v 按 Jinja 渲染，默认定界 <%= 键 %>。无实参时 stdin 作为脚本；有实参时 stdin 作为 cdp::stdin()。browse rune stop 停止执行。",
         example: "browse rune @x.test/fill-form --vars q=hello",
     },
     CmdSpec {
@@ -484,7 +484,7 @@ pub const COMMANDS: &[CmdSpec] = &[
         kind: CmdKind::Cli,
         signature: "browse userscript <install|list|enable|disable|remove|update|path|eval>",
         args: &[arg!("id", "string", false)],
-        description: "管理油猴脚本：install、list、enable、disable、remove、update、path、eval。装改加 --restart 后引擎重读。",
+        description: "管理 userscript：install、list、enable、disable、remove、update、path、eval。更改后加 --restart 使引擎重读。",
         example: "browse userscript install ~/probe.user.js --restart",
     },
     CmdSpec {
@@ -495,7 +495,7 @@ pub const COMMANDS: &[CmdSpec] = &[
             arg!("method", "string", true),
             arg!("params", "string", false),
         ],
-        description: "向当前引擎会话发送任意 CDP 方法。方法名须为 Domain.method。",
+        description: "发送一条原生 CDP。方法名为 Domain.method。列出方法用 cdpMethods。",
         example: "browse cdp Runtime.evaluate --params '{\"expression\":\"1+1\"}'",
     },
     CmdSpec {
@@ -611,7 +611,7 @@ pub const COMMANDS: &[CmdSpec] = &[
         kind: CmdKind::Global,
         signature: "cdpMethods(domain?)",
         args: &[arg!("domain", "string", false, "全部")],
-        description: "列出 652 个 CDP 方法，可按域过滤。",
+        description: "列出原生 CDP 全部 652 个方法，可按域过滤。",
         example: "return await cdpMethods(\"Network\")",
     },
     CmdSpec {
@@ -1575,7 +1575,7 @@ pub const COMMANDS: &[CmdSpec] = &[
             arg!("method", "string", true),
             arg!("params", "object", false, "{}"),
         ],
-        description: "调用任意 CDP 方法。",
+        description: "调用一条原生 CDP。方法名为 Domain.method。",
         example: "await session.call(\"Page.navigate\", {url: \"https://example.com\"})",
     },
     CmdSpec {
@@ -1725,7 +1725,7 @@ pub fn render_manual() -> String {
     out.push_str(&format!("版本 {}。\n", env!("CARGO_PKG_VERSION")));
 
     out.push_str(
-        "\n定位：浏览器驾驶 CLI。命令方言为单步原语；Rune 为图灵完备编排（--vars 模板）；stdin 管道输入脚本；引擎内置 userscript 运行时。\n",
+        "\n定位：浏览器驾驶 CLI。命令方言为单步原语；Rune 为图灵完备编排（--vars 模板）；stdin 管道输入脚本；原生 CDP 与封装并存；引擎内置 userscript 运行时。\n",
     );
     out.push_str(
         "常用：goto / snapshot / findRefs / clickRef / fillRef / pageEval；多标签 listPageTargets、switchTab；rune 跑脚本；workspace 读技能。\n\n",

@@ -8,9 +8,11 @@
 
 驾驶面分三层：
 
-- **命令方言**：`browse '<片段>'`。单步原语，直调 CDP 与 `goto` / `snapshot` / `clickRef` 等；不含运算符与控制流。
-- **Rune**：`browse rune`。图灵完备编排（循环、分支、异步等待），经 `cdp::goto`、`cdp::js`、`cdp::raw`、`cdp::dialect` 操作浏览器。模板变量：`--vars k=v`（可重复），与 `@` 脚本同用时按 Jinja 渲染，默认定界 `<%= 键 %>`。
+- **命令方言**：`browse '<片段>'`。单步原语，不含运算符与控制流。原生 CDP：`session.<Domain>.<method>`（652 个方法）。封装：`goto`、`snapshot`、`clickRef` 等。
+- **Rune**：`browse rune`。图灵完备编排（循环、分支、异步等待）。原生 CDP：`cdp::raw("Domain.method", params)`。封装：`cdp::goto`、`cdp::js`、`cdp::dialect`（含等待与错误处理）。模板变量：`--vars k=v`（可重复），与 `@` 脚本同用时按 Jinja 渲染，默认定界 `<%= 键 %>`。
 - **管道**：stdin 作为输入。无实参时 `cat snippet.js | browse --js`、`cat plan.rn | browse rune` 将管道内容作为脚本；有实参时管道内容作为 rune 的 `cdp::stdin()`。
+
+原生 CDP 与封装并存。列出原生方法：`browse cdpMethods`。发送一条原生 CDP：`browse cdp <Domain.method> [--params JSON]`。封装在原生调用上补齐导航等待、`errorText`、无障碍短 ref，不替代原生面。
 
 其余能力：
 

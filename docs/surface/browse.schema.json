@@ -59,7 +59,7 @@
       "type": "object"
     },
     "cdpMethods": {
-      "description": "cdpMethods(domain?) 列出 652 个 CDP 方法，可按域过滤。",
+      "description": "cdpMethods(domain?) 列出原生 CDP 全部 652 个方法，可按域过滤。",
       "example": "return await cdpMethods(\"Network\")",
       "input": {
         "properties": {
@@ -298,7 +298,7 @@
       "type": "object"
     },
     "cli.cdp": {
-      "description": "browse cdp <Method> [--params JSON] 向当前引擎会话发送任意 CDP 方法。方法名须为 Domain.method。",
+      "description": "browse cdp <Method> [--params JSON] 发送一条原生 CDP。方法名为 Domain.method。列出方法用 cdpMethods。",
       "example": "browse cdp Runtime.evaluate --params '{\"expression\":\"1+1\"}'",
       "input": {
         "properties": {
@@ -444,7 +444,7 @@
       "type": "object"
     },
     "cli.eval": {
-      "description": "browse '<片段>' 求值命令方言片段（单步原语，无控制流）。自动拉起 daemon 与引擎。实参以 @ 开头则读文件；配 --vars 则按 Jinja 渲染（缺省 <%= 键 %>）。无实参且 stdin 非终端则从管道读取。",
+      "description": "browse '<片段>' 求值命令方言片段（单步原语，无控制流）。原生 CDP：session.Domain.method（652）。封装：goto、snapshot、clickRef 等。自动拉起 daemon 与引擎。实参以 @ 开头则读文件；配 --vars 则按 Jinja 渲染（缺省 <%= 键 %>）。无实参且 stdin 非终端则从管道读取。",
       "example": "browse 'return await currentTab()'",
       "input": {
         "properties": {
@@ -495,7 +495,7 @@
       "type": "object"
     },
     "cli.events": {
-      "description": "browse events [--since <seq>] [--last <n>] [--clear] 读取油猴脚本上报的事件环。脚本 POST /events；满 1000 条丢最旧。",
+      "description": "browse events [--since <seq>] [--last <n>] [--clear] 读取 userscript 上报的事件环。脚本 POST /events；满 1000 条丢最旧。",
       "example": "browse events --since 41",
       "input": {
         "properties": {
@@ -622,7 +622,7 @@
       "type": "object"
     },
     "cli.js-flag": {
-      "description": "browse --js '<JS 源码|@<路径>>' 在页面主世界求值 JS（Runtime.evaluate）。方言管编排，--js 管页面逻辑。@ 文件、--vars 模板、空实参走管道。",
+      "description": "browse --js '<JS 源码|@<路径>>' 在页面主世界求值 JS（Runtime.evaluate）。@ 文件、--vars 模板、空实参走管道。",
       "example": "browse --js 'return (() => { const f = s => s.length; return f(\"ab\"); })()'",
       "input": {
         "properties": {
@@ -712,7 +712,7 @@
       "type": "object"
     },
     "cli.rune": {
-      "description": "browse rune <script.rn|@名> [--vars k=v] [--root <dir>] 运行图灵完备的 Rune 编排脚本。入口 pub async fn main() -> Result。可循环、分支、异步等待，经 cdp::goto、js、raw、dialect 操作浏览器。--vars k=v 按 Jinja 渲染，默认定界 <%= 键 %>。无实参时 stdin 作为脚本；有实参时 stdin 作为 cdp::stdin()。browse rune stop 停止执行。",
+      "description": "browse rune <script.rn|@名> [--vars k=v] [--root <dir>] 运行图灵完备的 Rune 编排脚本。入口 pub async fn main() -> Result。可循环、分支、异步等待。原生 CDP：cdp::raw。封装：cdp::goto、js、dialect。--vars k=v 按 Jinja 渲染，默认定界 <%= 键 %>。无实参时 stdin 作为脚本；有实参时 stdin 作为 cdp::stdin()。browse rune stop 停止执行。",
       "example": "browse rune @x.test/fill-form --vars q=hello",
       "input": {
         "properties": {
@@ -841,7 +841,7 @@
       "type": "object"
     },
     "cli.userscript": {
-      "description": "browse userscript <install|list|enable|disable|remove|update|path|eval> 管理油猴脚本：install、list、enable、disable、remove、update、path、eval。装改加 --restart 后引擎重读。",
+      "description": "browse userscript <install|list|enable|disable|remove|update|path|eval> 管理 userscript：install、list、enable、disable、remove、update、path、eval。更改后加 --restart 使引擎重读。",
       "example": "browse userscript install ~/probe.user.js --restart",
       "input": {
         "properties": {
@@ -2364,7 +2364,7 @@
       "type": "object"
     },
     "session.call": {
-      "description": "session.call(method, params?) 调用任意 CDP 方法。",
+      "description": "session.call(method, params?) 调用一条原生 CDP。方法名为 Domain.method。",
       "example": "await session.call(\"Page.navigate\", {url: \"https://example.com\"})",
       "input": {
         "properties": {
