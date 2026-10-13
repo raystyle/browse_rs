@@ -470,3 +470,20 @@ fn roster_matches_global_parse_arms_bidirectionally() {
         );
     }
 }
+
+#[test]
+fn cdp_methods_cli_lists_without_engine() {
+    let (code, out, err) = run(&["cdpMethods"], &[]);
+    assert_eq!(code, 0, "browse cdpMethods：{err}");
+    assert!(out.contains("Page.navigate"), "{out}");
+    assert!(
+        out.contains("Fetch.enable"),
+        "Fetch 域应在原生 CDP 清单：{out}"
+    );
+    let (code, out, err) = run(&["cdpMethods", "Fetch"], &[]);
+    assert_eq!(code, 0, "browse cdpMethods Fetch：{err}");
+    assert!(out.contains("Fetch.enable"), "{out}");
+    assert!(!out.contains("Page.navigate"), "{out}");
+    let (code, _, err) = run(&["cdp", "methods", "Network"], &[]);
+    assert_eq!(code, 0, "browse cdp methods：{err}");
+}

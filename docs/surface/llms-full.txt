@@ -42,7 +42,8 @@
 | `browse workspace add <路径>` | 登记自定义技能仓。目录须存在；多根时序首优先。 |
 | `browse workspace remove <路径>` | 取消登记自定义技能仓。默认仓不受影响。 |
 | `browse userscript <install|list|enable|disable|remove|update|path|eval>` | 管理按油猴脚本标准实现的 userscript：install、list、enable、disable、remove、update、path、eval。更改后加 --restart 使引擎重读。 |
-| `browse cdp <Method> [--params JSON]` | 发送一条原生 CDP。方法名为 Domain.method。列出方法用 cdpMethods。 |
+| `browse cdp <Method> [--params JSON]` | 发送一条原生 CDP。方法名为 Domain.method。列出方法：browse cdpMethods。 |
+| `browse cdpMethods [Domain]` | 列出原生 CDP 方法，不启动引擎。可按域过滤。方言等价：await cdpMethods(domain?)。 |
 | `browse workspace list` | 列出技能仓中的域名段与页面 slug。 |
 | `browse workspace site <段>[/<文件>]` | 读取域名技能。只给段名返回 README；给 段/文件 读该文件。 |
 | `browse workspace page <slug>` | 读取页面技能 README。 |
@@ -592,7 +593,7 @@ browse userscript install ~/probe.user.js --restart
 
 ## `browse cdp <Method> [--params JSON]`
 
-发送一条原生 CDP。方法名为 Domain.method。列出方法用 cdpMethods。
+发送一条原生 CDP。方法名为 Domain.method。列出方法：browse cdpMethods。
 
 参数：
 - `method`（string），必填
@@ -600,6 +601,17 @@ browse userscript install ~/probe.user.js --restart
 
 ```js
 browse cdp Runtime.evaluate --params '{"expression":"1+1"}'
+```
+
+## `browse cdpMethods [Domain]`
+
+列出原生 CDP 方法，不启动引擎。可按域过滤。方言等价：await cdpMethods(domain?)。
+
+参数：
+- `domain`（string，缺省 全部）
+
+```js
+browse cdpMethods Network
 ```
 
 ## `browse workspace list`

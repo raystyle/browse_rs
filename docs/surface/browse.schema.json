@@ -298,7 +298,7 @@
       "type": "object"
     },
     "cli.cdp": {
-      "description": "browse cdp <Method> [--params JSON] 发送一条原生 CDP。方法名为 Domain.method。列出方法用 cdpMethods。",
+      "description": "browse cdp <Method> [--params JSON] 发送一条原生 CDP。方法名为 Domain.method。列出方法：browse cdpMethods。",
       "example": "browse cdp Runtime.evaluate --params '{\"expression\":\"1+1\"}'",
       "input": {
         "properties": {
@@ -314,6 +314,22 @@
         "required": [
           "method"
         ],
+        "type": "object"
+      },
+      "output": "runtime JSON（回值随页面与 CDP 而定）",
+      "type": "object"
+    },
+    "cli.cdp-methods": {
+      "description": "browse cdpMethods [Domain] 列出原生 CDP 方法，不启动引擎。可按域过滤。方言等价：await cdpMethods(domain?)。",
+      "example": "browse cdpMethods Network",
+      "input": {
+        "properties": {
+          "domain": {
+            "description": "缺省 全部",
+            "type": "string"
+          }
+        },
+        "required": [],
         "type": "object"
       },
       "output": "runtime JSON（回值随页面与 CDP 而定）",

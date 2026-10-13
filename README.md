@@ -98,6 +98,11 @@ cat plan.rn | browse rune
 browse rune @x.test/fill-form --vars q=hello
 browse 'return await screenshot()'
 browse 'await routeBlock("*://ads.example.com/*")'
+browse fetch https://example.com
+browse fetch https://example.com --markdown
+browse cdpMethods
+browse cdpMethods Network
+browse cdp Runtime.evaluate --params '{"expression":"1+1"}'
 browse workspace install
 browse chrome update
 browse issue new "标题" --body "复现步骤"

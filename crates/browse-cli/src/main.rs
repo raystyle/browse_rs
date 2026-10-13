@@ -152,6 +152,8 @@ enum Mode {
     UserscriptEval(String),
     /// `browse cdp <Method> [--params JSON]`：任意 CDP 域方法直通（#80）。
     CdpCall(String, Option<String>),
+    /// `browse cdpMethods [Domain]`：列出原生 CDP 方法，不启动引擎。
+    CdpMethods(Option<String>),
     /// `browse workspace site <段>[/<文件>]`：域技能清单或全文。
     WorkspaceSite(String),
     /// `browse workspace page <slug>`：页面技能全文。
@@ -711,18 +713,25 @@ async fn main() -> Result<()> {
                     }
                 }
             }
+            "cdpMethods" if snippets.is_empty() && mode_is_eval(&mode) => {
+                mode = Mode::CdpMethods(args.next_opt())
+            }
             "cdp" if snippets.is_empty() && mode_is_eval(&mode) => {
                 let method = args.next("cdp <Method 如 Runtime.evaluate>");
-                let mut params = None;
-                if let Some(t) = args.next_opt() {
-                    if t == "--params" {
-                        params = Some(args.next("cdp --params 的 JSON"));
-                    } else {
-                        eprintln!("browse: cdp 只认 --params JSON（收到 {t}，退出 2）");
-                        std::process::exit(2)
+                if method == "methods" {
+                    mode = Mode::CdpMethods(args.next_opt());
+                } else {
+                    let mut params = None;
+                    if let Some(t) = args.next_opt() {
+                        if t == "--params" {
+                            params = Some(args.next("cdp --params 的 JSON"));
+                        } else {
+                            eprintln!("browse: cdp 只认 --params JSON（收到 {t}，退出 2）");
+                            std::process::exit(2)
+                        }
                     }
+                    mode = Mode::CdpCall(method, params)
                 }
-                mode = Mode::CdpCall(method, params)
             }
             "issue" if snippets.is_empty() && mode_is_eval(&mode) => {
                 match args.next("issue").as_str() {
@@ -1483,6 +1492,25 @@ async fn main() -> Result<()> {
             };
             let r = client::cdp_call(&method, pv).await?;
             println!("{}", serde_json::to_string_pretty(&r)?);
+            Ok(())
+        }
+        Mode::CdpMethods(domain) => {
+            let list: Vec<&str> = match domain.as_deref() {
+                Some(d) => cdp::methods::methods_of_domain(d),
+                None => cdp::methods::METHODS_RAW.lines().collect(),
+            };
+            if let Some(d) = domain.as_deref() {
+                if list.is_empty() {
+                    anyhow::bail!("未知 CDP 域 {d}；下一步：browse cdpMethods 查看全部域");
+                }
+            }
+            if json {
+                println!("{}", serde_json::to_string_pretty(&list)?);
+            } else {
+                for m in list {
+                    println!("{m}");
+                }
+            }
             Ok(())
         }
         Mode::WorkspaceStatus => {

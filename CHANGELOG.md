@@ -4,7 +4,12 @@
 
 ## Unreleased
 
-（无；最新封版 0.35.3）
+（无；最新封版 0.35.4）
+
+## 0.35.4（2026-10-14）
+
+- CLI：`browse cdpMethods [Domain]` 列出原生 CDP 方法，不启动引擎（`browse cdp methods` 同效）
+- `--help` 与 README 列出 `browse fetch` 与 `browse cdpMethods`
 
 ## 0.35.3（2026-10-14）
 

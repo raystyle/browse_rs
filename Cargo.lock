@@ -148,7 +148,7 @@ dependencies = [
 
 [[package]]
 name = "browse-cli"
-version = "0.35.3"
+version = "0.35.4"
 dependencies = [
  "anyhow",
  "base64",
@@ -170,7 +170,7 @@ dependencies = [
 
 [[package]]
 name = "browse-core"
-version = "0.35.3"
+version = "0.35.4"
 dependencies = [
  "anyhow",
  "axum",
@@ -190,7 +190,7 @@ dependencies = [
 
 [[package]]
 name = "browse-rune"
-version = "0.35.3"
+version = "0.35.4"
 dependencies = [
  "anyhow",
  "cdp",
@@ -231,7 +231,7 @@ dependencies = [
 
 [[package]]
 name = "cdp"
-version = "0.35.3"
+version = "0.35.4"
 dependencies = [
  "anyhow",
  "futures",

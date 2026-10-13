@@ -495,8 +495,16 @@ pub const COMMANDS: &[CmdSpec] = &[
             arg!("method", "string", true),
             arg!("params", "string", false),
         ],
-        description: "发送一条原生 CDP。方法名为 Domain.method。列出方法用 cdpMethods。",
+        description: "发送一条原生 CDP。方法名为 Domain.method。列出方法：browse cdpMethods。",
         example: "browse cdp Runtime.evaluate --params '{\"expression\":\"1+1\"}'",
+    },
+    CmdSpec {
+        name: "cdp-methods",
+        kind: CmdKind::Cli,
+        signature: "browse cdpMethods [Domain]",
+        args: &[arg!("domain", "string", false, "全部")],
+        description: "列出原生 CDP 方法，不启动引擎。可按域过滤。方言等价：await cdpMethods(domain?)。",
+        example: "browse cdpMethods Network",
     },
     CmdSpec {
         name: "workspace-list",
@@ -1889,10 +1897,11 @@ pub const HELP_GROUPS: &[(&str, &[&str])] = &[
         ],
     ),
     (
-        "油猴与直通",
+        "userscript 与 CDP",
         &[
             "browse userscript <install|list|enable|disable|remove|update|path|eval>",
             "browse cdp <Method>",
+            "browse cdpMethods",
         ],
     ),
     ("自更新", &["browse update"]),
