@@ -162,6 +162,15 @@ class Fixtures(BaseHTTPRequestHandler):
             self.send_response(200); self.end_headers()
             self.wfile.write(b"blobby-bytes-0123456789")
             return
+        if self.path.startswith("/res-size"):
+            # G-size 腿源:@require/@resource 单件尺寸档(与 /big 的 xhr 32MB 账分开)
+            q = urllib.parse.parse_qs(self.path.split("?", 1)[1] if "?" in self.path else "")
+            n = min(int(q.get("b", ["0"])[0]), 16 * 1024 * 1024)
+            self.send_response(200)
+            self.send_header("Content-Type", "application/octet-stream")
+            self.end_headers()
+            self.wfile.write(b"S" * n)
+            return
         if self.path.startswith("/big"):
             q = urllib.parse.parse_qs(self.path.split("?", 1)[1] if "?" in self.path else "")
             mb = min(int(q.get("mb", ["1"])[0]), 64)
@@ -489,7 +498,7 @@ def domain_B(ch, R):
     ok = (r.get("abortCalled") or r.get("aborted")) and not r.get("late")
     R.add("B", "22", "过" if ok else "缺", f"{r}")
     # 19 大响应/20 anonymous/21 redirect/26-27 控制器深面/28-30 webRequest:台架面不足,环境限注因
-    R.add("B", "19", "环境限", "32/34MB 边界需大 payload 服务与内存限注,后续批补(记因由非静默)")
+    R.add("B", "19", "环境限", "32/34MB 边界需大 payload 服务与内存限注,后续批补(记因由非静默;xhr 响应体 32MB 账,@require/@resource 8MiB 另账见 G/63)")
     R.add("B", "20", "环境限", "anonymous 凭据剥离需带凭据态服务,本批无 https/cookie 基建")
     R.add("B", "21", "环境限", "redirect 透传需重定向链服务,后续批补")
     R.add("B", "26+27", "环境限", "pause/resume/排队补发需下载事件时序窗,后续批补")
@@ -806,6 +815,9 @@ def domain_G(ch, R):
     # 研究中,注记非败);kBody 归末桶修后 body 档在位执行即达标(r4b 注入
     # 归末桶,rs 时点不苛求)
     body_in_place = rab and rab.get("hasBody")
+    if os.environ.get("G57_STRICT") == "1":  # 严判道:显式旗标才跑,红不入缺省全表(engine-gaps 单第 1 条)
+        R.add("G", "57-strict", "过" if ok_s else "缺",
+              f"start 档严判 rs={ras and ras.get('rs')} hasBody={ras and ras.get('hasBody')}(旗标道,不计缺省)")
     R.add("G", "57", "过" if body_in_place else "缺",
           f"start={ras and (ras.get('rs'), ras.get('hasBody'))}(complete 属 #95 开放注记) "
           f"body={rab and (rab.get('rs'), rab.get('hasBody'))}(kBody 修后在位即标) "
@@ -847,6 +859,28 @@ def domain_G(ch, R):
     a = attr_on(f"{B}/?op=g", "g-res", 3)
     R.add("G", "62", "过" if (a and a.get("txt") == "res-one-body" and a.get("url")) else "缺",
           f"txt={a and a.get('txt')!r} url={a and a.get('url')!r};GET res1={Fixtures.STAT.get('res1.txt', 0) - hr}")
+    # 63(size):@require/@resource 单件 8MiB 契约(r14 无界下载修面;engine-gaps 单第 2 条)
+    # 两本账:本腿=资源 8MiB;B19=GM_xmlhttpRequest 响应体 32MB,互不混单
+    gi("gsz7", [f"@match {B}/*", "@grant GM_getResourceText", f"@resource r7 {B}/res-size?b={7*1024*1024}"],
+       "out({r7: GM_getResourceText('r7')});")
+    a7 = attr_on(f"{B}/?op=g", "g-gsz7", 4)
+    v7 = a7.get("r7") if a7 else None
+    ok7 = isinstance(v7, str) and len(v7) == 7 * 1024 * 1024
+    gi("gsz8", [f"@match {B}/*", "@grant GM_getResourceText", f"@resource r8 {B}/res-size?b={8*1024*1024+1}"],
+       "out({r8: GM_getResourceText('r8')});")
+    a8 = attr_on(f"{B}/?op=g", "g-gsz8", 4)
+    v8 = a8.get("r8") if a8 else None
+    # 大声弃=读回 null/undefined(非静默截断:若回 string 即截断形,判缺)
+    dropped = v8 is None
+    truncated = isinstance(v8, str) and len(v8) > 0
+    alive = bool(ch.cmd("Browser.getVersion", timeout=8).get("product", ""))
+    ok63 = ok7 and dropped and alive
+    R.add("G", "63(size)", "过" if ok63 else "缺",
+          f"7MiB 载入={ok7}(len={len(v7) if isinstance(v7, str) else None});"
+          f"8MiB+1 弃={dropped}(截断形={truncated});进程仍在={bool(alive)}"
+          f"(require/resource 8MiB 账;r15 前旧界引擎此腿红属如实)")
+    uninstall_by_name(ch, "cv-g-gsz7")
+    uninstall_by_name(ch, "cv-g-gsz8")
 
 
 def clean_slate(ch, *keep):
@@ -1451,7 +1485,7 @@ def domain_B2(ch, R):
     v34 = r.get("b34")
     refused34 = isinstance(v34, str) and str(v34).startswith("ERR")
     R.add("B", "19", "过" if (ok32 and refused34) else "缺",
-          f"32MB={r.get('b32')}({ok32});34MB={v34!r}(拒={refused34};若满载则上限门未实现)")
+          f"32MB={r.get('b32')}({ok32});34MB={v34!r}(拒={refused34};若满载则上限门未实现);xhr 响应体 32MB 账,资源 8MiB 另账见 G/63")
     # 20 anonymous 凭据剥离
     r = ch.probe("anon", wait=5) or {}
     ok20 = "cvp" in str(r.get("plain", "")) and "cvp" not in str(r.get("anon", ""))
