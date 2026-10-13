@@ -4,7 +4,12 @@
 
 ## Unreleased
 
-（无；最新封版 0.35.2）
+（无；最新封版 0.35.3）
+
+## 0.35.3（2026-10-14）
+
+- 写明原生 CDP（652 个 `Domain.method`）与封装（`goto`、`snapshot`、`cdp::goto` 等）并存
+- userscript 按油猴脚本标准实现：`// ==UserScript==` 元数据与 GM_* API
 
 ## 0.35.2（2026-10-14）
 

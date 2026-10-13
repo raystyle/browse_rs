@@ -1,6 +1,6 @@
 {
   "crate": "browse-rune",
-  "version": "0.35.2",
+  "version": "0.35.3",
   "items": [
     {
       "path": "browse_rune::exec",
