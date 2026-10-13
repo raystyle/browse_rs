@@ -263,7 +263,12 @@ fn template_vars_arg_contract() {
         &[],
     );
     assert_eq!(code, 1, "死口连接拒属执行失败非模板错：{err}");
-    assert!(err.contains("Connection refused"), "填充毕进求值道：{err}");
+    assert!(
+        err.contains("Connection refused")
+            || err.contains("积极拒绝")
+            || err.contains("os error 10061"),
+        "填充毕进求值道：{err}"
+    );
     assert!(!err.contains("模板"), "模板面应已通过：{err}");
 }
 
