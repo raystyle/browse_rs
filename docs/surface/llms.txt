@@ -150,7 +150,7 @@
 | `print(x)` | 把值写到 daemon 标准错误。 |
 | `JSON.parse(s)` | 把 JSON 文本解析成值。 |
 | `JSON.stringify(v, indent?)` | 把值序列化为 JSON 字符串。 |
-| `值.slice(start,end?) 等` | 字符串与数组的 slice、split、join、includes 等。 |
+| `值.slice(start,end?) 等` | 字符串：slice、split、includes、startsWith、endsWith、trim、toUpperCase、toLowerCase。数组：slice、join、includes、concat。 |
 
 ## session 方法
 

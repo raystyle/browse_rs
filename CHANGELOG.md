@@ -11,6 +11,7 @@
 - 命令帮助与 `--llms` 改为标准短说明，去掉需求编号与过程叙述
 - README 写入 clean-chrome latest `155.0.8059.39-gen8-r5` 三平台直下地址
 - `arg_contract` 死口连接拒同时认英文 Connection refused 与 WSL 回环 10061
+- `value-methods` 目录描述列出全部字符串与数组方法名
 
 ## 0.35.0（2026-10-12，REQ-042）
 

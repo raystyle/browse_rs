@@ -2804,7 +2804,7 @@
       "type": "object"
     },
     "value-methods": {
-      "description": "值.slice(start,end?) 等 字符串与数组的 slice、split、join、includes 等。",
+      "description": "值.slice(start,end?) 等 字符串：slice、split、includes、startsWith、endsWith、trim、toUpperCase、toLowerCase。数组：slice、join、includes、concat。",
       "example": "return body.slice(0, 200)",
       "input": {
         "properties": {},

@@ -1493,7 +1493,7 @@ pub const COMMANDS: &[CmdSpec] = &[
         kind: CmdKind::Global,
         signature: "值.slice(start,end?) 等",
         args: &[],
-        description: "字符串与数组的 slice、split、join、includes 等。",
+        description: "字符串：slice、split、includes、startsWith、endsWith、trim、toUpperCase、toLowerCase。数组：slice、join、includes、concat。",
         example: r#"return body.slice(0, 200)"#,
     },
     // ---- session 方法 ----
