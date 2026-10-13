@@ -484,7 +484,7 @@ pub const COMMANDS: &[CmdSpec] = &[
         kind: CmdKind::Cli,
         signature: "browse userscript <install|list|enable|disable|remove|update|path|eval>",
         args: &[arg!("id", "string", false)],
-        description: "管理 userscript：install、list、enable、disable、remove、update、path、eval。更改后加 --restart 使引擎重读。",
+        description: "管理按油猴脚本标准实现的 userscript：install、list、enable、disable、remove、update、path、eval。更改后加 --restart 使引擎重读。",
         example: "browse userscript install ~/probe.user.js --restart",
     },
     CmdSpec {
@@ -1725,7 +1725,7 @@ pub fn render_manual() -> String {
     out.push_str(&format!("版本 {}。\n", env!("CARGO_PKG_VERSION")));
 
     out.push_str(
-        "\n定位：浏览器驾驶 CLI。命令方言为单步原语；Rune 为图灵完备编排（--vars 模板）；stdin 管道输入脚本；原生 CDP 与封装并存；引擎内置 userscript 运行时。\n",
+        "\n定位：浏览器驾驶 CLI。命令方言为单步原语；Rune 为图灵完备编排（--vars 模板）；stdin 管道输入脚本；原生 CDP 与封装并存；userscript 按油猴脚本标准实现。\n",
     );
     out.push_str(
         "常用：goto / snapshot / findRefs / clickRef / fillRef / pageEval；多标签 listPageTargets、switchTab；rune 跑脚本；workspace 读技能。\n\n",
@@ -2017,7 +2017,7 @@ pub fn render_help() -> String {
         "\n片段方言：\n  const tabs = await listPageTargets()\n  await session.use(tabs[0].targetId)\n  await goto(\"https://example.com\", {waitIdle: true})\n  支持 await/const/return、字面量与成员下标；模板字符串 raw 可多行内嵌页面代码；函数与控制流走 --js；等加载用 goto()/waitLoad()。\n  完整语言面、全局函数与 session 方法清单：browse --llms\n",
     );
     out.push_str(
-        "\nuserscript：\n  引擎内置运行时。browse userscript install 写入用户数据目录，按 @match 注入。管理页 chrome://userscripts。更改后加 --restart。\n",
+        "\nuserscript：\n  按油猴脚本标准实现。browse userscript install 写入用户数据目录，按 @match 注入。管理页 chrome://userscripts。更改后加 --restart。\n",
     );
     out.push_str(
         "\nEnvironment Variables:\n  BROWSE_PORT              daemon 端口（default: 9880）\n  BROWSE_NAME              实例名。派生状态目录与端口 9900-9999\n  BROWSE_CHROME            Chromium 可执行文件。文件不存在则继续后续发现序\n  BROWSE_PROFILE           用户数据目录（default: engine-profile）\n  BROWSE_CDP_WS            DevTools WebSocket 地址\n  BROWSE_NO_ATTACH=1       跳过附着，直接启动隔离实例\n  BROWSE_NO_AUTO_DIALOG=1  不自动处理对话框\n  BROWSE_EVAL_TIMEOUT      求值超时秒（default: 60）\n  BROWSE_RUNE_TIMEOUT      rune 超时秒（default: 60）\n  BROWSE_IDLE_TIMEOUT      引擎闲置回收毫秒（default: 3600000，0 关闭）\n  BROWSE_PROXY             引擎 HTTP 代理\n  BROWSE_PROXY_BYPASS      代理绕过列表\n  BROWSE_ENGINE_ARGS       附加引擎参数，空格分隔\n  BROWSE_SECRETS           dotenv 密钥文件\n  BROWSE_WORKSPACE         技能仓根（default: ~/.browse-rs/workspace）\n  BROWSE_SNIPPETS_ROOT     脚本查找根\n  BROWSE_DOMAIN_SKILLS=0   关闭回执中的域名技能提示\n  BROWSE_PAGE_SKILLS=0     关闭回执中的页面技能提示\n  BROWSE_CHROME_MIRROR     Chromium 镜像\n  BROWSE_CHROME_LATEST     chrome update 的 latest 指针\n  BROWSE_RELEASE_MIRROR    browse 自更新镜像\n",

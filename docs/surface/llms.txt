@@ -41,7 +41,7 @@
 | `browse workspace update` | git pull --ff-only 更新技能仓。有未提交修改则拒绝。 |
 | `browse workspace add <路径>` | 登记自定义技能仓。目录须存在；多根时序首优先。 |
 | `browse workspace remove <路径>` | 取消登记自定义技能仓。默认仓不受影响。 |
-| `browse userscript <install|list|enable|disable|remove|update|path|eval>` | 管理 userscript：install、list、enable、disable、remove、update、path、eval。更改后加 --restart 使引擎重读。 |
+| `browse userscript <install|list|enable|disable|remove|update|path|eval>` | 管理按油猴脚本标准实现的 userscript：install、list、enable、disable、remove、update、path、eval。更改后加 --restart 使引擎重读。 |
 | `browse cdp <Method> [--params JSON]` | 发送一条原生 CDP。方法名为 Domain.method。列出方法用 cdpMethods。 |
 | `browse workspace list` | 列出技能仓中的域名段与页面 slug。 |
 | `browse workspace site <段>[/<文件>]` | 读取域名技能。只给段名返回 README；给 段/文件 读该文件。 |

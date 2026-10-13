@@ -841,7 +841,7 @@
       "type": "object"
     },
     "cli.userscript": {
-      "description": "browse userscript <install|list|enable|disable|remove|update|path|eval> 管理 userscript：install、list、enable、disable、remove、update、path、eval。更改后加 --restart 使引擎重读。",
+      "description": "browse userscript <install|list|enable|disable|remove|update|path|eval> 管理按油猴脚本标准实现的 userscript：install、list、enable、disable、remove、update、path、eval。更改后加 --restart 使引擎重读。",
       "example": "browse userscript install ~/probe.user.js --restart",
       "input": {
         "properties": {

@@ -4,7 +4,7 @@
 [![Release](https://img.shields.io/github/v/release/raystyle/browse_rs)](https://github.com/raystyle/browse-rs/releases)
 [![License](https://img.shields.io/badge/license-MIT_OR_Apache--2.0-blue)](LICENSE-MIT)
 
-业界唯一把自研 Chromium 内核、引擎内置 userscript 运行时、以及 Rune 图灵完备编排做成同一条驾驶面的浏览器 CLI。常驻 daemon 保存会话、变量、活动 tab 与元素引用。绝不关闭用户自己的浏览器。
+业界唯一把自研 Chromium 内核、按油猴脚本标准实现的 userscript 运行时、以及 Rune 图灵完备编排做成同一条驾驶面的浏览器 CLI。常驻 daemon 保存会话、变量、活动 tab 与元素引用。绝不关闭用户自己的浏览器。
 
 驾驶面分三层：
 
@@ -17,7 +17,7 @@
 其余能力：
 
 - 定制 Chrome 核：`browse chrome install/update/use/remove/list/doctor`
-- 引擎内置 userscript 运行时：GM_*、`@require`/`@resource`、`document-start`/`idle`，按 `@match` 注入当前引擎用户数据目录，不依赖扩展商店
+- userscript：按油猴脚本标准实现。支持 `// ==UserScript==` 元数据（`@match`、`@grant`、`@require`、`@resource`、`@run-at`）与 GM_* API。`browse userscript install` 写入引擎用户数据目录，按 `@match` 注入；更改后加 `--restart`
 - 页面原语：snapshot/screenshot/pdf、clickRef/fillRef、路由拦截与假应答
 - workspace：域名段与页面 slug 在 `goto` / `fetch` / `detect` 回执中附加 `domain_skills_hint` / `page_skills_hint`；探针 `see` 事件另生成 `cta`
 - 附着优先：有本机浏览器就附着，否则 spawn 隔离实例
