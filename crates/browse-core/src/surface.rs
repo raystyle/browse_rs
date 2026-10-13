@@ -353,7 +353,7 @@ pub const COMMANDS: &[CmdSpec] = &[
                 "--root 旗标 > workspace scripts/（只对 @ 名生效）"
             ),
         ],
-        description: "运行 Rune 脚本。入口 pub async fn main() -> Result。cdp 模块提供 goto/js/raw/dialect 等。--vars 模板；browse rune stop 停止执行。",
+        description: "运行图灵完备的 Rune 编排脚本。入口 pub async fn main() -> Result。可循环、分支、异步等待，经 cdp::goto、js、raw、dialect 操作浏览器。--vars 模板；browse rune stop 停止执行。",
         example: "browse rune @x.test/fill-form --vars q=hello",
     },
     CmdSpec {
@@ -1724,7 +1724,9 @@ pub fn render_manual() -> String {
     let mut out = String::from("# browse\n\n");
     out.push_str(&format!("版本 {}。\n", env!("CARGO_PKG_VERSION")));
 
-    out.push_str("\n定位：浏览器驾驶 CLI。方言片段操作页面；rune 编排控制流；油猴跑在引擎内。\n");
+    out.push_str(
+        "\n定位：浏览器驾驶 CLI。Rune 图灵完备编排操作浏览器；方言提供单步原语；油猴跑在引擎内。\n",
+    );
     out.push_str(
         "常用：goto / snapshot / findRefs / clickRef / fillRef / pageEval；多标签 listPageTargets、switchTab；rune 跑脚本；workspace 读技能。\n\n",
     );

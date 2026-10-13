@@ -4,17 +4,18 @@
 [![Release](https://img.shields.io/github/v/release/raystyle/browse_rs)](https://github.com/raystyle/browse-rs/releases)
 [![License](https://img.shields.io/badge/license-MIT_OR_Apache--2.0-blue)](LICENSE-MIT)
 
-业界唯一把自研 Chromium 内核和引擎内完整油猴接口做成同一条驾驶面的浏览器 CLI。一条 JS 方言驱动定制 Chrome 核；油猴跑在引擎里，不是商店扩展。常驻 daemon 保存会话、变量、活动 tab 与元素引用。绝不关闭用户自己的浏览器。
+业界唯一把自研 Chromium 内核、引擎内完整油猴接口、以及 Rune 图灵完备编排做成同一条驾驶面的浏览器 CLI。油猴跑在引擎里，不是商店扩展。常驻 daemon 保存会话、变量、活动 tab 与元素引用。绝不关闭用户自己的浏览器。
 
+- Rune 编排：`browse rune` 运行 `mech.rn`。脚本可循环、分支、异步等待，经 `cdp::goto`、`cdp::js`、`cdp::raw`、`cdp::dialect` 完整操作浏览器。方言不含控制流，多步流程写在 Rune
 - 定制 Chrome 核：`browse chrome install/update/use/remove/list/doctor`
 - 完整油猴接口：GM_*、`@require`/`@resource`、document-start/idle
 - 方言直调 CDP 652 方法（`session.<Domain>.<method>`）
 - 页面原语：snapshot/screenshot/pdf、clickRef/fillRef、路由拦截与假应答
-- workspace：油猴探针 + rune 编排，goto/fetch/detect 回执点名
+- workspace：油猴探针与 Rune 编排成对；`goto` / `fetch` / `detect` 回执附带技能提示
 - 附着优先：有本机浏览器就附着，否则 spawn 隔离实例
 - `--llms` 手册、错误带可照抄下一步、`browse update` 自升级
 
-不做 MCP；控制流不进方言；不做 Cloud browser。
+不做 MCP；不做 Cloud browser。
 
 ## 部署
 

@@ -712,7 +712,7 @@
       "type": "object"
     },
     "cli.rune": {
-      "description": "browse rune <script.rn|@名> [--vars k=v] [--root <dir>] 运行 Rune 脚本。入口 pub async fn main() -> Result。cdp 模块提供 goto/js/raw/dialect 等。--vars 模板；browse rune stop 停止执行。",
+      "description": "browse rune <script.rn|@名> [--vars k=v] [--root <dir>] 运行图灵完备的 Rune 编排脚本。入口 pub async fn main() -> Result。可循环、分支、异步等待，经 cdp::goto、js、raw、dialect 操作浏览器。--vars 模板；browse rune stop 停止执行。",
       "example": "browse rune @x.test/fill-form --vars q=hello",
       "input": {
         "properties": {
