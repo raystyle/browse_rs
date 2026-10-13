@@ -20,7 +20,7 @@
 | `browse --llms [--full|--json]` | 打印 agent 手册。--full 完整目录，--json Schema。不启动 daemon。 |
 | `browse --repl` | 进入交互 REPL。裸调用只打印帮助。 |
 | `browse --version | -V` | 打印版本号。 |
-| `browse chrome install <版本> [部署目录]` | 安装 Chromium 并设为当前版本。默认从镜像下载；给出目录则本地导入。 |
+| `browse chrome install <版本> [部署目录]` | 安装自研 Chromium（clean-chrome）并设为当前版本。默认从镜像下载；给出目录则本地导入。 |
 | `browse chrome list` | 列出已安装的 Chromium 版本和当前 pin。 |
 | `browse chrome use <版本>` | 把当前引擎切到已安装的版本。 |
 | `browse chrome update` | 升级到镜像 latest 并切换使用。 |
@@ -56,7 +56,7 @@
 | `listPageTargets()` | 列出可附着的 page target。own=true 的才能 closeTab。 |
 | `resolveWsUrl(opts?)` | 把 wsUrl、port 或 profileDir 解析成 WebSocket URL，不连接。 |
 | `detectBrowsers()` | 探测本机已开启远程调试的浏览器。 |
-| `chromeInstall(opts?)` | 安装 Chromium 并 pin。fromDir 本地导入；只给 version 则从镜像下载。 |
+| `chromeInstall(opts?)` | 安装自研 Chromium（clean-chrome）并 pin。fromDir 本地导入；只给 version 则从镜像下载。 |
 | `chromeList()` | 列出已安装版本和当前 pin。 |
 | `chromeUse(version)` | 把 pin 切到已安装版本。 |
 | `chromeUpdate()` | 升级到镜像 latest 并切换 pin。 |

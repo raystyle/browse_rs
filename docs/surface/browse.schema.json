@@ -104,7 +104,7 @@
       "type": "object"
     },
     "chromeInstall": {
-      "description": "chromeInstall(opts?) 安装 Chromium 并 pin。fromDir 本地导入；只给 version 则从镜像下载。",
+      "description": "chromeInstall(opts?) 安装自研 Chromium（clean-chrome）并 pin。fromDir 本地导入；只给 version 则从镜像下载。",
       "example": "await chromeInstall({version: \"152.0.7977.84\"})",
       "input": {
         "properties": {
@@ -347,7 +347,7 @@
       "type": "object"
     },
     "cli.chrome-install": {
-      "description": "browse chrome install <版本> [部署目录] 安装 Chromium 并设为当前版本。默认从镜像下载；给出目录则本地导入。",
+      "description": "browse chrome install <版本> [部署目录] 安装自研 Chromium（clean-chrome）并设为当前版本。默认从镜像下载；给出目录则本地导入。",
       "example": "browse chrome install 155.0.8059.39-gen8-r5",
       "input": {
         "properties": {

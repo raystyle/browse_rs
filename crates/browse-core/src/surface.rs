@@ -241,7 +241,7 @@ pub const COMMANDS: &[CmdSpec] = &[
             arg!("version", "string", true),
             arg!("fromDir", "string", false, "缺省走 R2 镜像下载"),
         ],
-        description: "安装 Chromium 并设为当前版本。默认从镜像下载；给出目录则本地导入。",
+        description: "安装自研 Chromium（clean-chrome）并设为当前版本。默认从镜像下载；给出目录则本地导入。",
         example: "browse chrome install 155.0.8059.39-gen8-r5",
     },
     CmdSpec {
@@ -571,7 +571,7 @@ pub const COMMANDS: &[CmdSpec] = &[
         kind: CmdKind::Global,
         signature: "chromeInstall(opts?)",
         args: &[arg!("opts", "object", false, "{fromDir}|{version}")],
-        description: "安装 Chromium 并 pin。fromDir 本地导入；只给 version 则从镜像下载。",
+        description: "安装自研 Chromium（clean-chrome）并 pin。fromDir 本地导入；只给 version 则从镜像下载。",
         example: "await chromeInstall({version: \"152.0.7977.84\"})",
     },
     CmdSpec {
@@ -1733,7 +1733,7 @@ pub fn render_manual() -> String {
     out.push_str(&format!("版本 {}。\n", env!("CARGO_PKG_VERSION")));
 
     out.push_str(
-        "\n定位：浏览器驾驶 CLI。命令方言为单步原语；Rune 为图灵完备编排（--vars 模板）；stdin 管道输入脚本；原生 CDP 与封装并存；userscript 按油猴脚本标准实现。\n",
+        "\n定位：浏览器驾驶 CLI。自研 Chromium（clean-chrome）含油猴标准运行时、远程调试免确认、无命令行黄条。命令方言为单步原语；Rune 为图灵完备编排（--vars 模板）；stdin 管道输入脚本；原生 CDP 与封装并存。\n",
     );
     out.push_str(
         "常用：goto / snapshot / findRefs / clickRef / fillRef / pageEval；多标签 listPageTargets、switchTab；rune 跑脚本；workspace 读技能。\n\n",
