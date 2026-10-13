@@ -1,12 +1,12 @@
 # browse 命令清单
 
-方言：browse '<片段>'。油猴脚本按 @match 自动注入。完整手册：browse --llms。
+命令方言：browse '<片段>'。Rune：browse rune。userscript 按 @match 注入。完整手册：browse --llms。
 
 ## CLI
 
 | 命令 | 说明 |
 | --- | --- |
-| `browse '<片段>'` | 求值方言片段。自动拉起 daemon 与引擎。实参以 @ 开头则读文件为片段；配 --vars 则按 Jinja 渲染（缺省 <%= 键 %>）。 |
+| `browse '<片段>'` | 求值命令方言片段（单步原语，无控制流）。自动拉起 daemon 与引擎。实参以 @ 开头则读文件；配 --vars 则按 Jinja 渲染（缺省 <%= 键 %>）。无实参且 stdin 非终端则从管道读取。 |
 | `browse -e '<片段>'` | 显式 --eval，与缺省求值等价。 |
 | `browse < 文件` | 从 stdin 批处理：括号配平即提交一段，变量跨段共享。 |
 | `browse --js '<JS 源码|@<路径>>'` | 在页面主世界求值 JS（Runtime.evaluate）。方言管编排，--js 管页面逻辑。@ 文件、--vars 模板、空实参走管道。 |
@@ -28,7 +28,7 @@
 | `browse chrome doctor` | 检查托管 Chromium 是否在位、文件是否完整、pin 是否有效。 |
 | `browse fetch <url> [--html] [--markdown|-m] [--timeout <s>]` | 一次性抓取 URL。默认 HTTP；正文空、墙页或过短则改走引擎。--html 返回渲染 DOM；--markdown 转为 Markdown。 |
 | `browse events [--since <seq>] [--last <n>] [--clear]` | 读取油猴脚本上报的事件环。脚本 POST /events；满 1000 条丢最旧。 |
-| `browse rune <script.rn|@名> [--vars k=v] [--root <dir>]` | 运行图灵完备的 Rune 编排脚本。入口 pub async fn main() -> Result。可循环、分支、异步等待，经 cdp::goto、js、raw、dialect 操作浏览器。--vars 模板；browse rune stop 停止执行。 |
+| `browse rune <script.rn|@名> [--vars k=v] [--root <dir>]` | 运行图灵完备的 Rune 编排脚本。入口 pub async fn main() -> Result。可循环、分支、异步等待，经 cdp::goto、js、raw、dialect 操作浏览器。--vars k=v 按 Jinja 渲染，默认定界 <%= 键 %>。无实参时 stdin 作为脚本；有实参时 stdin 作为 cdp::stdin()。browse rune stop 停止执行。 |
 | `browse issue new <标题> --acceptance <验收> [--kind bug|improvement] [--body <正文>] [--dry-run]` | 创建 issue。--acceptance 必填。--dry-run 只预览不提交。 |
 | `browse issue list [--limit <n>] [--before <id>]` | 列出 issue。--limit 条数，打满则还有更多。 |
 | `browse issue show <id>` | 显示一条 issue。 |

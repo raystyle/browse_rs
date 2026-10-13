@@ -4,14 +4,20 @@
 [![Release](https://img.shields.io/github/v/release/raystyle/browse_rs)](https://github.com/raystyle/browse-rs/releases)
 [![License](https://img.shields.io/badge/license-MIT_OR_Apache--2.0-blue)](LICENSE-MIT)
 
-业界唯一把自研 Chromium 内核、引擎内完整油猴接口、以及 Rune 图灵完备编排做成同一条驾驶面的浏览器 CLI。油猴跑在引擎里，不是商店扩展。常驻 daemon 保存会话、变量、活动 tab 与元素引用。绝不关闭用户自己的浏览器。
+业界唯一把自研 Chromium 内核、引擎内置 userscript 运行时、以及 Rune 图灵完备编排做成同一条驾驶面的浏览器 CLI。常驻 daemon 保存会话、变量、活动 tab 与元素引用。绝不关闭用户自己的浏览器。
 
-- Rune 编排：`browse rune` 运行 `mech.rn`。脚本可循环、分支、异步等待，经 `cdp::goto`、`cdp::js`、`cdp::raw`、`cdp::dialect` 完整操作浏览器。方言不含控制流，多步流程写在 Rune
+驾驶面分三层：
+
+- **命令方言**：`browse '<片段>'`。单步原语，直调 CDP 与 `goto` / `snapshot` / `clickRef` 等；不含运算符与控制流。
+- **Rune**：`browse rune`。图灵完备编排（循环、分支、异步等待），经 `cdp::goto`、`cdp::js`、`cdp::raw`、`cdp::dialect` 操作浏览器。模板变量：`--vars k=v`（可重复），与 `@` 脚本同用时按 Jinja 渲染，默认定界 `<%= 键 %>`。
+- **管道**：stdin 作为输入。无实参时 `cat snippet.js | browse --js`、`cat plan.rn | browse rune` 将管道内容作为脚本；有实参时管道内容作为 rune 的 `cdp::stdin()`。
+
+其余能力：
+
 - 定制 Chrome 核：`browse chrome install/update/use/remove/list/doctor`
-- 完整油猴接口：GM_*、`@require`/`@resource`、document-start/idle
-- 方言直调 CDP 652 方法（`session.<Domain>.<method>`）
+- 引擎内置 userscript 运行时：GM_*、`@require`/`@resource`、`document-start`/`idle`，按 `@match` 注入当前引擎用户数据目录，不依赖扩展商店
 - 页面原语：snapshot/screenshot/pdf、clickRef/fillRef、路由拦截与假应答
-- workspace：油猴探针与 Rune 编排成对；`goto` / `fetch` / `detect` 回执附带技能提示
+- workspace：域名段与页面 slug 在 `goto` / `fetch` / `detect` 回执中附加 `domain_skills_hint` / `page_skills_hint`；探针 `see` 事件另生成 `cta`
 - 附着优先：有本机浏览器就附着，否则 spawn 隔离实例
 - `--llms` 手册、错误带可照抄下一步、`browse update` 自升级
 
@@ -71,7 +77,7 @@ browse chrome install 155.0.8059.39-gen8-r5
 | `BROWSE_CHROME_LATEST` | `chrome update` 发现源钉 |
 | `BROWSE_RELEASE_MIRROR` | `browse update` 镜像覆写 |
 | `BROWSE_WORKSPACE` | 技能仓根（默认 `~/.browse-rs/workspace`） |
-| `BROWSE_DOMAIN_SKILLS=0` / `BROWSE_PAGE_SKILLS=0` | 关掉域名 / 页面技能点名 |
+| `BROWSE_DOMAIN_SKILLS=0` / `BROWSE_PAGE_SKILLS=0` | 关闭回执中的域名 / 页面技能提示 |
 
 状态目录 `~/.browse-rs/`：`daemon.log`、`engine.log`、`engine-profile`、`chromium/`。
 
@@ -84,6 +90,9 @@ browse 'return await snapshot()'
 browse 'await fillRef("e2", "hello")'
 browse 'await clickRef("e3")'
 browse --js @snips/title.js
+cat title.js | browse --js
+browse rune page-skills/x-search/mech.rn --vars q=OpenAI --vars rounds=2
+cat plan.rn | browse rune
 browse rune @x.test/fill-form --vars q=hello
 browse 'return await screenshot()'
 browse 'await routeBlock("*://ads.example.com/*")'
@@ -93,6 +102,6 @@ browse issue new "标题" --body "复现步骤"
 browse down
 ```
 
-手册：`browse --llms`。方言无运算符与控制流；页面逻辑放 `Runtime.evaluate`。退出码 0/1/2。
+手册：`browse --llms`。命令方言无运算符与控制流；页面逻辑用 `browse --js` 或 `Runtime.evaluate`；多步流程用 Rune。退出码 0/1/2。
 
 `cargo test --workspace`。真 chrome：`BROWSE_E2E=1 BROWSE_NO_ATTACH=1 cargo test -p browse-core --test e2e`。契约见 AGENTS.md。
