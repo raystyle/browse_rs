@@ -1,0 +1,35 @@
+{
+  "name": "evo-explore",
+  "version": "0.1.0",
+  "description": "浏览器研究与自动化:browse skill(google-search 双脚本对研究道(SERP 判读+结果页渲染内容+AI Overview)、引擎与托管 Chromium、rune 编排、油猴面;三要素纪律:事件驱动/原子错误/超时兜底)。Use when 网页研究、驱动浏览器、装油猴、起换引擎;触发词 browse、搜索、抓页面、油猴、rune、google-search",
+  "author": {
+    "name": "raystyle"
+  },
+  "license": "MIT",
+  "homepage": "https://github.com/raystyle/browse_rs/tree/main/plugins/evo-explore",
+  "repository": "https://github.com/raystyle/browse_rs",
+  "keywords": [
+    "agent",
+    "skill",
+    "browser",
+    "research",
+    "google-search",
+    "userscript",
+    "rune",
+    "cdp"
+  ],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Evo Explore",
+    "shortDescription": "浏览器研究与自动化:browse skill(搜索研究道、引擎、rune 编排、油猴面)。",
+    "longDescription": "一个 skill:browse 是浏览器 harness 研究与自动化的路由与纪律面(google-search 双脚本对研究道:SERP 判读与漂移检测、结果页 cdp 开标签并行访问取渲染内容、AI Overview 流式采集;引擎起停与托管 Chromium 版本管理;rune 编排与 CDP 直通;油猴脚本与双脚本对管理;域策略与守护红线)。命令语法活权威是 browse --llms,本插件给道路由与三要素纪律(事件驱动/原子错误/超时兜底)。技能对与站点知识在 workspace 仓(browse workspace update 升级)。",
+    "developerName": "raystyle",
+    "category": "Productivity",
+    "capabilities": [
+      "Read",
+      "Write"
+    ],
+    "userAvatarImageUrl": "",
+    "screenshotUrl": ""
+  }
+}

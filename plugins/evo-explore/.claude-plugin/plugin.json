@@ -1,0 +1,21 @@
+{
+  "name": "evo-explore",
+  "version": "0.1.0",
+  "description": "浏览器研究与自动化:browse skill(google-search 双脚本对研究道(SERP 判读+结果页渲染内容+AI Overview)、引擎与托管 Chromium、rune 编排、油猴面;三要素纪律:事件驱动/原子错误/超时兜底)。Use when 网页研究、驱动浏览器、装油猴、起换引擎;触发词 browse、搜索、抓页面、油猴、rune、google-search",
+  "author": {
+    "name": "raystyle"
+  },
+  "license": "MIT",
+  "homepage": "https://github.com/raystyle/browse_rs/tree/main/plugins/evo-explore",
+  "repository": "https://github.com/raystyle/browse_rs",
+  "keywords": [
+    "agent",
+    "skill",
+    "browser",
+    "research",
+    "google-search",
+    "userscript",
+    "rune",
+    "cdp"
+  ]
+}
