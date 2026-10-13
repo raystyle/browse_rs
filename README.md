@@ -33,7 +33,11 @@ Windows 为 win-gnu 静态 CRT。Linux 需 `libnss3 libasound2t64` 族。
 
 ## clean-chrome
 
-当前 latest：`155.0.8059.39-gen8-r5`（指针 https://chrome.ohmygh.com/latest）。三平台 zip 与 `.sha256` 边车均在位。
+当前 latest：`155.0.8059.39-gen8-r5`
+
+指针：https://chrome.ohmygh.com/latest
+
+三平台 zip 与 `.sha256` 边车均在位。
 
 ```bash
 browse chrome update

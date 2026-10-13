@@ -2,7 +2,7 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "definitions": {
     "JSON.parse": {
-      "description": "JSON.parse(s) 宿主侧把 JSON 文本解析成值（getResponseBody 等结果的小加工）。",
+      "description": "JSON.parse(s) 把 JSON 文本解析成值。",
       "example": "return JSON.parse(body).title",
       "input": {
         "properties": {
@@ -20,7 +20,7 @@
       "type": "object"
     },
     "JSON.stringify": {
-      "description": "JSON.stringify(v, indent?) 宿主侧把值序列化成字符串回传（indent 大于 0 出两格缩进多行形）。",
+      "description": "JSON.stringify(v, indent?) 把值序列化为 JSON 字符串。",
       "example": "return JSON.stringify(tabs, 2)",
       "input": {
         "properties": {
@@ -41,7 +41,7 @@
       "type": "object"
     },
     "annotate": {
-      "description": "annotate(refs) 批量画框加编号徽标（残余）：对一批 ref 各画框并以 ref 本身为徽标文本（与 snapshot 编号天然对齐）；任一项失败先清场再报错（不留半批框）；配合 screenshot() 取证后 highlightClear() 收场。",
+      "description": "annotate(refs) 给一批 ref 画高亮框。失败则全部撤销。",
       "example": "await annotate([\"e1\", \"e3\"])",
       "input": {
         "properties": {
@@ -59,7 +59,7 @@
       "type": "object"
     },
     "cdpMethods": {
-      "description": "cdpMethods(domain?) 652 个 CDP 命令的运行时探针（按域过滤）。",
+      "description": "cdpMethods(domain?) 列出 652 个 CDP 方法，可按域过滤。",
       "example": "return await cdpMethods(\"Network\")",
       "input": {
         "properties": {
@@ -75,7 +75,7 @@
       "type": "object"
     },
     "checkRef": {
-      "description": "checkRef(ref) 勾选 checkbox/radio：读实态不一致才点击，幂等（checkRef 后必 true）；radio 已选中再 uncheck 无意义不点击；非 checkbox/radio 报错指 clickRef。",
+      "description": "checkRef(ref) 勾选 checkbox 或 radio。",
       "example": "return await checkRef(\"e5\")",
       "input": {
         "properties": {
@@ -93,7 +93,7 @@
       "type": "object"
     },
     "chromeDoctor": {
-      "description": "chromeDoctor() 托管 Chromium 部署体检（在位/文件基线/pin 健康）。",
+      "description": "chromeDoctor() 检查托管 Chromium 部署。",
       "example": "return await chromeDoctor()",
       "input": {
         "properties": {},
@@ -104,7 +104,7 @@
       "type": "object"
     },
     "chromeInstall": {
-      "description": "chromeInstall(opts?) 安装 Chromium 版本并 pin：fromDir 本地导入（version 缺省取目录名），version 单给走 R2 镜像下载（sha256 锚校验后原子落位，下载带进度心跳与 stall 告警）。",
+      "description": "chromeInstall(opts?) 安装 Chromium 并 pin。fromDir 本地导入；只给 version 则从镜像下载。",
       "example": "await chromeInstall({version: \"152.0.7977.84\"})",
       "input": {
         "properties": {
@@ -120,7 +120,7 @@
       "type": "object"
     },
     "chromeList": {
-      "description": "chromeList() 列已装 Chromium 版本与当前 pin。",
+      "description": "chromeList() 列出已安装版本和当前 pin。",
       "example": "return await chromeList()",
       "input": {
         "properties": {},
@@ -131,7 +131,7 @@
       "type": "object"
     },
     "chromeRemove": {
-      "description": "chromeRemove(version) 删已装版本（目录加登记一起清；pin 指向的拒删，先 chromeUse 切走）。",
+      "description": "chromeRemove(version) 删除已安装版本。当前 pin 须先切走。",
       "example": "await chromeRemove(\"152.0.7977.84\")",
       "input": {
         "properties": {
@@ -149,7 +149,7 @@
       "type": "object"
     },
     "chromeUpdate": {
-      "description": "chromeUpdate() 升级到镜像最新版并 pin 切过去（发现源 latest，BROWSE_CHROME_LATEST 可钉）。",
+      "description": "chromeUpdate() 升级到镜像 latest 并切换 pin。",
       "example": "return await chromeUpdate()",
       "input": {
         "properties": {},
@@ -160,7 +160,7 @@
       "type": "object"
     },
     "chromeUse": {
-      "description": "chromeUse(version) pin 切到已装版本（引擎发现序的托管位）。",
+      "description": "chromeUse(version) 把 pin 切到已安装版本。",
       "example": "await chromeUse(\"152.0.7977.84\")",
       "input": {
         "properties": {
@@ -178,7 +178,7 @@
       "type": "object"
     },
     "cli.artifact-attest": {
-      "description": "browse artifact attest <id> --type <t> 产物验证事件（三型：attest_dev/attest_prod/verification_failed；promote/demote/supersede 归 omc 工位 收口）；id 须 36 字 UUID 形（browse artifact list 取真值）。",
+      "description": "browse artifact attest <id> --type <t> 为产物添加验证事件。--type 为 attest_dev、attest_prod 或 verification_failed。",
       "example": "browse artifact attest 66857bb2-d1ae-4977-97df-8ab41cc37399 --type attest_prod",
       "input": {
         "properties": {
@@ -204,7 +204,7 @@
       "type": "object"
     },
     "cli.artifact-list": {
-      "description": "browse artifact list [--current] [--env dev|prod] 产物列表（GET 免签）：current=1 投影当前有效集，env 过滤。",
+      "description": "browse artifact list [--current] [--env dev|prod] 列出产物。--current 只看当前有效集；--env 过滤环境。",
       "example": "browse artifact list --current --env prod",
       "input": {
         "properties": {
@@ -224,7 +224,7 @@
       "type": "object"
     },
     "cli.artifact-publish": {
-      "description": "browse artifact publish --name <n> --kind <k> --digest <d> [--summary <s>] [--outcome <success|failure>] [--git-sha <sha>] [--version <v>] [--git-range <r>] [--note <n>] [--dep <d>]… 产物共享库发布（参数面随标准 crate ledger-client v0.1.3）：kind 十五枚举必填（binary/experience/lesson/research/prototype/…），digest=正文或记录哈希（sha256:<64hex>），summary 与 outcome 是结构化字段（非正文拼接，账本人类网页按字段渲染），回 {ok,artifact_id}。字段 --version 与全局版本旗标同名不同位：publish 环内取值形是字段，全局位裸旗标打 CLI 版本即退。",
+      "description": "browse artifact publish --name <n> --kind <k> --digest <d> [--summary <s>] [--outcome <success|failure>] [--git-sha <sha>] [--version <v>] [--git-range <r>] [--note <n>] [--dep <d>]… 发布产物记录。--kind 与 --digest 必填。digest 形如 sha256:<64hex>。",
       "example": "browse artifact publish --name browse-0.8 --kind prototype --digest sha256:... --summary '集成实战摘' --outcome success --dep github.com/raystyle/hst_rs",
       "input": {
         "properties": {
@@ -280,7 +280,7 @@
       "type": "object"
     },
     "cli.b64-flag": {
-      "description": "browse --b64 '<base64>' base64 通道：片段实参（或 --js 的 JS 实参）按 base64 解码后再派发；空实参加管道 = 整段 stdin base64 解码（--js 管道版即 cat x.js.b64 | browse --js --b64）。PowerShell 引号与编码面一并绕开；bash 生成 base64 -w0 <文件>，PowerShell 用 [Convert]::ToBase64String。无短参（-b 是 issue new --body 的既有契约）。",
+      "description": "browse --b64 '<base64>' 把片段或 --js 实参按 base64 解码后再求值。空实参读管道。",
       "example": "browse --js --b64 $(printf '%s' '1+1' | base64)",
       "input": {
         "properties": {
@@ -298,7 +298,7 @@
       "type": "object"
     },
     "cli.cdp": {
-      "description": "browse cdp <Method> [--params JSON] CDP 直通：任意 CDP 域方法经 daemon 转发引擎会话，回 result/error 原文；方法名须点分形；引擎未起自动懒拉。数据面直通险级超 /eval（HttpOnly cookie 等直达），破坏性方法由 Session::call 守卫拦（Browser.close 恒拒等）。操作油猴脚本的 Userscript.* 域落地后同面直达。",
+      "description": "browse cdp <Method> [--params JSON] 向当前引擎会话发送任意 CDP 方法。方法名须为 Domain.method。",
       "example": "browse cdp Runtime.evaluate --params '{\"expression\":\"1+1\"}'",
       "input": {
         "properties": {
@@ -320,7 +320,7 @@
       "type": "object"
     },
     "cli.chrome-doctor": {
-      "description": "browse chrome doctor 托管 Chromium 部署体检（在位/文件基线/pin；AppContainer ACE 仅 Windows 有值，缺则 hints 给 icacls 修法）。",
+      "description": "browse chrome doctor 检查托管 Chromium 是否在位、文件是否完整、pin 是否有效。",
       "example": "browse chrome doctor",
       "input": {
         "properties": {},
@@ -331,8 +331,8 @@
       "type": "object"
     },
     "cli.chrome-install": {
-      "description": "browse chrome install <版本> [部署目录] 安装 Chromium 版本并 pin：缺省从镜像下载（版本段路由加 .sha256 锚校验原子落位，下载带进度心跳与 stall 告警），给部署目录则本地导入；Windows 落位自动补 AppContainer ACE（纯形带沙箱可起），回执 appContainerAce。",
-      "example": "browse chrome install 152.0.7977.84",
+      "description": "browse chrome install <版本> [部署目录] 安装 Chromium 并设为当前版本。默认从镜像下载；给出目录则本地导入。",
+      "example": "browse chrome install 155.0.8059.39-gen8-r5",
       "input": {
         "properties": {
           "fromDir": {
@@ -353,7 +353,7 @@
       "type": "object"
     },
     "cli.chrome-list": {
-      "description": "browse chrome list 列已装 Chromium 版本与当前 pin。",
+      "description": "browse chrome list 列出已安装的 Chromium 版本和当前 pin。",
       "example": "browse chrome list",
       "input": {
         "properties": {},
@@ -364,8 +364,8 @@
       "type": "object"
     },
     "cli.chrome-remove": {
-      "description": "browse chrome remove <版本> 删已装版本（目录加登记一起清；pin 指向的拒删，先 use 切走）。",
-      "example": "browse chrome remove 152.0.7977.84",
+      "description": "browse chrome remove <版本> 删除已安装版本。当前 pin 指向的版本须先 chrome use 切走。",
+      "example": "browse chrome remove 155.0.8059.39-gen8-r5",
       "input": {
         "properties": {
           "version": {
@@ -382,7 +382,7 @@
       "type": "object"
     },
     "cli.chrome-update": {
-      "description": "browse chrome update 升级到镜像最新版并默认切用（发现源 latest，BROWSE_CHROME_LATEST 可钉）。",
+      "description": "browse chrome update 升级到镜像 latest 并切换使用。",
       "example": "browse chrome update",
       "input": {
         "properties": {},
@@ -393,8 +393,8 @@
       "type": "object"
     },
     "cli.chrome-use": {
-      "description": "browse chrome use <版本> 把托管引擎 pin 切到已装版本（旧版保留可回退）。",
-      "example": "browse chrome use 152.0.7977.84",
+      "description": "browse chrome use <版本> 把当前引擎切到已安装的版本。",
+      "example": "browse chrome use 155.0.8059.39-gen8-r5",
       "input": {
         "properties": {
           "version": {
@@ -411,7 +411,7 @@
       "type": "object"
     },
     "cli.connect-flag": {
-      "description": "browse --connect <ws|端口> '<片段>' 显式附着给定 ws URL 或调试端口。",
+      "description": "browse --connect <ws|端口> '<片段>' 附着指定 WebSocket URL 或调试端口。",
       "example": "browse --connect 9222 'return await listPageTargets()'",
       "input": {
         "properties": {
@@ -433,7 +433,7 @@
       "type": "object"
     },
     "cli.down": {
-      "description": "browse down 退 daemon；只终结自己 spawn 的引擎，附着来源不动。",
+      "description": "browse down 停止 daemon。只结束本工具 spawn 的引擎。",
       "example": "browse down",
       "input": {
         "properties": {},
@@ -444,7 +444,7 @@
       "type": "object"
     },
     "cli.eval": {
-      "description": "browse '<片段>' 求值方言片段（缺省形态；自动拉起 daemon 与引擎）。实参以 @ 开头即文件实参形态：读文件内容为片段体（绝对/相对路径皆可，读失败报错带下一步），与 --js 同形；@ 实参配 --vars 键=值 即模板道（scripts 根先解析，Jinja 渲染，0.30.3 缺省 ERB 定界 <%= 键 %>，JS 花括号免撞，--vars-syntax classic 或件首行指令回退；未填键 exit 2 报键名；注释区免渲染），方言与 --js 两形态同用。",
+      "description": "browse '<片段>' 求值方言片段。自动拉起 daemon 与引擎。实参以 @ 开头则读文件为片段；配 --vars 则按 Jinja 渲染（缺省 <%= 键 %>）。",
       "example": "browse 'return await currentTab()'",
       "input": {
         "properties": {
@@ -466,7 +466,7 @@
       "type": "object"
     },
     "cli.eval-e": {
-      "description": "browse -e '<片段>' 显式 --eval 形态（与缺省等价）。",
+      "description": "browse -e '<片段>' 显式 --eval，与缺省求值等价。",
       "example": "browse -e 'return 1'",
       "input": {
         "properties": {
@@ -484,7 +484,7 @@
       "type": "object"
     },
     "cli.eval-stdin": {
-      "description": "browse < 文件 stdin 批处理：括号配平即提交一段，变量跨段共享。",
+      "description": "browse < 文件 从 stdin 批处理：括号配平即提交一段，变量跨段共享。",
       "example": "printf '%s\\n' 'const t = await listPageTargets()' 'return t[0].url' | browse",
       "input": {
         "properties": {},
@@ -495,7 +495,7 @@
       "type": "object"
     },
     "cli.events": {
-      "description": "browse events [--since <seq>] [--last <n>] [--clear] 消费油猴（userscript）事件回调：脚本经 GM_xmlhttpRequest POST /events 上报 {type, slug, url, data}（标准形：type 两档 see/stop；daemon 端口默认 9880，BROWSE_PORT/命名实例派生端口注意），本命令读事件环（容量 1000 满丢最旧，data 超 32KB 截断）；回 {ok, events, nextSeq}。daemon 不在跑不算错（环随 daemon 生命周期）。事件面与引擎脚本管理面（Userscript.* CDP 域）正交。用法与示例见 docs/operations/G001-userscripts.md。",
+      "description": "browse events [--since <seq>] [--last <n>] [--clear] 读取油猴脚本上报的事件环。脚本 POST /events；满 1000 条丢最旧。",
       "example": "browse events --since 41",
       "input": {
         "properties": {
@@ -519,7 +519,7 @@
       "type": "object"
     },
     "cli.fetch": {
-      "description": "browse fetch <url> [--html] [--markdown|-m] [--timeout <s>] 一次性只读抓取：HTTP 直取零浏览器成本；三条件升级引擎（正文空、墙词、少于 20 词）走 goto 加页内抽取（懒拉起）；回 {via, title, text} 加可选键（HTTP 腿：status/bytes/markdown?；引擎升级腿：upgradedFrom/httpStatus/markdown?；--html 直取形：html/markdown?）；--html 恒走引擎腿回渲染后 DOM HTML（documentElement.outerHTML，JS 执行后的面）；--markdown 经 mdka 把本腿 html（渲染形为渲染 DOM、HTTP 直通为 raw body）转 markdown 字段（v1 同 text 的 no-op 已升真转换；求了没取到给 null 占位）；两腿都按 URL 做 goto 同口径的 workspace 站点知识点名（命中附 domain_skills 与 hint，不依赖引擎）；页内抽取异常显式报错不带空回执。对照 waitForResponse：这是无会话一次性抓取。",
+      "description": "browse fetch <url> [--html] [--markdown|-m] [--timeout <s>] 一次性抓取 URL。默认 HTTP；正文空、墙页或过短则改走引擎。--html 返回渲染 DOM；--markdown 转为 Markdown。",
       "example": "browse fetch https://example.com",
       "input": {
         "properties": {
@@ -549,7 +549,7 @@
       "type": "object"
     },
     "cli.issue-list": {
-      "description": "browse issue list [--limit <n>] [--before <id>] 列 issue（账本面）：count 是返回条数非在册总数，has_more 权威，打满即 stderr 截断提示。",
+      "description": "browse issue list [--limit <n>] [--before <id>] 列出 issue。--limit 条数，打满则还有更多。",
       "example": "browse issue list --limit 10",
       "input": {
         "properties": {
@@ -569,7 +569,7 @@
       "type": "object"
     },
     "cli.issue-new": {
-      "description": "browse issue new <标题> --acceptance <验收> [--kind bug|improvement] [--body <正文>] [--dry-run] 账本 issue 流开单（真源 ledger.ohmygh.com，签名道在标准 crate ledger-client）：acceptance 必填（完成判据锚）；回执 {ok,issue}；--dry-run 本地校验加载荷与签名基预览零网络（账本只增不可撤，契约实弹先走它）；关单走 omc 工位（browse 侧只增不关不删）。",
+      "description": "browse issue new <标题> --acceptance <验收> [--kind bug|improvement] [--body <正文>] [--dry-run] 创建 issue。--acceptance 必填。--dry-run 只预览不提交。",
       "example": "browse issue new \"修复 X\" --kind bug --acceptance \"测试过\" --dry-run",
       "input": {
         "properties": {
@@ -604,7 +604,7 @@
       "type": "object"
     },
     "cli.issue-show": {
-      "description": "browse issue show <id> 看单条 issue 详情（projection 加 timeline）。",
+      "description": "browse issue show <id> 显示一条 issue。",
       "example": "browse issue show 3",
       "input": {
         "properties": {
@@ -622,7 +622,7 @@
       "type": "object"
     },
     "cli.js-flag": {
-      "description": "browse --js '<JS 源码|@<路径>>' 全量 JS 受限旁路：不经方言解析器直发 Runtime.evaluate（returnByValue 加 awaitPromise），return 值序列化回传；模板字符串/正则/函数声明直接写，消多层引号转义。分工：方言管 CDP 编排，--js 管页面逻辑。空实参加管道 = 整段 stdin 一次求值（配 --b64 先解码）。文件实参形态：实参以字面 @ 开头即读文件内容为片段体（前导空白即不触发、保持字面；`browse --js @snip.js`；方言与 --js 两形态通用，绝对/相对路径皆可，读失败报错带下一步；先于 --b64 展开，`--b64 @x.b64` = 文件存 base64 的组合形；stdin 管道不经此道）。模板参数化（命令小程序）：@ 实参与 --vars 键=值（可重复累积，不收逗号分隔）同给即模板道——模板源先按 scripts 根解析（--root 旗标 > workspace 序首根 scripts/，名原样与补 .js 两试，越根候选跳过），未命中回落字面路径；按 Jinja 渲染（0.30.3 缺省 ERB 定界 <%= 键 %>、| default() 可选参、<% for %> 生成面，JS 花括号免撞；--vars-syntax classic 或件首行指令回退 {{ 键 }} 经典形；--vars 值恒字符串，循环遍历传参按字符、要数组在模板里 split），未填键网络前拦 exit 2 报键名（注释区免渲染 0.30.0）；不给 --vars 即纯透传（字面大括号对不误伤）。不可序列化值（DOM 节点、Date、Map、RegExp 等，含容器内元素）在 returnByValue 下序列化成 {}，CLI 按空容器口径零输出；要值就在 JS 里自己 JSON.stringify 或取原语（.textContent/.outerHTML）。与 --repl 不同行。",
+      "description": "browse --js '<JS 源码|@<路径>>' 在页面主世界求值 JS（Runtime.evaluate）。方言管编排，--js 管页面逻辑。@ 文件、--vars 模板、空实参走管道。",
       "example": "browse --js 'return (() => { const f = s => s.length; return f(\"ab\"); })()'",
       "input": {
         "properties": {
@@ -647,7 +647,7 @@
       "type": "object"
     },
     "cli.ledger-keygen": {
-      "description": "browse ledger keygen [--force] Ed25519 密钥对生成：私钥落 ~/.browse-rs/ledger/ed25519.key（0600 不打印），公钥 JWK 与 kid 打印供总台在册。",
+      "description": "browse ledger keygen [--force] 生成 Ed25519 密钥对。私钥写入 ~/.browse-rs/ledger/ed25519.key，公钥打印到终端。",
       "example": "browse ledger keygen",
       "input": {
         "properties": {
@@ -663,7 +663,7 @@
       "type": "object"
     },
     "cli.llms-flag": {
-      "description": "browse --llms [--full|--json] agent 手册直出（裸形 markdown 紧凑手册；--full 完整目录，--json 机器形 Schema；不拉 daemon）。",
+      "description": "browse --llms [--full|--json] 打印 agent 手册。--full 完整目录，--json Schema。不启动 daemon。",
       "example": "browse --llms",
       "input": {
         "properties": {
@@ -683,7 +683,7 @@
       "type": "object"
     },
     "cli.new-tab-flag": {
-      "description": "browse --new-tab '<片段>' 求值前先开 about:blank 新 tab。",
+      "description": "browse --new-tab '<片段>' 求值前先打开 about:blank 新标签。",
       "example": "browse --new-tab 'return await snapshot()'",
       "input": {
         "properties": {
@@ -701,7 +701,7 @@
       "type": "object"
     },
     "cli.repl-flag": {
-      "description": "browse --repl 显式进入交互 REPL（裸调用只出本仓帮助体，不弹交互）。",
+      "description": "browse --repl 进入交互 REPL。裸调用只打印帮助。",
       "example": "browse --repl",
       "input": {
         "properties": {},
@@ -712,7 +712,7 @@
       "type": "object"
     },
     "cli.rune": {
-      "description": "browse rune <script.rn|@名> [--vars k=v] [--root <dir>] Rune 编排面（三形态运行时之一：rn 脚本小程序握 js+cdp 双能力，方言命令管 cdp、js 小程序管 js）：脚本在独立 VM 跑（Rune 语言，入口 pub async fn main() 返回 Result），经自注册 cdp 模块做效果：goto/eval/eval_handle/call/release 走隔离世界轻探针，wait_event(method,ms) 事件驱动等待（原生 Session::wait_for 直出，活动 tab 与 browser 级事件，超时 Err 可 match 做条件分支），raw(method,params_json) 任意 CDP 命令直发（params 是 JSON 对象串，空串等价空对象；页面会话作用域；协议文档参数形原样粘贴，与 wait_event 的任意 method 名对偶；Input.dispatchMouseEvent 序列组拟人鼠标 wiggle/拖拽/滚轮、Fetch.enable 加 wait_event(Fetch.requestPaused) 循环加 failRequest/continueRequest 组按 resourceType 断流放行、Network.setCookie/getAllCookies 组 cookie 面；回收件组合形的自检归脚本：setCookie 的 success、填值的命中先验），dialect(fn,args_json) 方言全量桥（方言全局函数按名直达方言面同一实现：waitLoad/waitForResponse/clickRef 等 100+ 件；args 是 JSON 数组串，空串等价空数组；与 raw 对偶=CDP 层与方言层两通道），js(src,args) 内联 JS 小程序体与 js_lib(name,vars) 库内 .js 小程序走主世界全量页面逻辑（页面函数可调；args/vars 对象 JSON 字面量注入引号天然安全；js 体须用 return 出值，裸表达式得 null），render(tpl,vars) 运行时 Jinja，stdin() 读管道参数道。输入三通道：文件/实参、管道源码（无实参时 cat plan.rn | browse rune）、管道参数（有实参时）。r# 裸串：r#\"…\"#（Rust 同形，含 \"# 升 r##）编译前重写为转义普通串，任意引号反斜杠多行原样直达 js/eval，模板道免渲染（注释区同免渲染字面回填；{% raw %} 仍管 Jinja 面任意区）。双限额（指令与分配），未填模板键网络前拦 exit 2；模板定界 0.30.3 缺省 ERB（<%= 键 %>，JS 花括号免撞；classic 旗标或件首行指令回退）。错误二分：cdp::CdpError{op,message} 与脚本自造 Timeout 属脚本可见失败，VM 错误是终态。eval_handle 句柄经 clone 复用，call 的函数体用 function(){…} 形收 this。方言/--js 契约零动。，requests(opts)/snapshot(opts)/request_detail(sel,opts) 三支柱同源（与方言面同一实现）。全部 CDP 调用 30 秒上界、同源腿 60 秒上界、引擎忙 10 秒快错（不无界排队），丢响应快错不挂死；整体执行兜底硬界统一 60 秒缺省（--timeout 请求级覆写或 BROWSE_RUNE_TIMEOUT 旋钮，/eval 同道 BROWSE_EVAL_TIMEOUT；与 wait 族等待窗正交），超时/主动停止回执附结构化 timeout/stopped 面（op 在飞调用面、elapsed_ms、cause），CLI 侧 stderr 出一行 JSON。主动停止三道：browse rune stop（动词位，POST /rune/stop；脚本名恰为 stop 且无 --vars 会被当动词，用 @stop 或加 --vars 走脚本道）、引擎失联联动（两次探测断连即停 cause=engine_lost，兜非 CDP 等待段）、脚本侧原生控制流自停（select/分支加 Err 返回，error 面自带 CTA）。退出码三态：0 含脚本可见失败（main 返 Err/cdp::CdpError 走 ok:true 的 value.error 面），1 宿主终态（编译错/VM 错误/超时/被停），2 用法错。",
+      "description": "browse rune <script.rn|@名> [--vars k=v] [--root <dir>] 运行 Rune 脚本。入口 pub async fn main() -> Result。cdp 模块提供 goto/js/raw/dialect 等。--vars 模板；browse rune stop 停止执行。",
       "example": "browse rune @x.test/fill-form --vars q=hello",
       "input": {
         "properties": {
@@ -738,7 +738,7 @@
       "type": "object"
     },
     "cli.self-update": {
-      "description": "browse update 自更新 browse 二进制（镜像 stable 段优先：判新读 latest 标记、下载取资产，缺或坏回落 GitHub，sha256 锚校验，自证回滚；ark 管理安装拦走 ark）。",
+      "description": "browse update 自更新 browse 二进制。镜像优先，失败回落 GitHub；校验 sha256。",
       "example": "browse update",
       "input": {
         "properties": {},
@@ -749,7 +749,7 @@
       "type": "object"
     },
     "cli.serve": {
-      "description": "browse --serve [--bind host:port] 前台跑 daemon（--bind 选监听地址），只保留 API 面（HTML 看板已移除，总台令 2026-10-02）：POST /eval 求值（body {code,new_tab,js}，错误形判 ok 字段）、POST /rune 与 /rune/stop、POST /engine/up、POST /quit、GET /health 探活；方言做线协议门外语言不限，完整契约与 curl 三例见 docs/knowledge/references/R002-http-api.md。",
+      "description": "browse --serve [--bind host:port] 前台运行 daemon。POST /eval、/rune、/engine/up、/quit；GET /health。",
       "example": "browse --serve --bind 127.0.0.1:9880",
       "input": {
         "properties": {
@@ -765,7 +765,7 @@
       "type": "object"
     },
     "cli.status": {
-      "description": "browse status [--json] daemon/引擎/实例名/活动 tab 概览（含引擎来源语义面：origin 枚举（attached/managed-spawn/isolated-spawn）、宿主上下文、spawn 时刻；daemon 宿主自描述，CLI 与 daemon 跨宿主时显式标注）。",
+      "description": "browse status [--json] 显示 daemon、引擎、实例名和活动标签。--json 机器可读。",
       "example": "browse status --json",
       "input": {
         "properties": {
@@ -781,7 +781,7 @@
       "type": "object"
     },
     "cli.up": {
-      "description": "browse up [--headless] [--pipe] [--chrome <path>] [--profile <dir>] [--ws <url>] [--port <p>] [--proxy <url>] [--proxy-bypass <list>] [--engine-arg <a>] [--isolated] [--idle-timeout <ms>] [--cookies <域csv>] 显式起引擎（附着优先，缺则 spawn clean-chrome 隔离实例；--profile 自定义 user-data-dir，默认固定 profile 持久保存站点会话；--proxy/--proxy-bypass 直通 chrome 代理旗标；--engine-arg 引擎附加旗标（可叠加，spawn 时 argv 原样直通，BROWSE_ENGINE_ARGS 同道；与 browse 自身 spawn 旗标撞车时后值胜，慎叠；无显示会话如 ssh 未给 headless 时 spawn 自动补 --headless，显式旗标优先）；--isolated 隔离态 profile 引擎退出即删（给了 --profile 时 isolated 优先；显式 up 定义引擎意外退出后自动重拉的形态：最近一次 up 的意图生效（裸 up 即复位为有头缺省）；形态记忆是 daemon 进程态，重启回环境缺省；附着意图不记忆，重拉走发现序）；--idle-timeout 闲置回收毫秒只对新拉起的 daemon 生效）；--cookies 域 csv 起引擎后从附着浏览器只读热迁指定域登录态（源零写回，无附着源即报错指 storageState 整包往返）。",
+      "description": "browse up [--headless] [--pipe] [--chrome <path>] [--profile <dir>] [--ws <url>] [--port <p>] [--proxy <url>] [--proxy-bypass <list>] [--engine-arg <a>] [--isolated] [--idle-timeout <ms>] [--cookies <域csv>] 启动引擎。优先附着已开浏览器，否则 spawn clean-chrome。--profile 指定用户数据目录；--isolated 退出即删；--headless 无头。",
       "example": "browse up --headless --profile ~/profiles/proj-a",
       "input": {
         "properties": {
@@ -841,7 +841,7 @@
       "type": "object"
     },
     "cli.userscript": {
-      "description": "browse userscript <install|list|enable|disable|remove|update|path|eval> 油猴脚本盘上管理七件：install <file...> 装机（幂等重装 enabled 保留）加 list（对册 workspace 双脚本对）加 enable/disable/remove <id|名>（id 全等或唯一前缀或全名定位）加 update <id|名> <file> 同位换源加 path <id|名> 出脚本体路径加 eval <code> 油猴世界直通求值（GM 面可用，context 特征探测定位）；写 <profile>/Default/Userscripts 同构引擎键面（match/connect/grant/run-at/update-url/version）；引擎启动时读盘，装改带 --restart 引擎级重启生效（按最近一次 up 形态复起）；profile 走全局 --profile 或随运行引擎形态（daemon 记录）或缺省 engine-profile。",
+      "description": "browse userscript <install|list|enable|disable|remove|update|path|eval> 管理油猴脚本：install、list、enable、disable、remove、update、path、eval。装改加 --restart 后引擎重读。",
       "example": "browse userscript install ~/probe.user.js --restart",
       "input": {
         "properties": {
@@ -857,7 +857,7 @@
       "type": "object"
     },
     "cli.version-flag": {
-      "description": "browse --version | -V 打印版本号（资产解包冒烟与安装核对用；-V 同义短参）。",
+      "description": "browse --version | -V 打印版本号。",
       "example": "browse --version",
       "input": {
         "properties": {},
@@ -868,7 +868,7 @@
       "type": "object"
     },
     "cli.workspace-add": {
-      "description": "browse workspace add <路径> 登记自定义技能仓（多根序首优先；同段被自定义仓覆盖时以自定义仓为准，未覆盖段默认仓仍可用；目录须存在）：配置固化到应用状态目录 workspaces.json 跨会话持久；技能格式同默认仓（domain-skills/<段>/ 与 page-skills/<slug>.md）；goto/fetch 点名与 site/page/list 读都吃多根序。",
+      "description": "browse workspace add <路径> 登记自定义技能仓。目录须存在；多根时序首优先。",
       "example": "browse workspace add ~/my-skills",
       "input": {
         "properties": {
@@ -886,7 +886,7 @@
       "type": "object"
     },
     "cli.workspace-install": {
-      "description": "browse workspace install git clone 种子仓（github.com/raystyle/browse_workspace）到仓根；三平台用户目录部署，跨实例共享不分 BROWSE_NAME。",
+      "description": "browse workspace install 把默认技能仓 clone 到 ~/.browse-rs/workspace。",
       "example": "browse workspace install",
       "input": {
         "properties": {},
@@ -897,7 +897,7 @@
       "type": "object"
     },
     "cli.workspace-list": {
-      "description": "browse workspace list 列 workspace 在册技能对（清仓重建后技能=mech.rn 加 probe.user.js 双脚本对，缺一不算）：domain-skills/ 各站点段与 page-skills/ 各 slug（文件清单为对内三件，封顶随旧文海退役）。",
+      "description": "browse workspace list 列出技能仓中的域名段与页面 slug。",
       "example": "browse workspace list",
       "input": {
         "properties": {},
@@ -908,7 +908,7 @@
       "type": "object"
     },
     "cli.workspace-page": {
-      "description": "browse workspace page <slug> 读页面技能对（goto 回执 page_skills 的下钻面，清仓重建后技能=双脚本对）：交出 page-skills/<slug>/ 的 README（无则路径摘要，尾部附 mech.rn 与 probe.user.js 位置）。",
+      "description": "browse workspace page <slug> 读取页面技能 README。",
       "example": "browse workspace page challenge-stop",
       "input": {
         "properties": {
@@ -926,7 +926,7 @@
       "type": "object"
     },
     "cli.workspace-remove": {
-      "description": "browse workspace remove <路径> 移除登记的自定义技能仓（配置清单更新；默认仓与 BROWSE_WORKSPACE env 钉死根不受影响）。",
+      "description": "browse workspace remove <路径> 取消登记自定义技能仓。默认仓不受影响。",
       "example": "browse workspace remove ~/my-skills",
       "input": {
         "properties": {
@@ -944,7 +944,7 @@
       "type": "object"
     },
     "cli.workspace-site": {
-      "description": "browse workspace site <段>[/<文件>] 读域名站点技能对（goto 回执 domain_skills 的下钻面，清仓重建后技能=mech.rn 加 probe.user.js 双脚本对）：只给段交出该对的 README（无则路径摘要），给 <段>/<文件> 读段内文件全文。",
+      "description": "browse workspace site <段>[/<文件>] 读取域名技能。只给段名返回 README；给 段/文件 读该文件。",
       "example": "browse workspace site github",
       "input": {
         "properties": {
@@ -966,7 +966,7 @@
       "type": "object"
     },
     "cli.workspace-status": {
-      "description": "browse workspace status [--json] workspace 单仓概览（配套）：安装态、git remote/branch/head、未提交变更数、技能计数；仓根 BROWSE_WORKSPACE 覆盖，缺省 ~/.browse-rs/workspace。",
+      "description": "browse workspace status [--json] 显示技能仓安装态、git 与技能计数。",
       "example": "browse workspace status",
       "input": {
         "properties": {
@@ -982,7 +982,7 @@
       "type": "object"
     },
     "cli.workspace-update": {
-      "description": "browse workspace update git pull --ff-only 更新 workspace 仓；本地未提交修改即拒（手工 commit/push 可回推同一远端）。",
+      "description": "browse workspace update git pull --ff-only 更新技能仓。有未提交修改则拒绝。",
       "example": "browse workspace update",
       "input": {
         "properties": {},
@@ -993,7 +993,7 @@
       "type": "object"
     },
     "clickAt": {
-      "description": "clickAt(x, y, opts?) 视口坐标 trusted 点击（点当前可见物，不做遮挡检查）；opts.button 换键、clickCount 双击。",
+      "description": "clickAt(x, y, opts?) 在视口坐标点击。",
       "example": "await clickAt(120, 40)",
       "input": {
         "properties": {
@@ -1024,7 +1024,7 @@
       "type": "object"
     },
     "clickRef": {
-      "description": "clickRef(ref, opts?) 按 snapshot 短 ref 点击：滚动可见、量中心、遮挡命中测试（被盖即拒绝并报遮挡物）、trusted 派发；opts.button/clickCount 与 waitNav 可同给；opts.waitNav 链接型点击后走有界提交等待：grace 窗（2 秒或 timeout 较小者）内探到导航即等加载收尾（waitLoad.settled=nav），无导航迹象即返回（waitLoad.settled=no-nav，同文档锚点与 JS 按钮不再误等全窗），timeout 秒口径；同源 iframe 内节点坐标沿 frameElement 链提升到顶层视口系，OOPIF（跨域 iframe）内节点在子 session 量中心后用父页 iframe rect 提升（嵌套 OOPIF 只提升一层）。",
+      "description": "clickRef(ref, opts?) 按 snapshot 短 ref 点击。被遮挡则拒绝。",
       "example": "await clickRef(\"e3\", {waitNav: true})",
       "input": {
         "properties": {
@@ -1046,7 +1046,7 @@
       "type": "object"
     },
     "cloneCookies": {
-      "description": "cloneCookies(domains) 登录态按域热迁：从附着浏览器（probe_default 发现）只读取指定域 cookie 后缀匹配，Network.setCookies 灌入当前引擎；源零写回铁律；回 {cloned,matched,domains}。无附着源（probe_default 只探 9222 与默认 profile 的 DevToolsActivePort，其他端口的附着态取不到）报错指 exportStorageState 整包往返；域匹配不区分大小写、输入前导点剥掉；cloned 小于 matched 时回 failed 与 firstError。",
+      "description": "cloneCookies(domains) 从已附着浏览器按域复制 cookie 到当前引擎。源浏览器只读。",
       "example": "await cloneCookies([\"example.com\"])",
       "input": {
         "properties": {
@@ -1064,7 +1064,7 @@
       "type": "object"
     },
     "closeTab": {
-      "description": "closeTab(targetId?) 关 tab；守卫只放行自建 tab（chrome 初始页与用户 tab 拒绝）。",
+      "description": "closeTab(targetId?) 关闭标签。只允许关闭本工具打开的标签。",
       "example": "await closeTab((await currentTab()).targetId)",
       "input": {
         "properties": {
@@ -1080,7 +1080,7 @@
       "type": "object"
     },
     "console": {
-      "description": "console(opts?) 控制台消息分级检索（只认活动 tab，他 tab 信号不泄漏）：Runtime.consoleAPICalled 缓冲过滤 minLevel 及以上（档序 error 加 assert 同档 < warning < log/info < debug < verbose，未知名落 verbose）；Runtime 域随 tab 入口自动开（开域前的旧消息收不到），缓冲环形 1000 条超量挤老。回 {count, messages:[{seq,level,text}]}。",
+      "description": "console(opts?) 读取当前标签的控制台消息。opts.minLevel 过滤级别。",
       "example": "return await console({minLevel: \"error\"})",
       "input": {
         "properties": {
@@ -1100,7 +1100,7 @@
       "type": "object"
     },
     "cookieDelete": {
-      "description": "cookieDelete(name, domain?) 删 cookie：Network.deleteCookies（CDP 无单数形）按 name 加域删全部匹配（同域同名多 path 一起清，破坏性动作）；domain 缺省当前页域。",
+      "description": "cookieDelete(name, domain?) 按名称删除 cookie。可指定 domain。",
       "example": "await cookieDelete(\"k\", \"example.com\")",
       "input": {
         "properties": {
@@ -1122,7 +1122,7 @@
       "type": "object"
     },
     "cookieGet": {
-      "description": "cookieGet(name) 查单条 cookie：按 name 精确匹配（同名跨域取第一条，需要确定域用 cookies(domain) 再筛），null 即不存在。",
+      "description": "cookieGet(name) 按名称取一条 cookie。不存在返回 null。",
       "example": "return await cookieGet(\"session\")",
       "input": {
         "properties": {
@@ -1140,7 +1140,7 @@
       "type": "object"
     },
     "cookieSet": {
-      "description": "cookieSet(name, value, opts?) 写单条 cookie：Network.setCookie，缺 domain 走当前页 URL；回 success 布尔。",
+      "description": "cookieSet(name, value, opts?) 写入一条 cookie。缺 domain 用当前页。",
       "example": "await cookieSet(\"k\", \"v\", {domain: \"example.com\"})",
       "input": {
         "properties": {
@@ -1179,7 +1179,7 @@
       "type": "object"
     },
     "cookies": {
-      "description": "cookies(domain?) 列 cookie：Network.getCookies 原生字段简表。无参＝当前页 URL 作用域（非全 jar，实弹口径）；给 domain 则按该域 http/https 显式过滤；要跨域清单就逐域调。",
+      "description": "cookies(domain?) 列出 cookie。无参为当前页；给 domain 则按该域过滤。",
       "example": "return await cookies(\"example.com\")",
       "input": {
         "properties": {
@@ -1195,7 +1195,7 @@
       "type": "object"
     },
     "cookiesClear": {
-      "description": "cookiesClear() 清空浏览器全部 cookie（Network.clearBrowserCookies，作用面整浏览器不只当前域，对照 playwright cookie-clear）。",
+      "description": "cookiesClear() 清空浏览器全部 cookie。",
       "example": "await cookiesClear()",
       "input": {
         "properties": {},
@@ -1206,7 +1206,7 @@
       "type": "object"
     },
     "currentTab": {
-      "description": "currentTab() 当前活动 tab 简表（无活动返回 null）。",
+      "description": "currentTab() 返回当前活动标签。无活动则 null。",
       "example": "return await currentTab()",
       "input": {
         "properties": {},
@@ -1217,7 +1217,7 @@
       "type": "object"
     },
     "dblclickRef": {
-      "description": "dblclickRef(ref) 双击元素：press/release 两轮 clickCount 递增。",
+      "description": "dblclickRef(ref) 双击元素。",
       "example": "await dblclickRef(\"e5\")",
       "input": {
         "properties": {
@@ -1235,7 +1235,7 @@
       "type": "object"
     },
     "detect": {
-      "description": "detect() 页面态结构化判读：{verdict, evidence[], suggestion}。判序 challenged（挑战关键词加 403/503 或短正文）> rate-limited（429）> blocked（403）> stalled（加载失败且未完成）> login-wall（complete 且有密码框，保守独立信号）> blank（complete 但正文与节点双低）> loading > ok；网络信号只认活动 tab（后台 tab 状态码不劫持判读）；信号源是页内探针（一次 evaluate）加事件缓冲网络计数；challenged/login-wall 判读附 page_skills 点名（映射 bot-shield/captcha/login-wall 配方）。与 requests() 族互补：那是流的可观测性，本函数是页面态判官。",
+      "description": "detect() 判断页面状态：ok、loading、blank、login-wall、blocked、rate-limited、challenged、stalled。",
       "example": "return await detect()",
       "input": {
         "properties": {},
@@ -1246,7 +1246,7 @@
       "type": "object"
     },
     "detectBrowsers": {
-      "description": "detectBrowsers() 探测本机已开的调试浏览器（profile/端口/wsUrl）。",
+      "description": "detectBrowsers() 探测本机已开启远程调试的浏览器。",
       "example": "return await detectBrowsers()",
       "input": {
         "properties": {},
@@ -1257,7 +1257,7 @@
       "type": "object"
     },
     "dialogAccept": {
-      "description": "dialogAccept(text?) 接受当前对话框（prompt 可带应答文本）。",
+      "description": "dialogAccept(text?) 接受当前对话框。",
       "example": "await dialogAccept(\"yes\")",
       "input": {
         "properties": {
@@ -1273,7 +1273,7 @@
       "type": "object"
     },
     "dialogDismiss": {
-      "description": "dialogDismiss() 拒绝当前对话框。alert/beforeunload 会被自动接受，无需手动。",
+      "description": "dialogDismiss() 关闭当前对话框。",
       "example": "await dialogDismiss()",
       "input": {
         "properties": {},
@@ -1284,7 +1284,7 @@
       "type": "object"
     },
     "dialogStatus": {
-      "description": "dialogStatus() 当前 JS 对话框状态（open/type/message/defaultPrompt）。",
+      "description": "dialogStatus() 当前对话框状态。",
       "example": "return await dialogStatus()",
       "input": {
         "properties": {},
@@ -1295,7 +1295,7 @@
       "type": "object"
     },
     "downloadPath": {
-      "description": "downloadPath(guid, timeoutS?) 等下载完成后回落盘路径：completed 给 named 路径（改名未落时给 guid 原始名候选），canceled 报错，超时带当前态 CTA；guid 来自 downloads()。",
+      "description": "downloadPath(guid, timeoutS?) 等待指定下载完成并返回落盘路径。",
       "example": "return await downloadPath(\"<guid>\")",
       "input": {
         "properties": {
@@ -1317,7 +1317,7 @@
       "type": "object"
     },
     "downloads": {
-      "description": "downloads(since?) 下载列表：Browser.downloadWillBegin 行情加同 guid 最新 downloadProgress（state/receivedBytes/totalBytes）；落盘目录是状态目录 downloads/，捕获随 tab 入口自动开（Browser 域事件不做活动 tab 过滤）。",
+      "description": "downloads(since?) 列出下载项及进度。",
       "example": "return await downloads()",
       "input": {
         "properties": {
@@ -1333,7 +1333,7 @@
       "type": "object"
     },
     "dragRef": {
-      "description": "dragRef(srcRef, dstRef) 拖拽：源中心按下分八步移到目标中心松开；覆盖 pointer/mouse 型拖拽，原生 HTML5 draggable 不在序列内。",
+      "description": "dragRef(srcRef, dstRef) 从源元素拖到目标元素。",
       "example": "await dragRef(\"e2\", \"e4\")",
       "input": {
         "properties": {
@@ -1356,7 +1356,7 @@
       "type": "object"
     },
     "dropFiles": {
-      "description": "dropFiles(ref, paths) 文件灌入 input[type=file]：DOM.setFileInputFiles 直灌（可靠面，multiple 支持，路径预检不存在即报错防 CDP 静默假成功）；拖拽事件序列用 mouseDown/Move/Up 手拼。",
+      "description": "dropFiles(ref, paths) 向 file 输入框灌入本地文件。",
       "example": "await dropFiles(\"e3\", [\"/tmp/a.png\"])",
       "input": {
         "properties": {
@@ -1379,7 +1379,7 @@
       "type": "object"
     },
     "emulate": {
-      "description": "emulate(opts) 视口与 UA 仿真：viewport 加 mobile 加 userAgent 全可省；mobile 档同站更省 token；userAgent 只覆写 UA 字符串，UA-CH 高熵字段未动（引擎级覆写另属引擎旗标面）；userAgentMetadata随 userAgent 直传 setUserAgentOverride，UA-CH 高熵字段（brands/platform/model 等，architecture 与 platformVersion 为 CDP 必填）原生覆写非 JS 注入。",
+      "description": "emulate(opts) 仿真视口、mobile 或 userAgent。",
       "example": "return await emulate({viewport:{width:390,height:844}, mobile:true})",
       "input": {
         "properties": {
@@ -1397,7 +1397,7 @@
       "type": "object"
     },
     "emulateMedia": {
-      "description": "emulateMedia(opts) a11y 媒质仿真族：Emulation.setEmulatedMedia features 面，五参任给其一以上（非法枚举当场报错列合法值）；页内 matchMedia 感知。单次调用是全量替换：多特征同一次 opts 里给；仿真挂在 target 上跨导航保留，goto 后要 stock 视图记得 emulateMediaClear()。与 emulate({viewport,mobile,userAgent}) 并列成族。",
+      "description": "emulateMedia(opts) 仿真媒质特征（prefers-color-scheme 等）。",
       "example": "await emulateMedia({colorScheme: \"dark\", media: \"print\"})",
       "input": {
         "properties": {
@@ -1429,7 +1429,7 @@
       "type": "object"
     },
     "emulateMediaClear": {
-      "description": "emulateMediaClear() 还原媒质仿真：五特征与媒质全部回 stock。",
+      "description": "emulateMediaClear() 清除媒质仿真。",
       "example": "await emulateMediaClear()",
       "input": {
         "properties": {},
@@ -1440,7 +1440,7 @@
       "type": "object"
     },
     "engineCancelWait": {
-      "description": "engineCancelWait(waitId) 取消引擎层响应等待：Browse.cancelWait 静默取消。",
+      "description": "engineCancelWait(waitId) 取消引擎层响应等待。",
       "example": "await engineCancelWait(\"1:abc\")",
       "input": {
         "properties": {
@@ -1458,7 +1458,7 @@
       "type": "object"
     },
     "engineWaitForResponse": {
-      "description": "engineWaitForResponse(pattern) 引擎层响应等待：Browse.waitForResponse 引擎内 pattern 订阅，登记即回 {waitId} 不阻塞；命中推送 Browse.responseReady 事件。pattern 支持 url:/api/、status:200、method:POST、type:json 逗号 AND 组合；匹配语义是 URL 子串非 glob。与 JS 侧 waitForResponse 三点差分：登记即回不阻塞（JS 侧阻塞到命中）、URL 子串非 glob 通配、无内置超时（调用方在事件面自管 waitFor/peekEvents）。引擎须扩展域版（命令骨架已绿事件面在途），否则 -32601 报错指路 JS 侧替代。",
+      "description": "engineWaitForResponse(pattern) 引擎内按 pattern 等待响应。登记即返回 waitId。需要扩展域版 clean-chrome。",
       "example": "const w = await engineWaitForResponse(\"url:/api/\")",
       "input": {
         "properties": {
@@ -1476,7 +1476,7 @@
       "type": "object"
     },
     "exportStorageState": {
-      "description": "exportStorageState() 导出会话态：cookies 全量加当前页 origin 的 localStorage；多 origin 逐个切 tab 再导。",
+      "description": "exportStorageState() 导出 cookie 与当前页 localStorage。",
       "example": "return await exportStorageState()",
       "input": {
         "properties": {},
@@ -1487,7 +1487,7 @@
       "type": "object"
     },
     "fetch": {
-      "description": "fetch(url, opts?) 一次性只读抓取（方言全局；rn 经 cdp::dialect 桥直达）：HTTP 直取零浏览器成本，三条件升级（正文空、墙词、少于 20 词）走 goto 加页内抽取；html:true 恒走引擎腿回渲染后 DOM HTML（html 字段），markdown:true 经 mdka 转本腿 html 回 markdown 字段；回 {via, title, text} 加可选键（HTTP 腿：status/bytes/markdown?；引擎升级腿：upgradedFrom/httpStatus/markdown?；html:true 直取形：html/markdown?；求了没取到给 null 占位）；页内抽取异常显式报错；与 CLI browse fetch 同语义（纯函数单源，腿编排双轨）。",
+      "description": "fetch(url, opts?) 一次性抓取 URL。语义与 browse fetch 相同。",
       "example": "return await fetch(\"https://example.com\", {markdown: true})",
       "input": {
         "properties": {
@@ -1509,7 +1509,7 @@
       "type": "object"
     },
     "fillInput": {
-      "description": "fillInput(selector, text, submit?) 按 CSS 选择器填输入框（SelectAll 不发 Ctrl+A，回读严格验证；select 走 selectOption；submit 填完顺带 Enter；提交若触发导航或对话框，后续用 goto()/waitLoad() 收尾或先 dialogStatus()。",
+      "description": "fillInput(selector, text, submit?) 按 CSS 选择器填写输入框。",
       "example": "await fillInput(\"#q\", \"hello\", {submit: true})",
       "input": {
         "properties": {
@@ -1535,7 +1535,7 @@
       "type": "object"
     },
     "fillRef": {
-      "description": "fillRef(ref, text, submit?) 按 ref 填输入框：objectId focus、SelectAll+insertText、同节点回读严格验证（OOPIF 内节点全程走子 session）；submit 填完顺带 Enter；提交若触发导航或对话框，后续用 goto()/waitLoad() 收尾或先 dialogStatus()。",
+      "description": "fillRef(ref, text, submit?) 按短 ref 填写输入框。",
       "example": "await fillRef(\"e2\", \"hello\", true)",
       "input": {
         "properties": {
@@ -1561,7 +1561,7 @@
       "type": "object"
     },
     "findRefs": {
-      "description": "findRefs(query, opts?) 服务端检索 AX 树：daemon 侧按 name/value 子串匹配（insensitive 开大小写不敏感，不引正则依赖），只回命中节点加 context 层祖先链（grep -C 式），节点带新 ref 可直接 clickRef/fillRef——比全量 snapshot 省一个量级 token；有命中才整表替换引用表（同 snapshot 语义），零命中保留旧表并标 kept_refs:true。检索范围是顶层 AX 树：iframe/shadow 内节点不在其中（实弹），要穿透先 snapshot({pierce: true}) 再按 role/name 取 ref。",
+      "description": "findRefs(query, opts?) 按 name/value 子串检索无障碍树，返回命中节点及其祖先。有命中才替换引用表。",
       "example": "const f = await findRefs(\"Sign in\", {context: 1})",
       "input": {
         "properties": {
@@ -1587,7 +1587,7 @@
       "type": "object"
     },
     "goBack": {
-      "description": "goBack(delta?) 历史回退 delta 步（越界钳到最早），等加载收尾，回 {steps,url,title}。",
+      "description": "goBack(delta?) 历史后退。",
       "example": "return await goBack(2)",
       "input": {
         "properties": {
@@ -1603,7 +1603,7 @@
       "type": "object"
     },
     "goForward": {
-      "description": "goForward(delta?) 历史前进 delta 步（越界钳到最新），等加载收尾，回 {steps,url,title}。",
+      "description": "goForward(delta?) 历史前进。",
       "example": "return await goForward()",
       "input": {
         "properties": {
@@ -1619,7 +1619,7 @@
       "type": "object"
     },
     "goto": {
-      "description": "goto(url, opts?) 一步导航：navigate 加 waitLoad 一体收尾，可选 waitIdle: true（或秒数）再等网络静默，回 {url,title,elapsedMs}；已加载页立即返回。替代 navigate 加 waitFor(loadEventFired) 组合（后者事件已发再注册即假超时，竞速窗），本函数走 readyState 轮询无此窗。timeout 秒口径（；不小于 1000 按毫秒误写换算并告警，封顶 600 秒）。下载型导航回 net::ERR_ABORTED 属正常（导航让位下载）：要下文件用裸 Page.navigate 加 downloads()/downloadPath()。技能触发层：命中 workspace 站点知识或页面特征时回执附 domain_skills/page_skills 清单与 hint、framework:{name,version}，未命中零新增键，BROWSE_DOMAIN_SKILLS=0 / BROWSE_PAGE_SKILLS=0 分层关闭。",
+      "description": "goto(url, opts?) 导航到 URL 并等待加载完成。opts.waitIdle 再等网络静默。",
       "example": "return await goto(\"https://example.com\", {waitIdle: true})",
       "input": {
         "properties": {
@@ -1641,7 +1641,7 @@
       "type": "object"
     },
     "grantPermissions": {
-      "description": "grantPermissions(perms, origin?) 开关级权限自动授予：Browser.grantPermissions 浏览器级授予权限，弹窗不再出；非法枚举（如 clipboard-read）CDP 当场报错透传；回 {granted, origin}。permissions API 查询即 granted。",
+      "description": "grantPermissions(perms, origin?) 授予页面权限，不再弹出提示。",
       "example": "await grantPermissions([\"geolocation\", \"notifications\"])",
       "input": {
         "properties": {
@@ -1663,7 +1663,7 @@
       "type": "object"
     },
     "highlight": {
-      "description": "highlight(ref, {label}?) 持久高亮覆盖层：2px 橙框不挡点击（pointer-events none），页面坐标绝对定位滚动跟随；label 给定叠编号徽标；幂等（同元素刷新框位）；清场走 highlightClear()。人看 agent 在操作哪个元素。",
+      "description": "highlight(ref, {label}?) 给元素画高亮框。label 显示编号。highlightClear 清除。",
       "example": "await highlight(\"e3\", {label: \"e3\"})",
       "input": {
         "properties": {
@@ -1685,7 +1685,7 @@
       "type": "object"
     },
     "highlightClear": {
-      "description": "highlightClear() 移除全部高亮框与徽标（按 data-browse-hl 属性）。",
+      "description": "highlightClear() 清除全部高亮框。",
       "example": "await highlightClear()",
       "input": {
         "properties": {},
@@ -1696,7 +1696,7 @@
       "type": "object"
     },
     "hostFunctions": {
-      "description": "hostFunctions() 本目录的运行时探针（agent 自描述，schema/清单同源）。",
+      "description": "hostFunctions() 列出本宿主提供的函数。",
       "example": "return await hostFunctions()",
       "input": {
         "properties": {},
@@ -1707,7 +1707,7 @@
       "type": "object"
     },
     "hoverAt": {
-      "description": "hoverAt(x, y) 悬停到视口坐标：mouseMoved。",
+      "description": "hoverAt(x, y) 悬停到视口坐标。",
       "example": "await hoverAt(120, 40)",
       "input": {
         "properties": {
@@ -1730,7 +1730,7 @@
       "type": "object"
     },
     "hoverRef": {
-      "description": "hoverRef(ref) 悬停到元素中心：触发 CSS :hover 与悬停菜单。",
+      "description": "hoverRef(ref) 悬停到元素中心。",
       "example": "await hoverRef(\"e3\")",
       "input": {
         "properties": {
@@ -1748,7 +1748,7 @@
       "type": "object"
     },
     "importStorageState": {
-      "description": "importStorageState(state 或 path) 导入会话态：吃 exportStorageState 的返回值或其落盘文件路径，回两边计数。",
+      "description": "importStorageState(state 或 path) 导入 exportStorageState 的会话。",
       "example": "return await importStorageState(st)",
       "input": {
         "properties": {
@@ -1765,7 +1765,7 @@
       "type": "object"
     },
     "jsErrors": {
-      "description": "jsErrors(since?) 未捕获 JS 异常列表（只认活动 tab）：Runtime.exceptionThrown 过滤（该事件本就是未捕获面），回 {count, errors:[{seq,text,url,line}]}；开域前与被挤出环形缓冲的旧异常取不到。",
+      "description": "jsErrors(since?) 读取当前标签未捕获的 JS 异常。",
       "example": "return await jsErrors()",
       "input": {
         "properties": {
@@ -1781,7 +1781,7 @@
       "type": "object"
     },
     "keydown": {
-      "description": "keydown(key) 按下不松：裸 keyDown，配合 keyup 成按住语义；组合写法同 pressKey。",
+      "description": "keydown(key) 按下键不松开。",
       "example": "await keydown(\"Shift\")",
       "input": {
         "properties": {
@@ -1799,7 +1799,7 @@
       "type": "object"
     },
     "keyup": {
-      "description": "keyup(key) 松开按键：裸 keyUp，与 keydown 成对。",
+      "description": "keyup(key) 松开按键。",
       "example": "await keyup(\"Shift\")",
       "input": {
         "properties": {
@@ -1817,7 +1817,7 @@
       "type": "object"
     },
     "listPageTargets": {
-      "description": "listPageTargets() 列可附着 page targets（带 own 标：只有 own=true 可 closeTab）。",
+      "description": "listPageTargets() 列出可附着的 page target。own=true 的才能 closeTab。",
       "example": "const tabs = await listPageTargets()",
       "input": {
         "properties": {},
@@ -1828,7 +1828,7 @@
       "type": "object"
     },
     "localClear": {
-      "description": "localClear() 清空当前域 localStorage（不动 sessionStorage）。",
+      "description": "localClear() 清空当前域 localStorage。",
       "example": "await localClear()",
       "input": {
         "properties": {},
@@ -1839,7 +1839,7 @@
       "type": "object"
     },
     "localDelete": {
-      "description": "localDelete(key) 删 localStorage 单键。",
+      "description": "localDelete(key) 删除 localStorage 键。",
       "example": "await localDelete(\"theme\")",
       "input": {
         "properties": {
@@ -1857,7 +1857,7 @@
       "type": "object"
     },
     "localGet": {
-      "description": "localGet(key) 读 localStorage 单键：null 即不存在；键值经 JSON 序列化内嵌防注入。",
+      "description": "localGet(key) 读取 localStorage 键。不存在返回 null。",
       "example": "return await localGet(\"theme\")",
       "input": {
         "properties": {
@@ -1875,7 +1875,7 @@
       "type": "object"
     },
     "localSet": {
-      "description": "localSet(key, value) 写 localStorage 单键：回写后回读值（写入即验）。",
+      "description": "localSet(key, value) 写入 localStorage 键。",
       "example": "await localSet(\"theme\", \"dark\")",
       "input": {
         "properties": {
@@ -1898,7 +1898,7 @@
       "type": "object"
     },
     "mouseDown": {
-      "description": "mouseDown(button?, x?, y?) 按下不释放：拖拽与长按语义的半边，与 mouseUp 配对；坐标缺省沿用最近 mouseMove 落点（按下前自动 move 打点）。",
+      "description": "mouseDown(button?, x?, y?) 按下鼠标键。",
       "example": "await mouseDown()",
       "input": {
         "properties": {
@@ -1922,7 +1922,7 @@
       "type": "object"
     },
     "mouseMove": {
-      "description": "mouseMove(x, y) 移动鼠标：触发 CSS :hover 与 mouseenter/leave 路径；hoverAt 是同义坐标版。",
+      "description": "mouseMove(x, y) 移动鼠标到坐标。",
       "example": "await mouseMove(120, 40)",
       "input": {
         "properties": {
@@ -1945,7 +1945,7 @@
       "type": "object"
     },
     "mouseUp": {
-      "description": "mouseUp(button?, x?, y?) 释放按键：与 mouseDown 配对；坐标缺省沿用最近落点。",
+      "description": "mouseUp(button?, x?, y?) 释放鼠标键。",
       "example": "await mouseUp()",
       "input": {
         "properties": {
@@ -1969,7 +1969,7 @@
       "type": "object"
     },
     "mouseWheel": {
-      "description": "mouseWheel(dx, dy) 滚轮：像素量（向下滚 dy 正），走 synthesizeScrollGesture 手势合成（导航后首发吞没问题已绕开；落点用最近 mouseMove 位置缺省中上）；SPA 懒加载监听 wheel 时 JS scrollBy 不可替代。要精确单 wheel 事件裸调 Input.dispatchMouseEvent（注意导航后首个会被吞）。",
+      "description": "mouseWheel(dx, dy) 滚轮滚动。",
       "example": "await mouseWheel(0, 600)",
       "input": {
         "properties": {
@@ -1992,7 +1992,7 @@
       "type": "object"
     },
     "newTab": {
-      "description": "newTab(url?) 开新 tab 并设为活动路由（先 about:blank 再 goto，防竞速假完成）；带 url 时内部等加载预算 15 秒与 goto 缺省对齐（G3）。",
+      "description": "newTab(url?) 打开新标签并设为活动。可带 url。",
       "example": "await newTab(\"https://example.com\")",
       "input": {
         "properties": {
@@ -2008,7 +2008,7 @@
       "type": "object"
     },
     "pageEval": {
-      "description": "pageEval(js) 全量 JS 一次求值（受限旁路的方言内形态）：直发 Runtime.evaluate（returnByValue 加 awaitPromise），值序列化回传；模板字符串/正则/函数声明直接写。CLI 侧等价 browse --js。",
+      "description": "pageEval(js) 在页面求值 JS，等价于 browse --js。",
       "example": "return await pageEval(\"(() => { const xs = [1,2,3]; return xs.map(x => x * 2).join(','); })()\")",
       "input": {
         "properties": {
@@ -2026,7 +2026,7 @@
       "type": "object"
     },
     "pdf": {
-      "description": "pdf(path?) 当前页存 PDF（仅无头 chrome），回 {path,bytes}。",
+      "description": "pdf(path?) 把当前页存为 PDF（无头）。",
       "example": "return await pdf()",
       "input": {
         "properties": {
@@ -2042,7 +2042,7 @@
       "type": "object"
     },
     "pressKey": {
-      "description": "pressKey(key) 按键；单键与组合：Enter 等命名键、单字符、\"Control+a\" 式修饰组合（组合不发字符；Shift 组合不产生大写输入，大写用 typeRef/fillRef；浏览器级快捷键不保证）。",
+      "description": "pressKey(key) 按键。支持 Enter 与 Control+a 组合。",
       "example": "await pressKey(\"Control+a\")",
       "input": {
         "properties": {
@@ -2060,7 +2060,7 @@
       "type": "object"
     },
     "print": {
-      "description": "print(x) 把值打到 daemon stderr（调试用）。",
+      "description": "print(x) 把值写到 daemon 标准错误。",
       "example": "await print(tabs)",
       "input": {
         "properties": {
@@ -2077,7 +2077,7 @@
       "type": "object"
     },
     "recordChapter": {
-      "description": "recordChapter(title) 录制中插章节标记：按当前帧计数追加到录制目录 chapters.jsonl（文件格式已冻结：每行 {atFrames,title}；消费方回放工具二期，当前仓内只写不读）。",
+      "description": "recordChapter(title) 在录制中插入章节标记。",
       "example": "await recordChapter(\"登录流程\")",
       "input": {
         "properties": {
@@ -2095,7 +2095,7 @@
       "type": "object"
     },
     "recordStart": {
-      "description": "recordStart(opts?) 开始录屏（Screencast 帧流落盘；everyNthFrame 源端抽帧、maxWidth/maxHeight 限宽高）；opts.cursor 画跟随光标元素加 showActions 点击处闪圈（screencast 帧可见，回放可读；stop 自动清）。",
+      "description": "recordStart(opts?) 开始录屏。",
       "example": "return await recordStart({everyNthFrame: 2})",
       "input": {
         "properties": {
@@ -2111,7 +2111,7 @@
       "type": "object"
     },
     "recordStop": {
-      "description": "recordStop() 停止录制，回 {frames,bytes,dir,sessionChanged}（PNG 已在盘上；录制中被换靶则 true，帧流钉住不中断）。",
+      "description": "recordStop() 停止录制。",
       "example": "return await recordStop()",
       "input": {
         "properties": {},
@@ -2122,7 +2122,7 @@
       "type": "object"
     },
     "reload": {
-      "description": "reload(opts?) 刷新当前页：opts.ignoreCache 走强制刷新；等加载收尾，回 {ignoredCache,url,title,elapsedMs}。",
+      "description": "reload(opts?) 刷新当前页。opts.ignoreCache 强制刷新。",
       "example": "return await reload({ignoreCache: true})",
       "input": {
         "properties": {
@@ -2138,7 +2138,7 @@
       "type": "object"
     },
     "requestDetail": {
-      "description": "requestDetail(indexOrRequestId, {since, filter}?) 单条网络响应详情（只认活动 tab）：index 配同 filter 与 requests() 列表严格对齐，或直接给 requestId 取最新；回 url/status/type/mimeType/headers/bytes，body 另走 responseBody(requestId)。",
+      "description": "requestDetail(indexOrRequestId, {since, filter}?) 单条网络响应详情。可用列表序号或 requestId。",
       "example": "return await requestDetail(0)",
       "input": {
         "properties": {
@@ -2159,7 +2159,7 @@
       "type": "object"
     },
     "requests": {
-      "description": "requests(opts?) 网络响应摘要列表（只认活动 tab）：Network.responseReceived 映射 {index,requestId,url,status,type,bytes}（index 是过滤后列表序，requestDetail 传同参即对齐）；Network 域随 tab 入口自动开，缓冲环形 1000 条。要单条详情走 requestDetail，要响应体走 responseBody(requestId)。",
+      "description": "requests(opts?) 当前标签的网络响应摘要。详情用 requestDetail，响应体用 responseBody。",
       "example": "return await requests({filter: \"/api/\"})",
       "input": {
         "properties": {
@@ -2179,7 +2179,7 @@
       "type": "object"
     },
     "resolveWsUrl": {
-      "description": "resolveWsUrl(opts?) 把 wsUrl/port/profileDir 线索解析成 WS URL（不连接）。",
+      "description": "resolveWsUrl(opts?) 把 wsUrl、port 或 profileDir 解析成 WebSocket URL，不连接。",
       "example": "return await resolveWsUrl({port: 9222})",
       "input": {
         "properties": {
@@ -2195,7 +2195,7 @@
       "type": "object"
     },
     "responseBody": {
-      "description": "responseBody(requestId) 按 requestId 取响应体：peekEvents/findEvents 拿到的 id 皆可用，base64 自动解码，回 {body,base64Encoded,json} 与 waitForResponse 同形。",
+      "description": "responseBody(requestId) 按 requestId 读取响应体。",
       "example": "return await responseBody(rid)",
       "input": {
         "properties": {
@@ -2213,7 +2213,7 @@
       "type": "object"
     },
     "routeBlock": {
-      "description": "routeBlock(pattern) 网络拦截：glob 命中的请求直接失败（BlockedByClient）。作用于当前活动 tab。",
+      "description": "routeBlock(pattern) 拦截匹配 glob 的请求。",
       "example": "await routeBlock(\"*://ads.example.com/*\")",
       "input": {
         "properties": {
@@ -2231,7 +2231,7 @@
       "type": "object"
     },
     "routeClear": {
-      "description": "routeClear() 清空全部拦截规则并 Fetch.disable。",
+      "description": "routeClear() 清除全部拦截规则。",
       "example": "await routeClear()",
       "input": {
         "properties": {},
@@ -2242,7 +2242,7 @@
       "type": "object"
     },
     "routeMock": {
-      "description": "routeMock(pattern, body, opts?) 网络拦截：命中的请求本地应答（默认带 ACAO *）；opts.headers加额外响应头（如 Content-Disposition 触发下载）；headers 追加非覆盖（同名 Content-Type 会并存，换 CT 用 contentType 参数）；跨源页读自定义头要一并给 Access-Control-Expose-Headers。",
+      "description": "routeMock(pattern, body, opts?) 对匹配请求返回本地应答。",
       "example": "await routeMock(\"http://mock.test/api*\", \"{\\\"ok\\\":1}\", {contentType: \"application/json\"})",
       "input": {
         "properties": {
@@ -2269,7 +2269,7 @@
       "type": "object"
     },
     "screenshot": {
-      "description": "screenshot(path?, full?, opts?) 页内截图存文件；opts：format png/jpeg、quality（jpeg 1-100 缺省 80）、ifChanged（与既有文件逐字节相同即 skipped，省读回不省拍摄；字节可比性限同一引擎二进制）。回 {path,bytes,skipped}。同片段 navigate 后的提交窗竞速由 host 层统一等提交（根因级，页面级调用闸到主框架 frameNavigated），本函数另内建 Not attached 有界重试兜底；opts.ref 元素级截图（clip 到 bbox）加 opts.hires/scale 高倍采样。",
+      "description": "screenshot(path?, full?, opts?) 截取当前页到文件。opts.ref 截元素；opts.format png 或 jpeg。",
       "example": "return await screenshot(null, false, {ifChanged: true})",
       "input": {
         "properties": {
@@ -2293,7 +2293,7 @@
       "type": "object"
     },
     "screenshotDiff": {
-      "description": "screenshotDiff(opts?) 引擎层截图差分：Browse.screenshotDiff 引擎内语义哈希 diff（像素级批 4b 候补），回 {changed, ratio} 只收结论零图传。与 screenshot({ifChanged}) 的边界：ifChanged 是字节相等（同引擎二进制确定性），screenshotDiff 是语义哈希比值。引擎须扩展域版，否则 -32601 报错指路字节口径替代。",
+      "description": "screenshotDiff(opts?) 引擎内截图差分，返回 {changed, ratio}。需要扩展域版 clean-chrome。",
       "example": "return await screenshotDiff()",
       "input": {
         "properties": {
@@ -2313,7 +2313,7 @@
       "type": "object"
     },
     "selectOption": {
-      "description": "selectOption(ref, value) 下拉框选择（value 或可见 label；设值+派发 input/change；未命中报全部可选值）。",
+      "description": "selectOption(ref, value) 选择下拉项（value 或可见文本）。",
       "example": "return await selectOption(\"e4\", \"Beta\")",
       "input": {
         "properties": {
@@ -2336,7 +2336,7 @@
       "type": "object"
     },
     "semanticSnapshot": {
-      "description": "semanticSnapshot(opts?) 引擎层语义快照：Browse.semanticSnapshot 直出紧凑语义树或 markdown（引擎内 AX 遍历，替代 JS 侧 379 节点路径）；引擎须 clean-chrome 扩展域版（--enable-features=CleanChromeBrowseDomain），否则报错带回退口径（snapshot({pierce:true})）。",
+      "description": "semanticSnapshot(opts?) 引擎层语义快照。需要扩展域版 clean-chrome。",
       "example": "return await semanticSnapshot({format: \"markdown\"})",
       "input": {
         "properties": {
@@ -2364,7 +2364,7 @@
       "type": "object"
     },
     "session.call": {
-      "description": "session.call(method, params?) 裸调任意 CDP 方法（守卫与 sessionId 路由同 session.<Domain>.<method>）。",
+      "description": "session.call(method, params?) 调用任意 CDP 方法。",
       "example": "await session.call(\"Page.navigate\", {url: \"https://example.com\"})",
       "input": {
         "properties": {
@@ -2386,7 +2386,7 @@
       "type": "object"
     },
     "session.close": {
-      "description": "session.close() 断开连接不关浏览器（可重连；spawn 端口态引擎会被引擎策略重连）。",
+      "description": "session.close() 断开连接，不关闭浏览器。",
       "example": "await session.close()",
       "input": {
         "properties": {},
@@ -2397,7 +2397,7 @@
       "type": "object"
     },
     "session.connect": {
-      "description": "session.connect(opts?) 按 wsUrl/port/profileDir 连接（timeoutMs 可等人工 Allow）。",
+      "description": "session.connect(opts?) 按 wsUrl、port 或 profileDir 连接引擎。",
       "example": "await session.connect({port: 9222, timeoutMs: 30000})",
       "input": {
         "properties": {
@@ -2413,7 +2413,7 @@
       "type": "object"
     },
     "session.findEvents": {
-      "description": "session.findEvents(method, path, value, n?) 等值过滤窥视（点分路径，如 params.requestId）。",
+      "description": "session.findEvents(method, path, value, n?) 按字段过滤查看事件。",
       "example": "return await session.findEvents(\"Network.responseReceived\", \"params.response.status\", 404, 1)",
       "input": {
         "properties": {
@@ -2444,7 +2444,7 @@
       "type": "object"
     },
     "session.getActiveSession": {
-      "description": "session.getActiveSession() 当前活动 sessionId（无则 null）。",
+      "description": "session.getActiveSession() 返回活动 sessionId。",
       "example": "return await session.getActiveSession()",
       "input": {
         "properties": {},
@@ -2466,7 +2466,7 @@
       "type": "object"
     },
     "session.peekEvents": {
-      "description": "session.peekEvents(method, n?) 非破坏窥视事件缓冲（waitFor 之后仍能取到）。",
+      "description": "session.peekEvents(method, n?) 查看事件缓冲，不取出。",
       "example": "return await session.peekEvents(\"Network.requestWillBeSent\", 5)",
       "input": {
         "properties": {
@@ -2488,7 +2488,7 @@
       "type": "object"
     },
     "session.peekEventsSince": {
-      "description": "session.peekEventsSince(method, sinceSeq, n?) seq 游标增量窥视（首拍 sinceSeq 用 0，之后用上一拍最后一条的 seq）。",
+      "description": "session.peekEventsSince(method, sinceSeq, n?) 按 seq 增量查看事件。",
       "example": "return await session.peekEventsSince(\"Network.requestWillBeSent\", 42, 10)",
       "input": {
         "properties": {
@@ -2515,7 +2515,7 @@
       "type": "object"
     },
     "session.setActiveSession": {
-      "description": "session.setActiveSession(sessionId?) 覆写活动 sessionId（高级用法；一般走 session.use）。",
+      "description": "session.setActiveSession(sessionId?) 设置活动 sessionId。",
       "example": "await session.setActiveSession(sid)",
       "input": {
         "properties": {
@@ -2531,7 +2531,7 @@
       "type": "object"
     },
     "session.use": {
-      "description": "session.use(targetId) 附着某 tab 并设为活动路由（flatten attach）。",
+      "description": "session.use(targetId) 附着指定标签并设为活动。",
       "example": "await session.use(tabs[0].targetId)",
       "input": {
         "properties": {
@@ -2549,7 +2549,7 @@
       "type": "object"
     },
     "session.waitFor": {
-      "description": "session.waitFor(method, undefined, s?) 从事件缓冲取第一个 method 事件（取出即移除；超时报错，秒口径）。只认活动 tab 与 browser 级事件，钉住 session（录制中）与他 tab 的不被误领；要看全缓冲用 peekEvents（不过滤）。竞速警示：loadEventFired 这类一次性事件可能在你注册前已发（假超时），等加载用 goto()/waitLoad()，等导航事件用 frameNavigated。",
+      "description": "session.waitFor(method, undefined, s?) 从事件缓冲取出指定 method 的下一条事件。",
       "example": "await session.waitFor(\"Page.frameNavigated\", undefined, 15)",
       "input": {
         "properties": {
@@ -2571,7 +2571,7 @@
       "type": "object"
     },
     "session.waitJs": {
-      "description": "session.waitJs(expression, s?) 页内谓词轮询（真 V8 表达式），等到即返回真值本身。timeout 秒口径：不小于 1000 视为毫秒误写，换算并告警，封顶 600 秒（1000 至 3600 不再静默秒直解）；秒直写三位数内（上界 999 秒）。",
+      "description": "session.waitJs(expression, s?) 轮询页内 JS 谓词，直到为真。",
       "example": "await session.waitJs(\"document.querySelector('#x') !== null\", 5)",
       "input": {
         "properties": {
@@ -2593,7 +2593,7 @@
       "type": "object"
     },
     "sessionClear": {
-      "description": "sessionClear() 清空当前域 sessionStorage（不动 localStorage）。",
+      "description": "sessionClear() 清空当前域 sessionStorage。",
       "example": "await sessionClear()",
       "input": {
         "properties": {},
@@ -2604,7 +2604,7 @@
       "type": "object"
     },
     "sessionDelete": {
-      "description": "sessionDelete(key) 删 sessionStorage 单键。",
+      "description": "sessionDelete(key) 删除 sessionStorage 键。",
       "example": "await sessionDelete(\"tmp\")",
       "input": {
         "properties": {
@@ -2622,7 +2622,7 @@
       "type": "object"
     },
     "sessionGet": {
-      "description": "sessionGet(key) 读 sessionStorage 单键。",
+      "description": "sessionGet(key) 读取 sessionStorage 键。",
       "example": "return await sessionGet(\"tmp\")",
       "input": {
         "properties": {
@@ -2640,7 +2640,7 @@
       "type": "object"
     },
     "sessionSet": {
-      "description": "sessionSet(key, value) 写 sessionStorage 单键：回写后回读值。",
+      "description": "sessionSet(key, value) 写入 sessionStorage 键。",
       "example": "await sessionSet(\"tmp\", \"1\")",
       "input": {
         "properties": {
@@ -2663,7 +2663,7 @@
       "type": "object"
     },
     "setInitScript": {
-      "description": "setInitScript(code) 每新文档前注入脚本：反检测补丁、杀 cookie 横幅；SPA 路由不重跑（只对新文档生效），空串清除。",
+      "description": "setInitScript(code) 在每个新文档加载前注入脚本。空串清除。",
       "example": "await setInitScript(\"window.__no_banner = 1\")",
       "input": {
         "properties": {
@@ -2681,7 +2681,7 @@
       "type": "object"
     },
     "snapshot": {
-      "description": "snapshot(opts?) AX 树快照：nodes 带 role/name/value/childIds/短 ref（e1、e2…），引用表的唯一来源；url/title 走 CDP 查询面，页面主世界零写入（无注入痕）。opts（捕获与检索分离）：ref 取该元素子树（snapshot(e34) 部分展开），depth 限深（大页先浅扫再部分展开省 token）；ref 只盖过滤后的可见集；pierce：同源 iframe 与 shadow DOM 内容走 DOM.getDocument pierce，跨域 iframe（OOPIF）走子 session AX 树合并（发现加显式 attach；节点带 oopif 标与 ownerSession），都进同一 ref 表可直接 clickRef/fillRef（跨 frame 与跨 OOPIF 坐标已提升；嵌套 OOPIF 只提升一层）；pierce 清单与 AX 投影有结构节点重复（html/body 双份，ref 各自唯一同 backendNodeId），pierce 节点的 name 取 aria-label 或 id（非可见文本），pierce 与 ref 子树组合受限（pierce 节点无 childIds）。",
+      "description": "snapshot(opts?) 无障碍树快照。节点带短 ref（e1、e2…）。opts.depth 限深；opts.pierce 含 iframe 与 shadow DOM。",
       "example": "const s = await snapshot({depth: 2})",
       "input": {
         "properties": {
@@ -2705,7 +2705,7 @@
       "type": "object"
     },
     "subscribeChanges": {
-      "description": "subscribeChanges({selector, kinds?}) 引擎层变更订阅：Browse.subscribeChanges 订阅 DOM 子树变更（引擎内 MutationObserver 零页面痕迹）；selector 必填（缺则本函数当场报错带 CTA，不落引擎 -32602），kinds 缺省三类全收；回 {subscriptionId}；推送走 Browse.changesPushed 事件，事件形 {subscriptionId, changes: string[]}（每行一条紧凑变更描述，如 childList DIV#t +1 -0），在发起订阅的 page session 上投递：peekEvents 不过滤可全量读，waitFor 只认活动 tab（换 tab 后要读旧 session 的推送就用 peekEvents）。引擎须扩展域版（--enable-features=CleanChromeBrowseDomain），否则 -32601 报错指路；取消走 unsubscribeChanges(sub)。",
+      "description": "subscribeChanges({selector, kinds?}) 订阅 DOM 子树变更。selector 必填。需要扩展域版 clean-chrome。",
       "example": "const s = await subscribeChanges({selector: \"#feed\"})",
       "input": {
         "properties": {
@@ -2727,7 +2727,7 @@
       "type": "object"
     },
     "switchTab": {
-      "description": "switchTab(targetId) 切活动路由（不改 Chrome 可见前景，人机共存）。",
+      "description": "switchTab(targetId) 切换活动标签。",
       "example": "await switchTab(tabs[0].targetId)",
       "input": {
         "properties": {
@@ -2745,7 +2745,7 @@
       "type": "object"
     },
     "typeRef": {
-      "description": "typeRef(ref, text) 真实按键序列输入：focus 后逐字符 keyDown+keyUp，contenteditable/ProseMirror 类编辑器用；普通输入框用 fillRef（insertText）。",
+      "description": "typeRef(ref, text) 向元素逐字符输入。",
       "example": "await typeRef(\"e7\", \"hello\")",
       "input": {
         "properties": {
@@ -2768,7 +2768,7 @@
       "type": "object"
     },
     "uncheckRef": {
-      "description": "uncheckRef(ref) 取消勾选 checkbox：同 checkRef 反向，幂等。",
+      "description": "uncheckRef(ref) 取消勾选 checkbox。",
       "example": "return await uncheckRef(\"e5\")",
       "input": {
         "properties": {
@@ -2786,7 +2786,7 @@
       "type": "object"
     },
     "unsubscribeChanges": {
-      "description": "unsubscribeChanges(subscriptionId) 取消变更订阅：Browse.unsubscribeChanges 静默取消；引擎侧已知响应偶失（功能生效，引擎日记在册），本调用可能无回执或报超时，按订阅已静默处理，勿依赖响应体重试。",
+      "description": "unsubscribeChanges(subscriptionId) 取消 DOM 变更订阅。",
       "example": "await unsubscribeChanges(\"1:abc\")",
       "input": {
         "properties": {
@@ -2804,7 +2804,7 @@
       "type": "object"
     },
     "value-methods": {
-      "description": "值.slice(start,end?) 等 字符串与数组的小加工：字符串 slice(start,end?)/split(sep)/includes(sub)/startsWith(sub)/endsWith(sub)/trim()/toUpperCase()/toLowerCase()；数组 slice(start,end?)/join(sep?)/includes(v)/concat(数组...)。slice 按 UTF-16 单元（同 .length，代理对切中间出替换符）；大小写转换非 locale；join 对容器元素打紧凑 JSON；includes 数值宽等（1 与 1.0 同值），容器按 JSON 深等（与 JS 引用等值不同）。纯函数无控制流，页面内逻辑仍走 Runtime.evaluate。",
+      "description": "值.slice(start,end?) 等 字符串与数组的 slice、split、join、includes 等。",
       "example": "return body.slice(0, 200)",
       "input": {
         "properties": {},
@@ -2815,7 +2815,7 @@
       "type": "object"
     },
     "waitForResponse": {
-      "description": "waitForResponse(pattern, s?) 等 URL 命中 glob（与 routeBlock/routeMock 同写法）的最近一个响应完成（只认活动 tab）：回 {requestId,url,status,headers,body,base64Encoded,json}；命中含历史（Network 域须在触发前已开，本函数幂等开收不到已发出的响应），方言无并发，可用形态是触发后等待；体等 loadingFinished 再取（5 秒窗），失败显式 bodyError；base64 自动解码，可解析时附 json。timeout 秒口径（不小于 1000 按毫秒误写换算并告警，封顶 600 秒；秒直写三位数内（上界 999 秒）。",
+      "description": "waitForResponse(pattern, s?) 等待 URL 匹配 glob 的响应完成。",
       "example": "return await waitForResponse(\"https://x.test/api*\")",
       "input": {
         "properties": {
@@ -2837,7 +2837,7 @@
       "type": "object"
     },
     "waitIdle": {
-      "description": "waitIdle(s?) 等 network 静默（窗口语义：起点前挂着的请求不计）。timeout 秒口径：不小于 1000 视为毫秒误写，换算并告警，封顶 600 秒（1000 至 3600 不再静默秒直解）；秒直写三位数内（上界 999 秒）。",
+      "description": "waitIdle(s?) 等待网络静默。",
       "example": "await waitIdle(5)",
       "input": {
         "properties": {
@@ -2853,7 +2853,7 @@
       "type": "object"
     },
     "waitLoad": {
-      "description": "waitLoad(s?) 等 document.readyState 到 complete（已加载立即返回）。timeout 秒口径：不小于 1000 视为毫秒误写，换算并告警，封顶 600 秒（1000 至 3600 不再静默秒直解）；秒直写三位数内（上界 999 秒）；旧毫秒习惯值等价迁移。",
+      "description": "waitLoad(s?) 等待 document.readyState 为 complete。",
       "example": "await waitLoad(8)",
       "input": {
         "properties": {

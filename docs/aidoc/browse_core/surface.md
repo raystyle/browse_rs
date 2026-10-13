@@ -18,7 +18,7 @@ session 方法**只在这一处登记为数据**，JSON Schema 与 LLM 清单
 - `render_help` — 渲染 `--help` 与裸调用共用的帮助面（cli-docs 标准节序）：头行
 - `render_llms` — 渲染紧凑 LLM 清单 `llms.txt`（索引层，一行一命令）。
 - `render_llms_full` — 渲染完整 LLM 清单 `llms-full.txt`：索引加逐命令参数与示例。
-- `render_manual` — 渲染 `--llms` agent 手册（REQ-060 一面，族标准名）：名加版本加一句定位加子命令表
+- `render_manual` — 渲染 `--llms` agent 手册：版本、定位、子命令表、通用旗标、常用例。
 - `render_schema` — 渲染 JSON Schema 包：每命令一个 definition，输入按目录、输出是运行时 JSON。
 - `write_surface_files` — 把派生文件写进目录（维护命令 `browse --gen-surface <dir>` 用）：
 
