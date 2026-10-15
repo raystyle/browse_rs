@@ -222,7 +222,13 @@ def min_beats(seconds):
 # ---------------------------------------------------------------- renderer prio (L3b note)
 
 def renderer_pids(profile):
-    """Renderer pids: /proc scan for --type=renderer + same profile."""
+    """Renderer pids for this run's profile (linux /proc scan, mac ps)."""
+    import subprocess
+    if IS_MAC:
+        out = subprocess.run(["ps", "-axo", "pid=,command="],
+                             capture_output=True, text=True).stdout
+        return [int(ln.split()[0]) for ln in out.splitlines()
+                if "--type=renderer" in ln and profile in ln]
     pids = []
     for pid in os.listdir("/proc"):
         if not pid.isdigit():
@@ -238,8 +244,31 @@ def renderer_pids(profile):
 
 
 def proc_priority_note(pid):
-    """Record-only snapshot (linux shape); nice field 19 of stat."""
+    """Record-only priority snapshot (linux /proc stat + cgroup;
+    mac ps nice + pri). Feeds the L3b before/after-minimize record."""
+    import subprocess
     out = {}
+    if IS_MAC:
+        for key, opt in (("nice", "ni="), ("pri", "pri=")):
+            try:
+                r = subprocess.run(["ps", "-o", opt, "-p", str(pid)],
+                                   capture_output=True, text=True, timeout=5)
+                v = r.stdout.strip()
+                if v:
+                    out[key] = v
+            except Exception:
+                pass
+        # taskpolicy -p: empty output = no background/utility policy set;
+        # a backgrounded renderer would print one (definitive mac L3b
+        # signal, field-verified 2026-10-15: stable-empty pre/post
+        # minimize on the fresh build)
+        try:
+            r = subprocess.run(["taskpolicy", "-p", str(pid)],
+                               capture_output=True, text=True, timeout=5)
+            out["taskpolicy"] = (r.stdout + r.stderr).strip()
+        except Exception:
+            pass
+        return out
     try:
         with open(f"/proc/{pid}/stat") as f:
             parts = f.read().rsplit(")", 1)[1].split()
@@ -467,11 +496,12 @@ def reverse_both_leg(chrome, work, seconds):
 
 
 def priority_note_leg(chrome, work):
-    """L3b, record-only: renderer /proc shape before/after minimize."""
+    """L3b, record-only: renderer priority shape before/after minimize
+    (linux /proc stat+cgroup; mac ps nice+pri; win QoS is its own face)."""
     def run():
-        if os.name == "nt" or IS_MAC:
-            return None, ("SKIP: linux /proc shape only (win/mac QoS "
-                          "spot-check runs their own)"), {"skipped": True}
+        if os.name == "nt":
+            return None, ("SKIP: win QoS spot-check runs its own face"), {
+                "skipped": True}
         profile = os.path.join(work, "prio")
         origin = Origin()
         proc, port = boot(chrome, profile, headless=False,
@@ -492,7 +522,8 @@ def priority_note_leg(chrome, work):
             after = {pid: proc_priority_note(pid)
                      for pid in renderer_pids(profile)}
             restore(cdp)
-            return True, "recorded (no linux verdict: kernel-shaped)", {
+            return True, ("recorded (record-only: priority shaping is "
+                          "kernel/OS-shaped)"), {
                 "before": before, "after": after}
         finally:
             kill_group(proc)
