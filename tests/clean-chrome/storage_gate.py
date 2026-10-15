@@ -322,6 +322,20 @@ def main():
     failed = [r for r in results if not r[1]]
     print(f"EXTREME GATE: {len(results) - len(failed)}/{len(results)} pass"
           f" (work={work})")
+    receipt = {
+        "gate": "storage",
+        "ts": time.strftime("%Y-%m-%dT%H:%M:%S"),
+        "passed": len(results) - len(failed),
+        "failed": len(failed),
+        "skipped": 0,
+        "total": len(results),
+        "work": work,
+        "legs": [{"name": n, "ok": bool(ok), "skipped": False,
+                  "note": note, "data": None}
+                 for n, ok, note in results],
+    }
+    with open(os.path.join(work, "receipt.json"), "w") as f:
+        json.dump(receipt, f, ensure_ascii=False, indent=1)
     return 1 if failed else 0
 
 
