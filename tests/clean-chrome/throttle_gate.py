@@ -24,8 +24,15 @@ dependency), gaps between beats read back over CDP.
                      main run measured the source default, not a dead
                      probe; green-without-clamping = A/B VOID = red).
   reverse-feature    leg B: --enable-features=IntensiveWakeUpThrottling
-                     must reintroduce minute-scale clamping after the
-                     5-minute hidden line (duration floor 330 s).
+                     ALONE must stay healthy (adjudicated 2026-10-15:
+                     L3 nests inside the L1 gate in
+                     frame_scheduler_impl.cc, so with L1 source-default
+                     off, kBackgroundIntensive is structurally
+                     unreachable -- a single flag cannot restore L3).
+  reverse-both       leg C (the nesting proof): BOTH flags together.
+                     Hidden 6.5 min: gaps ~1000ms before the 5-minute
+                     grace line (kBackground), then ~60000ms after it
+                     (kBackgroundIntensive phase transition).
   occluded-heartbeat L2 face: a second big window covers the first;
                      heartbeat keeps running sub-second (occlusion no
                      longer demotes to hidden post-REQ-022).
@@ -80,14 +87,22 @@ def quantiles(sorted_vals, q):
     return sorted_vals[idx]
 
 
+def best_run(gaps, threshold):
+    """Longest run of consecutive gaps >= threshold (L1 alignment
+    shape; single spikes are noise)."""
+    run = best = 0
+    for g in gaps:
+        run = run + 1 if g >= threshold else 0
+        best = max(best, run)
+    return best
+
+
 def classify(gaps):
     """(ok, reason): L1 regression = >=3 consecutive >=1s; L3 = any
     >=50s gap; healthy otherwise. Aligned with the precedents doc."""
-    run = best = n_l3 = 0
-    for g in gaps:
-        run = run + 1 if g >= L1_GAP_MS else 0
-        best = max(best, run)
-        n_l3 += g >= L3_GAP_MS
+    best = best_run(gaps, L1_GAP_MS)
+    n_l3 = sum(1 for g in gaps if g >= L3_GAP_MS)
+    run = best
     mx = max(gaps) if gaps else 0
     if n_l3:
         return False, (f"L3 regression: {n_l3} gap(s) >= {L3_GAP_MS}ms "
@@ -378,6 +393,79 @@ def occlusion_leg(chrome, work, seconds):
     return run
 
 
+def reverse_both_leg(chrome, work, seconds):
+    """Nesting proof (adjudicated 2026-10-15): both reversal flags
+    together must show the kBackground -> kBackgroundIntensive phase
+    transition at the 5-minute hidden line -- ~1s gaps before, ~60s
+    gaps after. L1 alone (reverse-blink) and L3 alone (reverse-feature)
+    bracket this leg; the three together are the living proof of the
+    frame_scheduler_impl.cc nesting."""
+    def run():
+        if not os.environ.get("DISPLAY") and not IS_MAC and os.name != "nt":
+            return None, "SKIP: no display (headful only)", {"skipped": True}
+        profile = os.path.join(work, "rev-both")
+        origin = Origin()
+        proc, port = boot(chrome, profile, headless=False,
+                          log=os.path.join(work, "chrome-rev-both.log"),
+                          url=origin.url("/hb"),
+                          extra_args=["--enable-blink-features="
+                                      "TimerThrottlingForBackgroundTabs",
+                                      "--enable-features="
+                                      "IntensiveWakeUpThrottling"])
+        try:
+            cdp = attach(port, timeout=30)
+            problem = arm_heartbeat(cdp, "/hb")
+            if problem:
+                return False, problem, None
+            method = minimize_hidden(cdp, port)
+            if method is None:
+                return None, "SKIP: no minimize form hid the page", {
+                    "skipped": True}
+            # early sample ends 5s before the grace line; late sample is
+            # the remainder, so the transition gap lands in "late"
+            time.sleep(DEPTH_LINE_S - 5)
+            early = json.loads(cdp.eval(READ_GAPS_JS) or "[]")
+            time.sleep(seconds - (DEPTH_LINE_S - 5))
+            late_full = json.loads(cdp.eval(READ_GAPS_JS) or "[]")
+            still_hidden = hidden(cdp)
+            restore(cdp)
+            late = late_full[len(early):] if len(late_full) > len(early) \
+                else late_full
+            # the transition lands by PAGE clock, not by our read
+            # clock (hidden-start offsets), so the verdict walks the
+            # combined sequence: a ~1s alignment run first, then the
+            # >=50s intensive gaps, in that order
+            seq = early + late
+            covered_ms = sum(seq)
+            if covered_ms < 0.5 * seconds * 1000:
+                return False, (f"probe starved: {covered_ms / 1000:.0f}s "
+                               f"covered of {seconds}s"), {
+                    "early_gaps": early, "late_gaps": late}
+            l1_idx = l3_idx = None
+            for i in range(len(seq) - 2):
+                if all(950 <= g <= 2000 for g in seq[i:i + 3]):
+                    l1_idx = i
+                    break
+            for i, g in enumerate(seq):
+                if g >= L3_GAP_MS:
+                    l3_idx = i
+                    break
+            l1_phase = l1_idx is not None
+            l3_phase = l3_idx is not None
+            ordered = (l1_phase and l3_phase and l1_idx < l3_idx)
+            ok = ordered
+            note = (f"1s-run@{l1_idx} intensive@{l3_idx} "
+                    f"n_ge50s={sum(1 for g in seq if g >= L3_GAP_MS)} "
+                    f"covered={covered_ms / 1000:.0f}s")
+            return ok, (note + " phase-transition="
+                        f"{'seen' if ok else 'missing'}"), {
+                "early_gaps": early, "late_gaps": late,
+                "minimized_via": method, "still_hidden": still_hidden}
+        finally:
+            kill_group(proc)
+    return run
+
+
 def priority_note_leg(chrome, work):
     """L3b, record-only: renderer /proc shape before/after minimize."""
     def run():
@@ -425,6 +513,9 @@ def main():
     ap.add_argument("--reverse-feature-seconds", type=int, default=330,
                     help="reverse-feature duration (must cross the 5-min "
                          "line; floor 330)")
+    ap.add_argument("--reverse-both-seconds", type=int, default=390,
+                    help="reverse-both duration (phase transition at the "
+                         "5-min line; floor 390)")
     ap.add_argument("--occluded-seconds", type=int, default=120)
     ap.add_argument("--skip-reverse", action="store_true")
     ap.add_argument("--leg", default=None,
@@ -466,7 +557,13 @@ def main():
                                max(330, args.reverse_feature_seconds),
                                extra_args=["--enable-features="
                                            "IntensiveWakeUpThrottling"],
-                               want_throttle=True))
+                               want_throttle=False,
+                               note_extra=" (L3 unreachable with L1 "
+                                          "closed: nesting, see "
+                                          "reverse-both)"))
+        gate.run("reverse-both",
+                 reverse_both_leg(chrome, work,
+                                  max(390, args.reverse_both_seconds)))
     return gate.finish("throttle")
 
 
