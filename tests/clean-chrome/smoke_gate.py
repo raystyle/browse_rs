@@ -131,14 +131,19 @@ class PipeCDP:
         self.deadline = time.time() + timeout
 
     def _read_msg(self):
-        import select
         while b"\0" not in self.buf:
             if time.time() > self.deadline:
                 raise ConnectionError("pipe read timeout")
-            r, _, _ = select.select([self.out_r], [], [], 1.0)
-            if not r:
-                continue
-            chunk = os.read(self.out_r, 65536)
+            if IS_WIN:
+                # select() is socket-only on windows; a blocking read is
+                # the deadline-free fallback (timeouts surface as eof)
+                chunk = os.read(self.out_r, 65536)
+            else:
+                import select
+                r, _, _ = select.select([self.out_r], [], [], 1.0)
+                if not r:
+                    continue
+                chunk = os.read(self.out_r, 65536)
             if not chunk:
                 raise ConnectionError("pipe eof")
             self.buf += chunk
@@ -191,24 +196,17 @@ def boot_pipe(chrome, profile, mode, log, extra_args=()):
     upstream AdoptPipes contract (S005).
     Returns (proc, in_w, out_r); caller owns the launcher ends.
     """
-    import fcntl
     os.makedirs(profile, exist_ok=True)
-
-    def to_high(fd):
-        hi = fcntl.fcntl(fd, fcntl.F_DUPFD, 10)
-        os.close(fd)
-        return hi
-
     in_r, in_w = os.pipe()
     out_r, out_w = os.pipe()
-    in_r, in_w = to_high(in_r), to_high(in_w)
-    out_r, out_w = to_high(out_r), to_high(out_w)
     env = dict(os.environ)
     env["CLEAN_CHROME_DEBUG"] = mode
     args = [chrome, "--headless=new", "--disable-gpu",
             f"--user-data-dir={profile}", "--no-first-run"]
     pass_fds = ()
     if IS_WIN:
+        # child pipe ends ride as inheritable HANDLEs; the launcher ends
+        # stay wherever os.pipe() put them (no fd-3/4 dance needed)
         import msvcrt
         os.set_inheritable(in_r, True)
         os.set_inheritable(out_w, True)
@@ -216,18 +214,40 @@ def boot_pipe(chrome, profile, mode, log, extra_args=()):
                     f"{msvcrt.get_osfhandle(in_r)},"
                     f"{msvcrt.get_osfhandle(out_w)}")
     else:
+        # POSIX: the child must find the pipe ends AT fd 3/4; os.pipe()
+        # may hand back 3/4 themselves where a naive dup2 clobbers a
+        # launcher end (seen live: instant browser-side EOF), so all
+        # four ends move to fds >= 10 first
+        import fcntl
+
+        def to_high(fd):
+            hi = fcntl.fcntl(fd, fcntl.F_DUPFD, 10)
+            os.close(fd)
+            return hi
+
+        in_r, in_w = to_high(in_r), to_high(in_w)
+        out_r, out_w = to_high(out_r), to_high(out_w)
         os.dup2(in_r, 3)
         os.dup2(out_w, 4)
         os.close(in_r)
         os.close(out_w)
         pass_fds = (3, 4)
         args += ["--no-sandbox", "--ozone-platform=headless"]
-        args += list(extra_args)
+    args += list(extra_args)
     proc = subprocess.Popen(
         args, stdin=subprocess.DEVNULL, stdout=open(log, "ab"),
         stderr=subprocess.DEVNULL, env=env,
         start_new_session=(not IS_WIN), pass_fds=pass_fds,
-        close_fds=True)
+        close_fds=(not IS_WIN))
+    if IS_WIN:
+        # the child adopted inherited copies at CreateProcess; the parent
+        # keeping its own ends would mask EOF when the child dies
+        # (pipe-smoke.py field-proven shape)
+        for fd in (in_r, out_w):
+            try:
+                os.close(fd)
+            except OSError:
+                pass
     return proc, in_w, out_r
 
 
@@ -555,9 +575,6 @@ def console_face_leg(chrome, work):
 
 def pipe_priority_leg(chrome, work):
     def run():
-        if IS_WIN:
-            return None, "SKIP: win io-pipes runs on the win host", {
-                "skipped": True}
         # (a) env=port + explicit --remote-debugging-pipe: switch wins
         profile = os.path.join(work, "prio-switch")
         proc, in_w, out_r = boot_pipe(chrome, profile, "port",
