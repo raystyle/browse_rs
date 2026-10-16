@@ -354,6 +354,8 @@ impl Session {
             }
         });
 
+        // geelib 新标签挂起修的投递道:事件泵只投,drainer 异步补发
+        let (resume_tx, mut resume_rx) = mpsc::unbounded_channel::<(String, String)>();
         let shared_r = RouteShared {
             pending: self.pending.clone(),
             events: self.events.clone(),
@@ -362,7 +364,33 @@ impl Session {
             gens: self.doc_gens.clone(),
             children: self.child_sessions.clone(),
             pending_children: self.pending_children.clone(),
+            resumer: resume_tx,
         };
+        // resume drainer(弱引用防 Session 滞活):attachedToTarget/
+        // targetCreated 投来的 (targetId, sessionId) 逐条对目标 session
+        // 幂等补发 Runtime.runIfWaitingForDebugger,解上游
+        // ShouldThrottlePopups 嵌套等待(window.open 新标签永空根因);
+        // 单条 2 秒界防风暴拥塞,失败静默(会话可能已销毁,幂等重试在
+        // 下一次事件自然发生)
+        let weak = Arc::downgrade(self);
+        tokio::spawn(async move {
+            while let Some((_tid, sid)) = resume_rx.recv().await {
+                let Some(sess) = weak.upgrade() else { break };
+                let target_sid = if sid.is_empty() {
+                    match sess.session_id.lock().await.clone() {
+                        Some(s) => s,
+                        None => continue,
+                    }
+                } else {
+                    sid
+                };
+                let _ = tokio::time::timeout(
+                    Duration::from_secs(2),
+                    sess.call_on("Runtime.runIfWaitingForDebugger", json!({}), &target_sid),
+                )
+                .await;
+            }
+        });
         let flag = self.connected.clone();
         let dead_pending = self.pending.clone();
         let epoch = self.conn_epoch.fetch_add(1, Ordering::Relaxed) + 1;
@@ -478,6 +506,8 @@ impl Session {
         });
 
         // 读泵：游离线程阻塞读，字节块过通道交异步侧切帧路由
+        // resume 投递道与 drainer 同 open_ws(geelib 挂起修,双连接形态等价)
+        let (resume_tx, mut resume_rx) = mpsc::unbounded_channel::<(String, String)>();
         let shared_r = RouteShared {
             pending: self.pending.clone(),
             events: self.events.clone(),
@@ -486,7 +516,27 @@ impl Session {
             gens: self.doc_gens.clone(),
             children: self.child_sessions.clone(),
             pending_children: self.pending_children.clone(),
+            resumer: resume_tx,
         };
+        let weak = Arc::downgrade(self);
+        tokio::spawn(async move {
+            while let Some((_tid, sid)) = resume_rx.recv().await {
+                let Some(sess) = weak.upgrade() else { break };
+                let target_sid = if sid.is_empty() {
+                    match sess.session_id.lock().await.clone() {
+                        Some(s) => s,
+                        None => continue,
+                    }
+                } else {
+                    sid
+                };
+                let _ = tokio::time::timeout(
+                    Duration::from_secs(2),
+                    sess.call_on("Runtime.runIfWaitingForDebugger", json!({}), &target_sid),
+                )
+                .await;
+            }
+        });
         let flag = self.connected.clone();
         let epoch = self.conn_epoch.fetch_add(1, Ordering::Relaxed) + 1;
         let epoch_r = self.conn_epoch.clone();
@@ -1176,6 +1226,9 @@ struct RouteShared {
     gens: Arc<Mutex<HashMap<String, u64>>>,
     children: Arc<Mutex<HashMap<String, String>>>,
     pending_children: Arc<Mutex<HashSet<String>>>,
+    /// 新 target/子 session 的 resume 补发道（geelib 新标签挂起修）：
+    /// 事件泵内只投递，不阻塞路由循环
+    resumer: mpsc::UnboundedSender<(String, String)>,
 }
 
 async fn route(mut v: Value, shared: &RouteShared) {
@@ -1195,20 +1248,48 @@ async fn route(mut v: Value, shared: &RouteShared) {
             // sessionId，后续该 session 的事件照常进缓冲）
             Some("Target.attachedToTarget")
                 if let (Some(tid), Some(sid)) = (
-                    v.pointer("/params/targetInfo/targetId").and_then(Value::as_str),
+                    v.pointer("/params/targetInfo/targetId")
+                        .and_then(Value::as_str),
                     v.pointer("/params/sessionId").and_then(Value::as_str),
-                )
-                    // 只记 iframe 型（#60）：browser 级 auto-attach 会带上
-                    // 其他 page 型 target，混进 snapshot 是噪音
-                    && v.pointer("/params/targetInfo/type").and_then(Value::as_str)
-                        == Some("iframe") =>
+                ) =>
             {
-                let (t, c) = (tid.to_string(), sid.to_string());
-                shared.children.lock().await.insert(t, c);
+                // geelib 新标签挂起修（kimi 定谳链）：auto-attach 置位
+                // ShouldThrottlePopups（只看 autoAttach_ 位），window.open 的
+                // [Sync] CreateNewWindow reply 带 wait_for_debugger=true，
+                // opener renderer 进嵌套 RunLoop 等 resume；本会话
+                // waitForDebuggerOnStart:false 无自动 resume 机关 → 永挂。
+                // 对每个新附着 session 幂等补发 runIfWaitingForDebugger
+                // （非等待态下近似空操作，puppeteer 标准姿势）。
+                let _ = shared.resumer.send((tid.to_string(), sid.to_string()));
+                // #60：只记 iframe 型进子 session 表——browser 级 auto-attach
+                // 会带上其他 page 型 target，混进 snapshot 是噪音
+                if v.pointer("/params/targetInfo/type").and_then(Value::as_str) == Some("iframe") {
+                    shared
+                        .children
+                        .lock()
+                        .await
+                        .insert(tid.to_string(), sid.to_string());
+                }
             }
             // #60：OOPIF 目标出现即记账（本机 Chrome 只从 targetCreated 拿得到，
             // auto-attach 不产 iframe 型 attachedToTarget）；实际附着由
             // sync_child_sessions 显式做
+            Some("Target.targetCreated")
+                if v.pointer("/params/targetInfo/type").and_then(Value::as_str) == Some("page")
+                    && v.pointer("/params/targetInfo/targetId")
+                        .and_then(Value::as_str)
+                        .is_some() =>
+            {
+                // 同修兜底：browser 发起/竞速窗里 target 先建、attach 事件
+                // 后到或丢失时，按 targetId 直接对根会话补发（不校验 frame，
+                // 见 web_dev_tools_agent_impl.cc:276-283）
+                let tid = v
+                    .pointer("/params/targetInfo/targetId")
+                    .and_then(Value::as_str)
+                    .unwrap_or_default()
+                    .to_string();
+                let _ = shared.resumer.send((tid.clone(), String::new()));
+            }
             Some("Target.targetCreated") | Some("Target.targetInfoChanged")
                 if v.pointer("/params/targetInfo/type").and_then(Value::as_str)
                     == Some("iframe") =>
@@ -1832,6 +1913,7 @@ mod tests {
     #[tokio::test]
     async fn ring_buffer_caps() {
         let s = Session::new();
+        let (resume_tx, _resume_rx) = mpsc::unbounded_channel::<(String, String)>();
         let shared = RouteShared {
             pending: Arc::new(Mutex::new(HashMap::new())),
             events: s.events.clone(),
@@ -1840,6 +1922,7 @@ mod tests {
             gens: s.doc_gens.clone(),
             children: s.child_sessions.clone(),
             pending_children: s.pending_children.clone(),
+            resumer: resume_tx,
         };
         for i in 0..(EVENT_BUFFER_CAP + 10) {
             route(ev("X.y", i as f64), &shared).await;
@@ -1876,6 +1959,7 @@ mod tests {
     }
 
     async fn route_all(s: &Session, events: Vec<Value>) {
+        let (resume_tx, _resume_rx) = mpsc::unbounded_channel::<(String, String)>();
         let shared = RouteShared {
             pending: Arc::new(Mutex::new(HashMap::new())),
             events: s.events.clone(),
@@ -1884,6 +1968,7 @@ mod tests {
             gens: s.doc_gens.clone(),
             children: s.child_sessions.clone(),
             pending_children: s.pending_children.clone(),
+            resumer: resume_tx,
         };
         for e in events {
             route(e, &shared).await;

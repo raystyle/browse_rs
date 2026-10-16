@@ -1499,10 +1499,10 @@ async fn main() -> Result<()> {
                 Some(d) => cdp::methods::methods_of_domain(d),
                 None => cdp::methods::METHODS_RAW.lines().collect(),
             };
-            if let Some(d) = domain.as_deref() {
-                if list.is_empty() {
-                    anyhow::bail!("未知 CDP 域 {d}；下一步：browse cdpMethods 查看全部域");
-                }
+            if let Some(d) = domain.as_deref()
+                && list.is_empty()
+            {
+                anyhow::bail!("未知 CDP 域 {d}；下一步：browse cdpMethods 查看全部域");
             }
             if json {
                 println!("{}", serde_json::to_string_pretty(&list)?);

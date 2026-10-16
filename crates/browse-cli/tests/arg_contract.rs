@@ -266,7 +266,10 @@ fn template_vars_arg_contract() {
     assert!(
         err.contains("Connection refused")
             || err.contains("积极拒绝")
-            || err.contains("os error 10061"),
+            || err.contains("os error 10061")
+            // 死口在本机形可能是黑洞(镜像网火墙丢包不 RST):#68 的 15 秒
+            // 握手界超时同样证明填充毕、已进连接求值道(非模板错)
+            || err.contains("握手超时"),
         "填充毕进求值道：{err}"
     );
     assert!(!err.contains("模板"), "模板面应已通过：{err}");
