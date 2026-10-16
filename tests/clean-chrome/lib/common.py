@@ -82,6 +82,25 @@ def parse_chrome_arg(arg):
     sys.exit(2)
 
 
+def reap_stale(profile):
+    """每腿起前清上腿 chrome 尸体(按 user-data-dir 定位杀,不误伤用户浏览器)。
+
+    w45 终判 2026-10-16:port 腿走后留尸占 9222,下一条 pipe 腿读到的是
+    尸体口,出「9222 泄开」假红;每腿起前按 profile 归属清场防再犯。
+    """
+    if IS_WIN:
+        subprocess.run(
+            ["powershell", "-NoProfile", "-Command",
+             f"Get-CimInstance Win32_Process -Filter \"name='chrome.exe'\" | "
+             f"Where-Object {{$_.CommandLine -like '*{profile}*'}} | "
+             f"ForEach-Object {{ taskkill /T /F /PID $_.ProcessId }}"],
+            capture_output=True)
+    else:
+        subprocess.run(["pkill", "-9", "-f", f"--user-data-dir={profile}"],
+                       capture_output=True)
+    time.sleep(0.3)  # 尸体口释放一拍
+
+
 def boot(chrome, profile, port=None, extra_args=(), env_extra=None,
          log=None, url="about:blank", headless=True, debug_port=True):
     """Start the binary on a throwaway profile; returns (proc, port).
@@ -93,6 +112,7 @@ def boot(chrome, profile, port=None, extra_args=(), env_extra=None,
     the contract says a bare argv must listen on 9222).
     """
     os.makedirs(profile, exist_ok=True)
+    reap_stale(profile)
     if port is None:
         port = free_port()
     log = log or os.path.join(os.path.dirname(profile), "chrome.log")

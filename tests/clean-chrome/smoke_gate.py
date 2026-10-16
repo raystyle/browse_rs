@@ -197,6 +197,8 @@ def boot_pipe(chrome, profile, mode, log, extra_args=()):
     Returns (proc, in_w, out_r); caller owns the launcher ends.
     """
     os.makedirs(profile, exist_ok=True)
+    from common import reap_stale
+    reap_stale(profile)  # 每腿清尸(w45 终判:port 腿留尸占 9222 假红)
     in_r, in_w = os.pipe()
     out_r, out_w = os.pipe()
     env = dict(os.environ)
