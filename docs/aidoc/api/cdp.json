@@ -1,6 +1,6 @@
 {
   "crate": "cdp",
-  "version": "0.35.5",
+  "version": "0.35.6",
   "items": [
     {
       "path": "cdp::discovery",
