@@ -1,7 +1,7 @@
 # browse
 
 [![CI](https://github.com/raystyle/browse_rs/actions/workflows/ci.yml/badge.svg)](https://github.com/raystyle/browse_rs/actions/workflows/ci.yml)
-[![Release](https://img.shields.io/github/v/release/raystyle/browse_rs)](https://github.com/raystyle/browse-rs/releases)
+[![Release](https://img.shields.io/github/v/release/raystyle/browse_rs)](https://github.com/raystyle/browse_rs/releases)
 [![License](https://img.shields.io/badge/license-MIT_OR_Apache--2.0-blue)](LICENSE-MIT)
 
 业界唯一把自研 Chromium 内核、按油猴脚本标准实现的 userscript 运行时、以及 Rune 图灵完备编排做成同一条驾驶面的浏览器 CLI。常驻 daemon 保存会话、变量、活动 tab 与元素引用。绝不关闭用户自己的浏览器。
@@ -13,6 +13,7 @@
 - 调试通道可选端口、管道或二者；`--remote-debugging-address` 绑定监听地址，缺省 `127.0.0.1`
 - 去掉不受支持的命令行黄条，`--no-sandbox` 启动无提示条
 - Console / 未捕获异常经 CDP 上报时不急切序列化对象预览
+- auto-attach 下 `window.open` 新标签不等调试器（`ShouldThrottlePopups` 恒 false，gen8-r7 起；配合 browse 0.35.6 客户端 resume 补发双道闭合）
 - 由 `browse chrome install/update/use/list/remove/doctor` 装管，镜像 https://chrome.ohmygh.com
 
 驾驶面分三层：
@@ -50,7 +51,7 @@ Windows 为 win-gnu 静态 CRT。Linux 需 `libnss3 libasound2t64` 族。
 
 ## clean-chrome
 
-当前 latest：`155.0.8059.39-gen8-r5`
+当前 latest：`155.0.8059.39-gen8-r7`
 
 指针：https://chrome.ohmygh.com/latest
 
@@ -58,14 +59,14 @@ Windows 为 win-gnu 静态 CRT。Linux 需 `libnss3 libasound2t64` 族。
 
 ```bash
 browse chrome update
-browse chrome install 155.0.8059.39-gen8-r5
+browse chrome install 155.0.8059.39-gen8-r7
 ```
 
 | 平台 | 包 |
 | --- | --- |
-| Linux x86_64 | https://chrome.ohmygh.com/155.0.8059.39-gen8-r5/chromium-155.0.8059.39-gen8-r5-x86_64-unknown-linux-gnu.zip |
-| Windows x86_64 | https://chrome.ohmygh.com/155.0.8059.39-gen8-r5/chromium-155.0.8059.39-gen8-r5-x86_64-pc-windows-msvc.zip |
-| macOS arm64 | https://chrome.ohmygh.com/155.0.8059.39-gen8-r5/chromium-155.0.8059.39-gen8-r5-aarch64-apple-darwin.zip |
+| Linux x86_64 | https://chrome.ohmygh.com/155.0.8059.39-gen8-r7/chromium-155.0.8059.39-gen8-r7-x86_64-unknown-linux-gnu.zip |
+| Windows x86_64 | https://chrome.ohmygh.com/155.0.8059.39-gen8-r7/chromium-155.0.8059.39-gen8-r7-x86_64-pc-windows-msvc.zip |
+| macOS arm64 | https://chrome.ohmygh.com/155.0.8059.39-gen8-r7/chromium-155.0.8059.39-gen8-r7-aarch64-apple-darwin.zip |
 
 边车：同一 URL 加 `.sha256`。
 
@@ -75,7 +76,7 @@ browse chrome install 155.0.8059.39-gen8-r5
 | --- | --- |
 | `BROWSE_PORT` | daemon 端口（默认 9880） |
 | `BROWSE_NAME` | 命名实例：状态目录 + 派生端口 9900-9999 |
-| `BROWSE_CHROME` | chrome 路径（发现序：显式 → 托管 pin → 祖先部署 → 常规路径） |
+| `BROWSE_CHROME` | chrome 路径（发现序：显式、托管 pin、祖先部署、常规路径） |
 | `BROWSE_PROFILE` | spawn 的 user-data-dir（默认 engine-profile，down 不删） |
 | `BROWSE_CDP_WS` | 钉死 WS URL |
 | `BROWSE_NO_ATTACH=1` | 跳过附着，强制 spawn |
