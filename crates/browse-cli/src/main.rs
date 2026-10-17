@@ -22,17 +22,18 @@ use std::path::PathBuf;
 
 /// CLI 入口解析出的形态：缺省求值或生命周期子命令。
 /// userscript enable/disable/remove 的多 id 收集（空格分隔批量）与旗标归
-/// 集（`--restart` 可出现在任意 id 位；其它旗标按用法错拒）。
-fn collect_ids(args: &mut Args, sub: &str) -> (Vec<String>, bool) {
+/// 集（`--restart` 可出现在任意 id 位；尾置全局旗标按全局道收（尾置合法
+/// 批），其它旗标按用法错拒）。
+fn collect_ids(g: &mut Globals, args: &mut Args, sub: &str) -> (Vec<String>, bool) {
     let mut ids = vec![args.next(&format!("userscript {sub} <id|名>"))];
     let mut restart = false;
     while let Some(t) = args.next_opt() {
         if t == "--restart" {
             restart = true;
-        } else if t.starts_with("--") {
+        } else if t.starts_with("--") && !g.apply(&t, args) {
             eprintln!("browse: userscript {sub} 只收 id/名与 --restart（收到 {t}，退出 2）");
             std::process::exit(2)
-        } else {
+        } else if !t.starts_with("--") {
             ids.push(t);
         }
     }
@@ -218,56 +219,92 @@ where
         .map_err(|e| anyhow!("{e}"))
 }
 
-#[tokio::main]
-async fn main() -> Result<()> {
-    let mut mode = Mode::Eval;
-    let mut snippets: Vec<String> = Vec::new();
-    let mut serve = false;
-    let mut bind: Option<String> = None;
-    let mut connect: Option<String> = None;
-    let mut new_tab = false;
-    let mut ws: Option<String> = None;
-    let mut port: Option<u16> = None;
-    let mut chrome: Option<String> = None;
-    let mut profile: Option<String> = None;
-    let mut headless = false;
-    let mut pipe = false;
-    let mut json = false;
-    let mut js = false;
-    let mut b64 = false;
-    let mut llms = false;
-    let mut full = false;
-    let mut repl = false;
-    let mut proxy: Option<String> = None;
-    let mut proxy_bypass: Option<String> = None;
-    let mut engine_args: Vec<String> = Vec::new();
-    let mut isolated = false;
-    let mut idle_timeout: Option<String> = None;
-    let mut cookies_csv: Option<String> = None;
-    // 统一兜底硬界秒（REQ-027，默认 3 分钟由 daemon 缺省；请求级覆写）
-    let mut cli_timeout_s: Option<u64> = None;
-    let mut secrets: Option<String> = None;
-    // #66 命令小程序：--vars 键=值 可重复累积；snippets 根旗标（eval 面
-    // 模板道与 rune js_lib 共用一根，旗标 > workspace scripts）
-    let mut vars: Vec<String> = Vec::new();
-    let mut snippets_root_flag: Option<String> = None;
-    // 0.30.3 模板定界（缺省 ERB）：--vars-syntax classic|erb；件首行指令
-    // 优先（render 侧收口）
-    let mut vars_syntax_flag: Option<String> = None;
+/// 全局旗标态（尾置合法批，R4 上游缺陷 b 修复）：--llms 手册读序句
+/// 「全局旗标尾置合法（无关子命令静默忽略）」的实装载体——旗标态从
+/// main 局部变量收拢成结构，主环与子命令收集环共用 [`Globals::apply`]
+/// 一道解析，尾置与前置同语义。
+#[derive(Default)]
+struct Globals {
+    /// 求值片段（`--eval` 收集；子命令形态下收集不消费，静默忽略）。
+    snippets: Vec<String>,
+    /// `--serve` 前台 daemon。
+    serve: bool,
+    /// `--bind` 监听位。
+    bind: Option<String>,
+    /// `--connect` 显式连接意图。
+    connect: Option<String>,
+    /// `--new-tab` 开新标签再求值。
+    new_tab: bool,
+    /// `--ws` 钉死 WS URL。
+    ws: Option<String>,
+    /// `--port` 附着端口。
+    port: Option<u16>,
+    /// `--chrome` 引擎二进制。
+    chrome: Option<String>,
+    /// `--profile` 引擎 user-data-dir。
+    profile: Option<String>,
+    /// `--headless` 无头。
+    headless: bool,
+    /// `--pipe` 管道调试通道。
+    pipe: bool,
+    /// `--json` 机器形输出。
+    json: bool,
+    /// `--js` 片段按 JS 求值。
+    js: bool,
+    /// `--b64` 片段 base64 解码。
+    b64: bool,
+    /// `--llms` 手册面。
+    llms: bool,
+    /// `--full` 人读完整目录。
+    full: bool,
+    /// `--repl` 交互面。
+    repl: bool,
+    /// `--proxy` 引擎代理。
+    proxy: Option<String>,
+    /// `--proxy-bypass` 代理旁路。
+    proxy_bypass: Option<String>,
+    /// `--engine-arg` 引擎附加旗标（可叠加）。
+    engine_args: Vec<String>,
+    /// `--isolated` 临时隔离 profile。
+    isolated: bool,
+    /// `--idle-timeout` daemon 空闲回收毫秒。
+    idle_timeout: Option<String>,
+    /// `--cookies` 域 cookie 热迁。
+    cookies_csv: Option<String>,
+    /// 统一兜底硬界秒（REQ-027，默认 3 分钟由 daemon 缺省；请求级覆写）。
+    cli_timeout_s: Option<u64>,
+    /// `--secrets` 密钥仓。
+    secrets: Option<String>,
+    /// #66 命令小程序：--vars 键=值 可重复累积；snippets 根旗标（eval 面
+    /// 模板道与 rune js_lib 共用一根，旗标 > workspace scripts）。
+    vars: Vec<String>,
+    /// `--root` 片段库根。
+    snippets_root_flag: Option<String>,
+    /// 0.30.3 模板定界（缺省 ERB）：--vars-syntax classic|erb；件首行指令
+    /// 优先（render 侧收口）。
+    vars_syntax_flag: Option<String>,
+    /// `--gen-surface` 命令面目录重生成。
+    gen_surface: Option<String>,
+}
 
-    let mut args = Args(std::env::args().skip(1));
-    let mut gen_surface: Option<String> = None;
-    while let Some(a) = args.next_opt() {
-        match a.as_str() {
-            "--eval" | "-e" => snippets.push(args.next("--eval")),
-            "--gen-surface" => gen_surface = Some(args.next("--gen-surface")),
-            "--serve" => serve = true,
-            "--bind" => bind = Some(args.next("--bind")),
-            "--connect" => connect = Some(args.next("--connect")),
-            "--new-tab" => new_tab = true,
-            "--ws" => ws = Some(args.next("--ws")),
+impl Globals {
+    /// 应用一个全局旗标（含取值）：认识即收进本结构返 true，未知旗标返
+    /// false 不动游标（调用方走 bail 面）。主环与子命令收集环同一道——
+    /// 尾置全局旗标与前置同语义；子命令自有旗标（fetch 的 --timeout、
+    /// rune 的 --vars/--root/--timeout）由各自内环先收，优先于本道。
+    fn apply(&mut self, a: &str, args: &mut Args) -> bool {
+        match a {
+            "--eval" | "-e" => self.snippets.push(args.next("--eval")),
+            "--gen-surface" => {
+                self.gen_surface = Some(args.next("--gen-surface"));
+            }
+            "--serve" => self.serve = true,
+            "--bind" => self.bind = Some(args.next("--bind")),
+            "--connect" => self.connect = Some(args.next("--connect")),
+            "--new-tab" => self.new_tab = true,
+            "--ws" => self.ws = Some(args.next("--ws")),
             "--port" => {
-                port = match args.next("--port").parse() {
+                self.port = match args.next("--port").parse() {
                     Ok(p) => Some(p),
                     // 用法错直出 exit 2（同 next 闭包口径，评审 G-F）
                     Err(_) => {
@@ -276,15 +313,15 @@ async fn main() -> Result<()> {
                     }
                 }
             }
-            "--chrome" => chrome = Some(args.next("--chrome")),
-            "--profile" => profile = Some(args.next("--profile")),
-            "--headless" => headless = true,
-            "--pipe" => pipe = true,
-            "--proxy" => proxy = Some(args.next("--proxy")),
-            "--proxy-bypass" => proxy_bypass = Some(args.next("--proxy-bypass")),
+            "--chrome" => self.chrome = Some(args.next("--chrome")),
+            "--profile" => self.profile = Some(args.next("--profile")),
+            "--headless" => self.headless = true,
+            "--pipe" => self.pipe = true,
+            "--proxy" => self.proxy = Some(args.next("--proxy")),
+            "--proxy-bypass" => self.proxy_bypass = Some(args.next("--proxy-bypass")),
             // #48：引擎附加旗标直通 spawn（可叠加），值以 -- 开头也原样收
-            "--engine-arg" => engine_args.push(args.next("--engine-arg")),
-            "--isolated" => isolated = true,
+            "--engine-arg" => self.engine_args.push(args.next("--engine-arg")),
+            "--isolated" => self.isolated = true,
             "--idle-timeout" => {
                 // 正整数毫秒门禁（评审 G-17）：坏值不再静默回落缺省，
                 // 「连错实例/回收不生效」难归因
@@ -293,7 +330,7 @@ async fn main() -> Result<()> {
                     eprintln!("browse: --idle-timeout 要正整数毫秒（当前 {raw}；用法错，退出 2）");
                     std::process::exit(2);
                 }
-                idle_timeout = Some(raw);
+                self.idle_timeout = Some(raw);
             }
             // 统一兜底硬界（REQ-027）：执行道（rune 与 --js/方言求值）的
             // 请求级覆写秒，>=1000 按毫秒误写换算并告警；与 wait 族等待
@@ -315,37 +352,55 @@ async fn main() -> Result<()> {
                     eprintln!("browse: --timeout 要正秒数（0 即刻超时；用法错，退出 2）");
                     std::process::exit(2);
                 }
-                cli_timeout_s = Some(ms / 1000);
+                self.cli_timeout_s = Some(ms / 1000);
             }
             // #48：无头起引擎时从附着浏览器按域克隆 cookie（逗号分隔多域）
-            "--cookies" => cookies_csv = Some(args.next("--cookies")),
-            "--secrets" => secrets = Some(args.next("--secrets")),
-            "--js" => js = true,
+            "--cookies" => self.cookies_csv = Some(args.next("--cookies")),
+            "--secrets" => self.secrets = Some(args.next("--secrets")),
+            "--js" => self.js = true,
             // #66 模板参：只收重复旗标累积（与 --engine-arg 同族），不收
             // 逗号分隔叠法（k=v 值本身可含逗号，歧义）；形状校验在使用口
-            "--vars" => vars.push(args.next("--vars")),
+            "--vars" => self.vars.push(args.next("--vars")),
             // #65/#66 共用根旗标：eval 面模板道与 rune js_lib 同根
-            "--root" => snippets_root_flag = Some(args.next("--root")),
-            "--vars-syntax" => vars_syntax_flag = Some(args.next("--vars-syntax")),
+            "--root" => self.snippets_root_flag = Some(args.next("--root")),
+            "--vars-syntax" => {
+                self.vars_syntax_flag = Some(args.next("--vars-syntax"));
+            }
             // base64 通道只留长参：`-b` 短参是 issue new 的 --body 既有
             // 契约（REQ-057），不夺权
-            "--b64" => b64 = true,
-            "--json" => json = true,
-            "--llms" => llms = true,
-            "--repl" => repl = true,
-            "--full" => full = true,
+            "--b64" => self.b64 = true,
+            "--json" => self.json = true,
+            "--llms" => self.llms = true,
+            "--repl" => self.repl = true,
+            "--full" => self.full = true,
             "-h" | "--help" => {
                 print_help();
-                return Ok(());
+                std::process::exit(0);
             }
             "-V" | "--version" => {
                 println!("browse {}", env!("CARGO_PKG_VERSION"));
-                return Ok(());
+                std::process::exit(0);
             }
-            "up" if snippets.is_empty() && mode_is_eval(&mode) => mode = Mode::Up,
-            "down" if snippets.is_empty() && mode_is_eval(&mode) => mode = Mode::Down,
-            "status" if snippets.is_empty() && mode_is_eval(&mode) => mode = Mode::Status,
-            "events" if snippets.is_empty() && mode_is_eval(&mode) => {
+            _ => return false,
+        }
+        true
+    }
+}
+
+#[tokio::main]
+async fn main() -> Result<()> {
+    let mut mode = Mode::Eval;
+    let mut g = Globals::default();
+    let mut args = Args(std::env::args().skip(1));
+    while let Some(a) = args.next_opt() {
+        if g.apply(&a, &mut args) {
+            continue;
+        }
+        match a.as_str() {
+            "up" if g.snippets.is_empty() && mode_is_eval(&mode) => mode = Mode::Up,
+            "down" if g.snippets.is_empty() && mode_is_eval(&mode) => mode = Mode::Down,
+            "status" if g.snippets.is_empty() && mode_is_eval(&mode) => mode = Mode::Status,
+            "events" if g.snippets.is_empty() && mode_is_eval(&mode) => {
                 let mut since = None;
                 let mut last = None;
                 let mut clear = false;
@@ -364,13 +419,19 @@ async fn main() -> Result<()> {
                             }));
                         }
                         "--clear" => clear = true,
-                        other2 => bail_flag_in_subcommand(other2),
+                        // 尾置全局旗标（R4 上游缺陷 b 修复）：先试全局道
+                        // （含取值），未知才走 bail
+                        other2 => {
+                            if !g.apply(other2, &mut args) {
+                                bail_arg(other2);
+                            }
+                        }
                     }
                 }
                 mode = Mode::Events { since, last, clear };
             }
-            "update" if snippets.is_empty() && mode_is_eval(&mode) => mode = Mode::Update,
-            "chrome" if snippets.is_empty() && mode_is_eval(&mode) => {
+            "update" if g.snippets.is_empty() && mode_is_eval(&mode) => mode = Mode::Update,
+            "chrome" if g.snippets.is_empty() && mode_is_eval(&mode) => {
                 match args.next("chrome").as_str() {
                     "list" => mode = Mode::ChromeList,
                     "doctor" => mode = Mode::ChromeDoctor,
@@ -379,18 +440,23 @@ async fn main() -> Result<()> {
                     "update" => mode = Mode::ChromeUpdate,
                     "install" => {
                         let version = args.next("chrome install <版本>");
-                        // 可选位不吃旗标（评审 G-15）：旧 filter 静默吞掉
-                        // 尾置全局旗标（--json 被消费后丢弃），改显式报位
-                        let from_dir = match args.next_opt() {
-                            Some(s) if !s.starts_with('-') => Some(s),
-                            Some(flag) => {
+                        // 可选位不吃旗标（评审 G-15）；尾置全局旗标按全局
+                        // 道收（尾置合法批），未知旗标 bail，第二位置位显式报
+                        let mut from_dir: Option<String> = None;
+                        while let Some(t) = args.next_opt() {
+                            if t.starts_with('-') {
+                                if !g.apply(&t, &mut args) {
+                                    bail_arg(&t);
+                                }
+                            } else if from_dir.is_none() {
+                                from_dir = Some(t);
+                            } else {
                                 eprintln!(
-                                    "browse: chrome install 的部署目录位收到旗标 {flag}（全局旗标要前置；用法错，退出 2）"
+                                    "browse: chrome install 只要一个部署目录位（{t} 多余，退出 2）"
                                 );
                                 std::process::exit(2);
                             }
-                            None => None,
-                        };
+                        }
                         mode = Mode::ChromeInstall { version, from_dir };
                     }
                     other => {
@@ -401,7 +467,7 @@ async fn main() -> Result<()> {
                     }
                 }
             }
-            "fetch" if snippets.is_empty() && mode_is_eval(&mode) => {
+            "fetch" if g.snippets.is_empty() && mode_is_eval(&mode) => {
                 let url = args.next("fetch <url>");
                 // REQ-028：--html 渲染 DOM 形（引擎腿直取 outerHTML）；
                 // --markdown 从 v1 的 no-op 升 mdka 真转换
@@ -433,7 +499,13 @@ async fn main() -> Result<()> {
                             }
                             timeout_s = ms / 1000;
                         }
-                        other2 => bail_flag_in_subcommand(other2),
+                        // 尾置全局旗标（R4 上游缺陷 b 修复）：先试全局道，
+                        // 未知才 bail
+                        other2 => {
+                            if !g.apply(other2, &mut args) {
+                                bail_arg(other2);
+                            }
+                        }
                     }
                 }
                 mode = Mode::Fetch {
@@ -443,7 +515,7 @@ async fn main() -> Result<()> {
                     timeout_s,
                 };
             }
-            "artifact" if snippets.is_empty() && mode_is_eval(&mode) => {
+            "artifact" if g.snippets.is_empty() && mode_is_eval(&mode) => {
                 match args.next("artifact").as_str() {
                     "publish" => {
                         // kind 必填（REQ-063 十五枚举无缺省）；--dep 可重复
@@ -483,7 +555,11 @@ async fn main() -> Result<()> {
                                 Some(f) if f == "--git-sha" => {
                                     git_sha = Some(args.next("--git-sha"))
                                 }
-                                Some(f) => bail_flag_in_subcommand(&f),
+                                Some(f) => {
+                                    if !g.apply(&f, &mut args) {
+                                        bail_arg(&f);
+                                    }
+                                }
                                 None => break,
                             }
                         }
@@ -537,7 +613,11 @@ async fn main() -> Result<()> {
                             match args.next_opt() {
                                 Some(f) if f == "--type" => ev_type = args.next("--type"),
                                 Some(f) if f == "--note" => note = Some(args.next("--note")),
-                                Some(f) => bail_flag_in_subcommand(&f),
+                                Some(f) => {
+                                    if !g.apply(&f, &mut args) {
+                                        bail_arg(&f);
+                                    }
+                                }
                                 None => break,
                             }
                         }
@@ -550,7 +630,11 @@ async fn main() -> Result<()> {
                             match args.next_opt() {
                                 Some(f) if f == "--current" => current = true,
                                 Some(f) if f == "--env" => env_f = Some(args.next("--env")),
-                                Some(f) => bail_flag_in_subcommand(&f),
+                                Some(f) => {
+                                    if !g.apply(&f, &mut args) {
+                                        bail_arg(&f);
+                                    }
+                                }
                                 None => break,
                             }
                         }
@@ -564,14 +648,18 @@ async fn main() -> Result<()> {
                     }
                 }
             }
-            "ledger" if snippets.is_empty() && mode_is_eval(&mode) => {
+            "ledger" if g.snippets.is_empty() && mode_is_eval(&mode) => {
                 match args.next("ledger").as_str() {
                     "keygen" => {
                         let mut force = false;
                         while let Some(f) = args.next_opt() {
                             match f.as_str() {
                                 "--force" => force = true,
-                                other2 => bail_flag_in_subcommand(other2),
+                                other2 => {
+                                    if !g.apply(other2, &mut args) {
+                                        bail_arg(other2);
+                                    }
+                                }
                             }
                         }
                         mode = Mode::LedgerKeygen { force };
@@ -582,15 +670,17 @@ async fn main() -> Result<()> {
                     }
                 }
             }
-            "rune" if snippets.is_empty() && mode_is_eval(&mode) => {
+            "rune" if g.snippets.is_empty() && mode_is_eval(&mode) => {
                 // 评审 #67 一轮 G4：对齐 snippets 族口径——未知旗标 bail、
                 // 多余位置位用法错；--vars/--root 在脚本位前后都收（内环
                 // 代收进同一变量，余下未知 - 前缀旗标 exit 2 不静默）
                 let mut script = None;
                 while let Some(a) = args.next_opt() {
                     match a.as_str() {
-                        "--vars" => vars.push(args.next("--vars")),
-                        "--root" => snippets_root_flag = Some(args.next("--root")),
+                        "--vars" => g.vars.push(args.next("--vars")),
+                        "--root" => {
+                            g.snippets_root_flag = Some(args.next("--root"));
+                        }
                         // 统一兜底硬界（REQ-027 评审 F-2）：rune 内环代收，
                         // 尾置与前置同效（与 --vars/--root 同律，覆盖已收的
                         // 前置值）
@@ -603,9 +693,15 @@ async fn main() -> Result<()> {
                             if let Some(w) = warn {
                                 eprintln!("browse: --timeout {w}");
                             }
-                            cli_timeout_s = Some(ms / 1000);
+                            g.cli_timeout_s = Some(ms / 1000);
                         }
-                        other if other.starts_with('-') => bail_flag_in_subcommand(other),
+                        // 尾置全局旗标（R4 上游缺陷 b 修复）：先试全局道
+                        // （含取值），未知才 bail
+                        other if other.starts_with('-') => {
+                            if !g.apply(other, &mut args) {
+                                bail_arg(other);
+                            }
+                        }
                         other if script.is_none() => script = Some(other.to_string()),
                         other => {
                             eprintln!("browse: rune 只要一个脚本位（{other} 多余，退出 2）");
@@ -614,13 +710,13 @@ async fn main() -> Result<()> {
                     }
                 }
                 // stop 动词位（批次二）：首位置位恰为 stop 即停止道
-                if script.as_deref() == Some("stop") && vars.is_empty() {
+                if script.as_deref() == Some("stop") && g.vars.is_empty() {
                     mode = Mode::RuneStop;
                 } else {
                     mode = Mode::Rune { script };
                 }
             }
-            "workspace" if snippets.is_empty() && mode_is_eval(&mode) => {
+            "workspace" if g.snippets.is_empty() && mode_is_eval(&mode) => {
                 match args.next("workspace").as_str() {
                     "status" => mode = Mode::WorkspaceStatus,
                     "install" => mode = Mode::WorkspaceInstall,
@@ -628,10 +724,10 @@ async fn main() -> Result<()> {
                     "list" => mode = Mode::WorkspaceList,
                     "site" => mode = Mode::WorkspaceSite(args.next_opt().unwrap_or_default()),
                     "page" => mode = Mode::WorkspacePage(args.next_opt().unwrap_or_default()),
-                    "add" if mode_is_eval(&mode) && snippets.is_empty() => {
+                    "add" if mode_is_eval(&mode) && g.snippets.is_empty() => {
                         mode = Mode::WorkspaceAdd(args.next("workspace add 的路径"))
                     }
-                    "remove" if mode_is_eval(&mode) && snippets.is_empty() => {
+                    "remove" if mode_is_eval(&mode) && g.snippets.is_empty() => {
                         mode = Mode::WorkspaceRemove(args.next("workspace remove 的路径"))
                     }
                     other => {
@@ -642,7 +738,7 @@ async fn main() -> Result<()> {
                     }
                 }
             }
-            "userscript" if snippets.is_empty() && mode_is_eval(&mode) => {
+            "userscript" if g.snippets.is_empty() && mode_is_eval(&mode) => {
                 match args.next("userscript").as_str() {
                     "install" => {
                         let mut files = Vec::new();
@@ -651,11 +747,15 @@ async fn main() -> Result<()> {
                             match args.next_opt() {
                                 None => break,
                                 Some(t) if t == "--restart" => restart = true,
+                                // 尾置全局旗标（R4 上游缺陷 b 修复）：先试
+                                // 全局道，未知才按 install 面报
                                 Some(t) if t.starts_with("--") => {
-                                    eprintln!(
-                                        "browse: userscript install 只认 --restart（收到 {t}，退出 2）"
-                                    );
-                                    std::process::exit(2)
+                                    if !g.apply(&t, &mut args) {
+                                        eprintln!(
+                                            "browse: userscript install 只认 --restart（收到 {t}，退出 2）"
+                                        );
+                                        std::process::exit(2)
+                                    }
                                 }
                                 Some(t) => files.push(t),
                             }
@@ -670,15 +770,15 @@ async fn main() -> Result<()> {
                     }
                     "list" => mode = Mode::UserscriptList,
                     "enable" => {
-                        let (ids, restart) = collect_ids(&mut args, "enable");
+                        let (ids, restart) = collect_ids(&mut g, &mut args, "enable");
                         mode = Mode::UserscriptSetEnabled(ids, true, restart)
                     }
                     "disable" => {
-                        let (ids, restart) = collect_ids(&mut args, "disable");
+                        let (ids, restart) = collect_ids(&mut g, &mut args, "disable");
                         mode = Mode::UserscriptSetEnabled(ids, false, restart)
                     }
                     "remove" => {
-                        let (ids, restart) = collect_ids(&mut args, "remove");
+                        let (ids, restart) = collect_ids(&mut g, &mut args, "remove");
                         mode = Mode::UserscriptRemove(ids, restart)
                     }
                     "update" => {
@@ -689,10 +789,14 @@ async fn main() -> Result<()> {
                             if t == "--restart" {
                                 restart = true;
                             } else if t.starts_with("--") {
-                                eprintln!(
-                                    "browse: userscript update 只认 --restart（收到 {t}，退出 2）"
-                                );
-                                std::process::exit(2)
+                                // 尾置全局旗标（R4 上游缺陷 b 修复）：先试
+                                // 全局道，未知才按 update 面报
+                                if !g.apply(&t, &mut args) {
+                                    eprintln!(
+                                        "browse: userscript update 只认 --restart（收到 {t}，退出 2）"
+                                    );
+                                    std::process::exit(2)
+                                }
                             } else {
                                 pos.push(t);
                             }
@@ -713,19 +817,21 @@ async fn main() -> Result<()> {
                     }
                 }
             }
-            "cdpMethods" if snippets.is_empty() && mode_is_eval(&mode) => {
+            "cdpMethods" if g.snippets.is_empty() && mode_is_eval(&mode) => {
                 mode = Mode::CdpMethods(args.next_opt())
             }
-            "cdp" if snippets.is_empty() && mode_is_eval(&mode) => {
+            "cdp" if g.snippets.is_empty() && mode_is_eval(&mode) => {
                 let method = args.next("cdp <Method 如 Runtime.evaluate>");
                 if method == "methods" {
                     mode = Mode::CdpMethods(args.next_opt());
                 } else {
                     let mut params = None;
-                    if let Some(t) = args.next_opt() {
+                    while let Some(t) = args.next_opt() {
                         if t == "--params" {
                             params = Some(args.next("cdp --params 的 JSON"));
-                        } else {
+                        } else if !g.apply(&t, &mut args) {
+                            // 尾置全局旗标（R4 上游缺陷 b 修复）：先试全局
+                            // 道，未知才按 cdp 面报
                             eprintln!("browse: cdp 只认 --params JSON（收到 {t}，退出 2）");
                             std::process::exit(2)
                         }
@@ -733,7 +839,7 @@ async fn main() -> Result<()> {
                     mode = Mode::CdpCall(method, params)
                 }
             }
-            "issue" if snippets.is_empty() && mode_is_eval(&mode) => {
+            "issue" if g.snippets.is_empty() && mode_is_eval(&mode) => {
                 match args.next("issue").as_str() {
                     "new" => {
                         let title = args.next("issue new <标题>");
@@ -755,7 +861,11 @@ async fn main() -> Result<()> {
                                     acceptance = args.next("--acceptance")
                                 }
                                 Some(f) if f == "--dry-run" => dry = true,
-                                Some(f) => bail_flag_in_subcommand(&f),
+                                Some(f) => {
+                                    if !g.apply(&f, &mut args) {
+                                        bail_arg(&f);
+                                    }
+                                }
                                 None => break,
                             }
                         }
@@ -795,7 +905,11 @@ async fn main() -> Result<()> {
                                         std::process::exit(2);
                                     })
                                 }
-                                other2 => bail_flag_in_subcommand(other2),
+                                other2 => {
+                                    if !g.apply(other2, &mut args) {
+                                        bail_arg(other2);
+                                    }
+                                }
                             }
                         }
                         mode = Mode::IssueList { limit, before };
@@ -823,10 +937,44 @@ async fn main() -> Result<()> {
                     );
                     std::process::exit(2);
                 }
-                snippets.push(snippet.to_string());
+                g.snippets.push(snippet.to_string());
             }
         }
     }
+
+    // 解构出同名局部：主环后的消费面（llms/serve/求值/子命令分派）沿用
+    // 既有变量名，零改动续用；mode 与 g 并生（子命令臂内不迁出）
+    let Globals {
+        mut snippets,
+        serve,
+        bind,
+        connect,
+        new_tab,
+        mut ws,
+        mut port,
+        chrome,
+        profile,
+        headless,
+        pipe,
+        json,
+        js,
+        b64,
+        llms,
+        full,
+        repl,
+        proxy,
+        proxy_bypass,
+        engine_args,
+        isolated,
+        idle_timeout,
+        cookies_csv,
+        cli_timeout_s,
+        secrets,
+        vars,
+        snippets_root_flag,
+        vars_syntax_flag,
+        gen_surface,
+    } = g;
 
     // --llms（REQ-060 一面，族标准名）：裸形 markdown 紧凑手册（REQ-002 的
     // 目录清单形升册）；--full 人读完整目录；--json 机器形 Schema；不拉 daemon；
@@ -1884,56 +2032,6 @@ async fn main() -> Result<()> {
 fn bail_arg(a: &str) -> ! {
     eprintln!("browse: 参数不认识 {a}（用法错，退出 2）");
     std::process::exit(2);
-}
-
-/// 全局旗标名册（评审 #67 三轮 G10）：子命令收集环遇到「认识的全局旗标
-/// 尾置」时报位置错而非「参数不认识」，消措辞矛盾。与 main 解析臂手工
-/// 同步（旗标增删时同步此表（无自动旁证，漂移由评审面盯））。
-const KNOWN_GLOBAL_FLAGS: &[&str] = &[
-    "--eval",
-    "-e",
-    "--gen-surface",
-    "--serve",
-    "--bind",
-    "--connect",
-    "--new-tab",
-    "--ws",
-    "--port",
-    "--chrome",
-    "--timeout",
-    "--profile",
-    "--headless",
-    "--pipe",
-    "--proxy",
-    "--proxy-bypass",
-    "--engine-arg",
-    "--isolated",
-    "--idle-timeout",
-    "--cookies",
-    "--secrets",
-    "--js",
-    "--b64",
-    "--json",
-    "--llms",
-    "--repl",
-    "--full",
-    "-h",
-    "--help",
-    "-V",
-    "--version",
-    "--vars",
-    "--root",
-    "--vars-syntax",
-];
-
-/// 子命令收集环的旗标 bail 分面（评审 #67 三轮 G10）：认识的全局旗标
-/// 尾置给位置 CTA（前置形即合法），未知旗标走 bail_arg 原面。
-fn bail_flag_in_subcommand(a: &str) -> ! {
-    if KNOWN_GLOBAL_FLAGS.contains(&a) {
-        eprintln!("browse: {a} 是全局旗标，要置于子命令与脚本位之前（尾置形不收；退出 2）");
-        std::process::exit(2);
-    }
-    bail_arg(a)
 }
 
 /// CLI 实参游标，必值与旗标收集两口分面。单口混用会互踩：必值守卫直出

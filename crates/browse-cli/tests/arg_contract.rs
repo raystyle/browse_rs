@@ -346,15 +346,21 @@ fn rune_arg_contract() {
     );
 }
 
-/// #67 三轮 G10：子命令收集环里「认识的全局旗标尾置」报位置 CTA（不再
-/// 「参数不认识」的措辞矛盾），未知旗标保持原 bail 面。
+/// 尾置合法批（R4 上游缺陷 b 修复）：--llms 手册承诺「全局旗标尾置合法
+/// （无关子命令静默忽略）」，实装对齐——尾置全局旗标静默收（不再 exit
+/// 2），未知旗标保持原 bail 面。
 #[test]
-fn tail_global_flag_gets_position_cta() {
+fn tail_global_flag_accepted() {
+    // 布尔型尾置静默收：chrome doctor --json 正常出 JSON（exit 0）
+    let (code, out, err) = run(&["chrome", "doctor", "--json"], &[]);
+    assert_eq!(code, 0, "{err}");
+    assert!(out.contains("\"healthy\""), "{out}");
+    // rune 环同律：布尔尾置过（脚本位后的 --headless 不再拒）
     let (code, _, err) = run(&["rune", "x.rn", "--headless"], &[]);
     assert_eq!(code, 2, "{err}");
     assert!(
-        err.contains("是全局旗标，要置于子命令与脚本位之前"),
-        "{err}"
+        !err.contains("是全局旗标，要置于子命令与脚本位之前"),
+        "尾置全局旗标不应再报位置错：{err}"
     );
     // 未知旗标保持原面（不误升位置 CTA）
     let (code, _, err) = run(&["rune", "x.rn", "--bogus"], &[]);
@@ -362,18 +368,35 @@ fn tail_global_flag_gets_position_cta() {
     assert!(err.contains("参数不认识 --bogus"), "{err}");
 }
 
-/// 目录审计 G-A7：KNOWN_GLOBAL_FLAGS 名册与 rune 子命令收集环的旁证
-/// ——每个名册旗标尾置都应得「是全局旗标」位置 CTA（识别面），未知旗标
-/// 走原 bail 面（对照）。名册加旗标漏同步解析臂时，本测试红。
+/// 尾置合法批：取值型尾置全局旗标连值收（值不落成位置位），且静默不改
+/// 子命令形态。
+#[test]
+fn tail_value_flag_consumes_its_value() {
+    // events 环：--last 尾置后再尾置 --secrets f.toml，值被吃掉不落
+    // 「--secrets 不是实参」
+    let (code, _, err) = run(&["events", "--last", "1", "--secrets", "f.toml"], &[]);
+    assert_eq!(code, 0, "{err}");
+    // rune 环：--chrome 的值被全局道吃掉——若没吃，foo 会落「只要一个
+    // 脚本位」位错；吃对了走脚本读腿（x.rn 不在，读失败）
+    let (code, _, err) = run(&["rune", "x.rn", "--chrome", "foo"], &[]);
+    assert_eq!(code, 2, "{err}");
+    assert!(err.contains("读脚本失败"), "{err}");
+    assert!(!err.contains("只要一个脚本位"), "{err}");
+}
+
+/// 目录审计 G-A7（尾置合法批改版）：名册旗标尾置的旁证——每个名册旗标
+/// 尾置都走全局道（布尔型静默收后落脚本读腿；取值型裸名落「需要一个
+/// 值」；-h/-V/--llms 直出 exit 0），绝不允许「参数不认识」（名册漏同步
+/// 解析臂时本测试红）。未知旗标走原 bail 面（对照）。注：--vars/--root/
+/// --timeout 在 rune 环内是合法子旗标（消费值，REQ-027 评审 F-2 内环
+/// 代收），不属尾置面；--serve 尾置与前置同语义会真起 daemon（绑定副
+/// 作用），不入本守卫名单。
 #[test]
 fn roster_flags_all_recognized_in_rune_tail_position() {
-    // 取值型旗标（--bind/--ws 等）在收集环内以裸名触发 CTA 后即退出，
-    // 无需跟值
     for f in [
         "--eval",
         "-e",
         "--gen-surface",
-        "--serve",
         "--bind",
         "--connect",
         "--new-tab",
@@ -401,55 +424,50 @@ fn roster_flags_all_recognized_in_rune_tail_position() {
         "-V",
         "--version",
     ] {
-        // 注：--vars/--root/--timeout 在 rune 环内是合法子旗标（消费值，
-        // REQ-027 评审 F-2 内环代收），不属尾置 CTA 面，不入本守卫名单
-
         let (code, _, err) = run(&["rune", "x.rn", f], &[]);
-        assert_eq!(code, 2, "旗标 {f}：{err}");
+        assert!(code == 0 || code == 2, "旗标 {f}：{err}");
         assert!(
-            err.contains(&format!("{f} 是全局旗标，要置于子命令与脚本位之前")),
-            "旗标 {f} 未被名册识别（名册与解析臂漂移）：{err}"
+            !err.contains("参数不认识"),
+            "旗标 {f} 未被全局道识别（名册与解析臂漂移）：{err}"
         );
+        if code == 2 {
+            // 合法 exit 2 只有三种：取值型裸名缺值（需要一个值）；布尔型
+            // 静默收后脚本读腿失败（读脚本失败）；rune 面的语义级拒收
+            // （--new-tab/--cookies 前置同拒，非位置错）
+            assert!(
+                err.contains("需要一个值")
+                    || err.contains("读脚本失败")
+                    || err.contains("尚不支持 rune 面"),
+                "旗标 {f} 的 exit 2 来路不明：{err}"
+            );
+        }
     }
 }
 
-/// 目录审计 G-2 收口：名册与全局解析臂双向比对（源抽取）——正向：名册
-/// 每项都是全局循环臂键；反向：全局循环的旗标形臂键都在名册（子命令
-/// 内环旗标不在全局段，不参与）。此前守卫只验名单到识别面单向。
+/// 目录审计 G-2 收口（尾置合法批改版）：全局旗标臂的真源已是
+/// `Globals::apply` 的 match（主环与子命令内环同一道），单源无第二真
+/// 相——本守卫刮 apply 臂键做存在性与计数检查：名单里每个旗标都在臂
+/// 内（新旗标漏进 apply 时名单先红），臂键数与名单一致（多出的未登记
+/// 旗标红）。
 #[test]
-fn roster_matches_global_parse_arms_bidirectionally() {
+fn global_arms_cover_guard_roster() {
     let src = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/src/main.rs"))
         .expect("读 main.rs 源");
-    // 名册：const KNOWN_GLOBAL_FLAGS 块内的字符串字面量
-    let roster_start = src
-        .find("const KNOWN_GLOBAL_FLAGS: &[&str] = &[")
-        .expect("名册在位")
-        + "const KNOWN_GLOBAL_FLAGS: &[&str] = &[".len();
-    let roster_end = src[roster_start..].find("];").expect("名册闭合") + roster_start;
-    let roster: Vec<String> = src[roster_start..roster_end]
-        .split('"')
-        .enumerate()
-        .filter(|(i, _)| i % 2 == 1)
-        .map(|(_, s)| s.to_string())
-        .collect();
-    assert!(roster.len() >= 30, "名册至少 30 项，实得 {}", roster.len());
-    // 全局解析臂：第一个 `while let Some(a) = args.next_opt()` 循环段内的
-    // `"--xxx" | "-x" =>` 臂键（到 `match a.as_str()` 的下一个子命令分派
-    // 或 Mode 赋值为止——取该循环段的闭合花括号前文本）
-    let loop_start = src
-        .find("while let Some(a) = args.next_opt()")
-        .expect("全局循环在位");
-    // 定长窗口（16000 字符 ≈ 现段 3 倍，REQ-027/028 批从 6000 扩）：全局
-    // 臂段增长推过窗口时反向检查静默漏扫——依赖「fmt 稳定缩进＋新增全局
-    // 旗标时名册守卫先红」双保。截断点回退到字符边界（多字节中文注释在
-    // 窗口尾时裸切会 panic，本批实弹踩过）
-    let mut seg_end = (loop_start + 16_000).min(src.len());
-    while !src.is_char_boundary(seg_end) {
-        seg_end -= 1;
+    let apply_start = src
+        .find("fn apply(&mut self, a: &str, args: &mut Args) -> bool {")
+        .expect("apply 在位");
+    let apply_end = src[apply_start..]
+        .find(
+            "
     }
-    let seg = &src[loop_start..seg_end];
-    // 顶层臂按缩进判（12 空格 + 引号开头；子命令内环臂更深缩进不入）：
-    // 常量提取用 fmt 的稳定缩进
+}
+
+#[tokio::main]",
+        )
+        .map(|i| i + apply_start)
+        .expect("apply 闭合");
+    let seg = &src[apply_start..apply_end];
+    // 臂键（8 空格缩进 + 引号开头 + =>；fn 体内 match 臂的 fmt 稳定缩进）
     let mut arms: Vec<String> = Vec::new();
     for line in seg.lines() {
         let trimmed = line.trim_start();
@@ -461,17 +479,53 @@ fn roster_matches_global_parse_arms_bidirectionally() {
             }
         }
     }
-    // 正向：名册每项都是臂键
-    for f in &roster {
-        assert!(arms.contains(f), "名册项 {f} 不在全局解析臂（正向漂移）");
-    }
-    // 反向：臂键每项都在名册
-    for a in &arms {
+    for f in [
+        "--eval",
+        "-e",
+        "--gen-surface",
+        "--serve",
+        "--bind",
+        "--connect",
+        "--new-tab",
+        "--ws",
+        "--port",
+        "--chrome",
+        "--timeout",
+        "--profile",
+        "--headless",
+        "--pipe",
+        "--proxy",
+        "--proxy-bypass",
+        "--engine-arg",
+        "--isolated",
+        "--idle-timeout",
+        "--cookies",
+        "--secrets",
+        "--js",
+        "--vars",
+        "--root",
+        "--vars-syntax",
+        "--b64",
+        "--json",
+        "--llms",
+        "--repl",
+        "--full",
+        "-h",
+        "--help",
+        "-V",
+        "--version",
+    ] {
         assert!(
-            roster.contains(a),
-            "解析臂 {a} 不在名册（反向漂移；子命令内环旗标误入全局段？）"
+            arms.contains(&f.to_string()),
+            "全局旗标 {f} 不在 Globals::apply 臂（名单与解析道漂移）"
         );
     }
+    // 计数守卫：apply 臂键全在名单（多出的未登记旗标红）
+    assert_eq!(
+        arms.len(),
+        34,
+        "apply 臂键数变化（{arms:?}）：新旗标须同步本守卫名单与文档面"
+    );
 }
 
 #[test]
