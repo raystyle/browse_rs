@@ -336,7 +336,7 @@
       "type": "object"
     },
     "cli.chrome-doctor": {
-      "description": "browse chrome doctor 检查托管 Chromium 是否在位、文件是否完整、pin 是否有效。",
+      "description": "browse chrome doctor 检查托管 Chromium 是否在位、文件是否完整、Linux 运行库（ldd 直查）零缺失、pin 是否有效。",
       "example": "browse chrome doctor",
       "input": {
         "properties": {},

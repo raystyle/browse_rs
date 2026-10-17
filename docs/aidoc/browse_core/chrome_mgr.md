@@ -18,7 +18,7 @@
 - `asset_name` — 资产名（定标形，总台裁二）：`chromium-<version>-<三元组>.zip`；三元组是
 - `check_deployed` — 校验某目录是可用的 Chromium 部署（chrome 二进制在位）。
 - `chromium_root` — 托管根目录（**默认**状态目录下的 `chromium/`，机器级共享资产）。
-- `doctor_json` — 体检：逐版本核对部署在位与登记基线（文件数），回结构化结果。
+- `doctor_json` — 体检：逐版本核对部署在位、登记基线（文件数）与运行时库（Linux ldd
 - `install_from_dir` — 从本地部署目录导入安装一个版本（整目录复制到 `<root>/<version>/`），
 - `install_from_mirror` — 从 R2 镜像下载安装一个版本（环境覆写形态；见 [`install_from_mirror_with`]）。
 - `install_from_mirror_with` — 带显式镜像基址与资产名的下载安装（env 包装的内核，测试与程序化面）：

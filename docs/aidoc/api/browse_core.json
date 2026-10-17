@@ -40,7 +40,7 @@
     {
       "path": "browse_core::chrome_mgr::doctor_json",
       "kind": "function",
-      "docs": "体检：逐版本核对部署在位与登记基线（文件数），回结构化结果。"
+      "docs": "体检：逐版本核对部署在位、登记基线（文件数）与运行时库（Linux ldd\n直查，零缺库才算绿），回结构化结果。"
     },
     {
       "path": "browse_core::chrome_mgr::install_from_dir",

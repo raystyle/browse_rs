@@ -25,7 +25,7 @@
 | `browse chrome use <版本>` | 把当前引擎切到已安装的版本。 |
 | `browse chrome update` | 升级到镜像 latest 并切换使用。 |
 | `browse chrome remove <版本>` | 删除已安装版本。当前 pin 指向的版本须先 chrome use 切走。 |
-| `browse chrome doctor` | 检查托管 Chromium 是否在位、文件是否完整、pin 是否有效。 |
+| `browse chrome doctor` | 检查托管 Chromium 是否在位、文件是否完整、Linux 运行库（ldd 直查）零缺失、pin 是否有效。 |
 | `browse fetch <url> [--html] [--markdown|-m] [--timeout <s>]` | 一次性抓取 URL。默认 HTTP；正文空、墙页或过短则改走引擎。--html 返回渲染 DOM；--markdown 转为 Markdown。 |
 | `browse events [--since <seq>] [--last <n>] [--clear]` | 读取 userscript 上报的事件环。脚本 POST /events；满 1000 条丢最旧。 |
 | `browse rune <script.rn|@名> [--vars k=v] [--root <dir>]` | 运行图灵完备的 Rune 编排脚本。入口 pub async fn main() -> Result。可循环、分支、异步等待。原生 CDP：cdp::raw。封装：cdp::goto、js、dialect。--vars k=v 按 Jinja 渲染，默认定界 <%= 键 %>。无实参时 stdin 作为脚本；有实参时 stdin 作为 cdp::stdin()。browse rune stop 停止执行。 |

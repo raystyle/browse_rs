@@ -764,7 +764,55 @@ pub fn list_json(root: &Path) -> Value {
     })
 }
 
-/// 体检：逐版本核对部署在位与登记基线（文件数），回结构化结果。
+/// 运行时库体检腿（R4 上游缺陷 a 修复）：对已部署版本的 chrome ELF 直查
+/// 动态链接缺库——Linux 跑 `ldd` 解析 `not found` 行（缺 libnss3 族时
+/// 部署完好也起不来，文件数基线对此盲）；Windows 无 ldd 面（dll 缺失由
+/// spawn 时报错兜底），恒 `null` 与 ACE 同律（null = 不适用）。返回
+/// `Some(缺库名清单)`（空表 = 零缺库）或 `None`（不适用）。
+///
+/// ldd 自身不可用（最小镜像无 binutils）时返 `Some(vec!["(ldd 不可用)"])`
+/// ——doctor 报不健康并给安装 hint，比静默跳过诚实（网关镜像批已加同款
+/// 硬断言兜底，两面对齐）。
+fn check_runtime_libs(dir: &Path) -> Option<Vec<String>> {
+    if !cfg!(target_os = "linux") {
+        return None;
+    }
+    let bin = cdp::spawn::chrome_binary_in_dir(dir)?;
+    // ldd 对 ELF 解析动态依赖；非 ELF（测试桩或目录里只有 launcher 脚本）
+    // 报「不是动态可执行文件」——不含 not found 行，按零缺库过（真部署
+    // 的 chrome 恒 ELF，非 ELF 形由文件基线面抓）
+    let Ok(out) = std::process::Command::new("ldd").arg(&bin).output() else {
+        // ldd 自身不可用（最小镜像）：报不健康比静默跳过诚实
+        return Some(vec!["(ldd 不可用)".to_string()]);
+    };
+    let mut text = String::from_utf8_lossy(&out.stdout).to_string();
+    text.push_str(&String::from_utf8_lossy(&out.stderr));
+    Some(parse_ldd_missing(&text))
+}
+
+/// [`check_runtime_libs`] 的 ldd 输出解析腿（纯函数便于全平台单测）：
+/// 逐行收 `=> not found` 的行首 token（缺库名）。何时用：Linux doctor
+/// 的缺库判定。边界：只认 `=> not found` 形（musl 静态链的
+/// `not a dynamic executable` 不在此面，按零缺库过）。
+fn parse_ldd_missing(text: &str) -> Vec<String> {
+    text.lines()
+        .filter_map(|l| {
+            if l.contains("=> not found") {
+                Some(
+                    l.split_whitespace()
+                        .next()
+                        .unwrap_or("(未知缺库名)")
+                        .to_string(),
+                )
+            } else {
+                None
+            }
+        })
+        .collect()
+}
+
+/// 体检：逐版本核对部署在位、登记基线（文件数）与运行时库（Linux ldd
+/// 直查，零缺库才算绿），回结构化结果。
 pub fn doctor_json(root: &Path) -> Value {
     let m = read_manifest(root);
     let mut checks = Vec::new();
@@ -779,6 +827,12 @@ pub fn doctor_json(root: &Path) -> Value {
         } else {
             None
         };
+        // 运行时库检测（R4 缺陷 a）：仅 Linux 有值；缺则 hints 给包名 CTA
+        let libs = if deployed {
+            check_runtime_libs(&dir)
+        } else {
+            None
+        };
         checks.push(json!({
             "version": i.version,
             "deployed": deployed,
@@ -786,6 +840,8 @@ pub fn doctor_json(root: &Path) -> Value {
             "files": files,
             "registered": i.files,
             "appContainerAce": ace,
+            // null = 不适用（非 Linux）；[] = 零缺库；非空 = 缺库名清单
+            "missingRuntimeLibs": libs,
         }));
     }
     let pin_ok = m
@@ -793,11 +849,23 @@ pub fn doctor_json(root: &Path) -> Value {
         .as_ref()
         .is_some_and(|p| check_deployed(&version_dir(root, p)).is_ok());
     let ace_missing = checks.iter().any(|c| c["appContainerAce"] == json!(false));
+    let libs_missing = checks.iter().any(|c| {
+        c["missingRuntimeLibs"]
+            .as_array()
+            .is_some_and(|a| !a.is_empty())
+    });
     let mut hints: Vec<String> = Vec::new();
     if ace_missing {
         // 只在 Windows 会进来（detect 在别处恒 None），SID 字面可直接写
         hints.push(
             "部署位缺 AppContainer ACE（纯形起 chrome 会沙箱自退）：icacls <部署位> /grant *S-1-15-2-2:(OI)(CI)RX /T（#32 修法；重装该版本也会自动补）；browse 自身 spawn 恒 --no-sandbox 不受影响"
+                .to_string(),
+        );
+    }
+    if libs_missing {
+        // 只在 Linux 会进来；Debian/Ubuntu 系包名（t64 后缀是 24.04 起）
+        hints.push(
+            "chrome 运行库缺失（引擎起不来的头号根因，文件数体检对此盲）：apt install libnss3 libnssutil3 libasound2t64 libatk-bridge2.0-0 libatk1.0-0 libcups2 libxkbcommon0 libgbm1（Debian 12 前为 libasound2；发行版差异按缺库名对应）后重跑 browse chrome doctor"
                 .to_string(),
         );
     }
@@ -815,12 +883,14 @@ pub fn doctor_json(root: &Path) -> Value {
     }
     json!({
         "root": root.display().to_string(),
-        // healthy 全量判（评审 G1）：部署在位、文件基线不漂移（filesMatch
-        // 此前漏判，实测有装机 569 对登记 567 仍 healthy 的盲区）、ACE 不缺
+        // healthy 全量判（评审 G1 + R4 缺陷 a）：部署在位、文件基线不漂移
+        // （filesMatch 此前漏判，实测有装机 569 对登记 567 仍 healthy 的
+        // 盲区）、ACE 不缺、运行时库零缺失（libnss3 族缺 7 库仍报绿的盲区）
         "healthy": checks.iter().all(|c| {
             c["deployed"] == json!(true)
                 && c["filesMatch"] == json!(true)
                 && c["appContainerAce"] != json!(false)
+                && c["missingRuntimeLibs"].as_array().is_none_or(|a| a.is_empty())
         }) && (m.pinned.is_none() || pin_ok),
         "pinnedOk": if m.pinned.is_none() { Value::Null } else { json!(pin_ok) },
         "checks": checks,
@@ -1037,6 +1107,11 @@ mod tests {
             assert_eq!(ok["checks"][0]["appContainerAce"], json!(null), "{ok}");
             assert_eq!(ok["hints"], json!([]), "健康态不出 hint: {ok}");
         }
+        // R4 缺陷 a：missingRuntimeLibs 在非 Linux 恒 null（不适用）且
+        // null 不拖垮 healthy；Linux 真缺库由 e2e/实弹面验（lan 端）
+        if !cfg!(target_os = "linux") {
+            assert_eq!(ok["checks"][0]["missingRuntimeLibs"], json!(null), "{ok}");
+        }
         // 文件基线漂移：healthy false 且 hints 带 CTA（评审 G-lite，
         // 不许 healthy=false 加 hints=[] 的哑组合）
         std::fs::write(version_dir(&root, "1.2.3.4").join("extra.txt"), "x").unwrap();
@@ -1063,6 +1138,23 @@ mod tests {
 
         std::fs::remove_dir_all(&root).ok();
         std::fs::remove_dir_all(&base).ok();
+    }
+
+    /// R4 缺陷 a：ldd 输出解析锁形——`=> not found` 行收行首 token，常形
+    /// 命中行与正常行并存零误伤；musl 静态链的「not a dynamic executable」
+    /// 不在缺库面（按零缺库过）。
+    #[test]
+    fn ldd_missing_parse_shape() {
+        let text = "\tlinux-vdso.so.1 (0x00007ffd2b9c1000)\n\
+                    \tlibnss3.so => not found\n\
+                    \tlibasound.so.2 => not found\n\
+                    \tlibchrome.so => /opt/chrome/libchrome.so (0x00007f)\n\
+                    \tlibc.so.6 => /lib/x86_64-linux-gnu/libc.so.6 (0x00007f)\n\
+                    not a dynamic executable\n";
+        let m = parse_ldd_missing(text);
+        assert_eq!(m, vec!["libnss3.so", "libasound.so.2"], "{m:?}");
+        // 纯净输出零缺库
+        assert!(parse_ldd_missing("\tlibc.so.6 => /lib/libc.so.6 (0x0)\n").is_empty());
     }
 
     /// 极简 HTTP 镜像 mock：路径精确匹配即 200，否则 404；逐请求一线程服务。
