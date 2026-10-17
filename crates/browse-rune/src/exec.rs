@@ -168,7 +168,7 @@ async fn run_raw(
             let text = String::from_utf8_lossy(buf.as_slice()).trim().to_string();
             return (
                 Err(anyhow!(
-                    "Rune 编译失败：{e}\n{text}\n下一步：修脚本语法（入口 pub async fn main() 返回 Result）"
+                    "Rune 编译失败：{e}\n{text}\n下一步：修脚本语法（入口 pub async fn main()，不支持返回类型注解；错误用 ? 传播、回值用 Ok(..)/Err(..)）"
                 )),
                 Some(cleanup),
             );

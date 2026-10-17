@@ -19,7 +19,7 @@
 驾驶面分三层：
 
 - **命令方言**：`browse '<片段>'`。单步原语，不含运算符与控制流。原生 CDP：`session.<Domain>.<method>`（652 个方法）。封装：`goto`、`snapshot`、`clickRef` 等。
-- **Rune**：`browse rune`。图灵完备编排（循环、分支、异步等待）。原生 CDP：`cdp::raw("Domain.method", params)`。封装：`cdp::goto`、`cdp::js`、`cdp::dialect`（含等待与错误处理）。模板变量：`--vars k=v`（可重复），与 `@` 脚本同用时按 Jinja 渲染，默认定界 `<%= 键 %>`。
+- **Rune**：`browse rune`。图灵完备编排（循环、分支、异步等待）。入口 `pub async fn main()`（Rune 语言不支持返回类型注解，错误传播用 `?`、回值用 `Ok(..)`/`Err(..)`）。原生 CDP：`cdp::raw("Domain.method", params)`。封装：`cdp::goto`、`cdp::js`、`cdp::dialect`（方言全量桥，含等待与错误处理）；另有 `eval`/`eval_handle`/`call`/`release`（隔离世界句柄族）、`js_lib`（库内小程序）、`wait_event`（事件驱动等待）、`requests`/`snapshot`/`request_detail`（三支柱同源）、`render`/`stdin`。宿主模块 `json` 与 `time`（`time::sleep` 可用）。模板变量：`--vars k=v`（可重复），与 `@` 脚本同用时按 Jinja 渲染，默认定界 `<%= 键 %>`。
 - **管道**：stdin 作为输入。无实参时 `cat snippet.js | browse --js`、`cat plan.rn | browse rune` 将管道内容作为脚本；有实参时管道内容作为 rune 的 `cdp::stdin()`。
 
 原生 CDP 与封装并存。列出原生方法：`browse cdpMethods`。发送一条原生 CDP：`browse cdp <Domain.method> [--params JSON]`。封装在原生调用上补齐导航等待、`errorText`、无障碍短 ref，不替代原生面。

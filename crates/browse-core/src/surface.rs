@@ -281,7 +281,7 @@ pub const COMMANDS: &[CmdSpec] = &[
         kind: CmdKind::Cli,
         signature: "browse chrome doctor",
         args: &[],
-        description: "检查托管 Chromium 是否在位、文件是否完整、pin 是否有效。",
+        description: "检查托管 Chromium 是否在位、文件是否完整、Linux 运行库（ldd 直查）零缺失、pin 是否有效。",
         example: "browse chrome doctor",
     },
     CmdSpec {
@@ -353,7 +353,7 @@ pub const COMMANDS: &[CmdSpec] = &[
                 "--root 旗标 > workspace scripts/（只对 @ 名生效）"
             ),
         ],
-        description: "运行图灵完备的 Rune 编排脚本。入口 pub async fn main() -> Result。可循环、分支、异步等待。原生 CDP：cdp::raw。封装：cdp::goto、js、dialect。--vars k=v 按 Jinja 渲染，默认定界 <%= 键 %>。无实参时 stdin 作为脚本；有实参时 stdin 作为 cdp::stdin()。browse rune stop 停止执行。",
+        description: "运行图灵完备的 Rune 编排脚本。入口 pub async fn main()（不支持返回类型注解；错误传播用 ?，回值用 Ok(..)/Err(..)）。原生 CDP：cdp::raw(\"Domain.method\", params)。页面：goto/eval/eval_handle/call/release、js/js_lib（主世界）、dialect（方言全量桥）、requests/snapshot/request_detail。事件：wait_event。工具：render/stdin。宿主模块：json、time（time::sleep 可用）。--vars k=v 按 Jinja 渲染，默认定界 <%= 键 %>。无实参时 stdin 作为脚本；有实参时 stdin 作为 cdp::stdin()。browse rune stop 停止执行。",
         example: "browse rune @x.test/fill-form --vars q=hello",
     },
     CmdSpec {

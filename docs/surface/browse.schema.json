@@ -728,7 +728,7 @@
       "type": "object"
     },
     "cli.rune": {
-      "description": "browse rune <script.rn|@名> [--vars k=v] [--root <dir>] 运行图灵完备的 Rune 编排脚本。入口 pub async fn main() -> Result。可循环、分支、异步等待。原生 CDP：cdp::raw。封装：cdp::goto、js、dialect。--vars k=v 按 Jinja 渲染，默认定界 <%= 键 %>。无实参时 stdin 作为脚本；有实参时 stdin 作为 cdp::stdin()。browse rune stop 停止执行。",
+      "description": "browse rune <script.rn|@名> [--vars k=v] [--root <dir>] 运行图灵完备的 Rune 编排脚本。入口 pub async fn main()（不支持返回类型注解；错误传播用 ?，回值用 Ok(..)/Err(..)）。原生 CDP：cdp::raw(\"Domain.method\", params)。页面：goto/eval/eval_handle/call/release、js/js_lib（主世界）、dialect（方言全量桥）、requests/snapshot/request_detail。事件：wait_event。工具：render/stdin。宿主模块：json、time（time::sleep 可用）。--vars k=v 按 Jinja 渲染，默认定界 <%= 键 %>。无实参时 stdin 作为脚本；有实参时 stdin 作为 cdp::stdin()。browse rune stop 停止执行。",
       "example": "browse rune @x.test/fill-form --vars q=hello",
       "input": {
         "properties": {
