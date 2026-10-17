@@ -4,7 +4,13 @@
 
 ## Unreleased
 
-（无；最新封版 0.35.5）
+（无；最新封版 0.36.0）
+
+## 0.36.0（2026-10-17）
+
+- `browse chrome doctor`：Linux 逐版本对 chrome ELF 直跑 `ldd` 查运行时缺库，`missingRuntimeLibs` 入回执并计入 healthy（缺 libnss3 族仍报绿的盲区修，R4 上游缺陷 a；apt 包族 CTA hint）
+- CLI：全局旗标尾置与前置同语义收下（`--llms` 手册既有承诺的实装对齐，R4 上游缺陷 b；`Globals` 单道解析，布尔静默收、取值型连值收，未知旗标用法错不变）
+- Rune 面文档对齐（R4 上游缺陷 c）：README 与 `--llms` 写全 prelude 15 件与宿主 `time`/`json` 模块；入口契约改为裸 `pub async fn main()`（Rune 不支持返回类型注解，实弹定谳）
 
 ## 0.35.5（2026-10-14）
 

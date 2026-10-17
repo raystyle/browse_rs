@@ -30,6 +30,13 @@ param(
     # win 冒烟的中转目录（Windows 侧可达路径；interop 直调面）
     [string]$WinSmokeDir = '/mnt/c/Users/ray/bin',
 
+    # win 冒烟走 ssh 的远端 Windows（非空即 ssh 道：scp 推 zip 远端解包直跑，
+    # 替代 interop 直调——发版构建端不在 WSL 宿主时用，如 lan-linux 岗）
+    [string]$WinSmokeHost = '',
+
+    # ssh 道时远端 Windows 的冒烟工作目录（Windows 形路径）
+    [string]$WinSmokeRemoteDir = 'C:/Users/ray/bin',
+
     # mac 实机（构建岗；标准：mac 形在 mac 实机）
     [string]$MacHost = 'lan-mac'
 )
@@ -145,17 +152,33 @@ try {
     $got = & "$smoke/$dl/browse" --version
     if ("$got" -cne "browse $Ver") { throw "linux 冒烟红：$got" }
 
-    # win：解包取 exe 经 interop 直跑
+    # win：解包取 exe 冒烟——WinSmokeHost 给定走 ssh 道（scp 推 zip 远端
+    # 解包直跑），否则 interop 直调（WSL 宿主岗）
     $dw = "browse-${Tag}-x86_64-pc-windows-gnu"
     Run unzip @('-q', "$dist/$dw.zip", '-d', $smoke) 'win 解包'
-    $winExe = Join-Path $WinSmokeDir "browse-rel-smoke.exe"
-    Copy-Item "$smoke/$dw/browse.exe" $winExe -Force
-    try {
-        $winExeWin = ($winExe -replace '^/mnt/c', 'C:').Replace('/', '\')
-        $got = & cmd.exe /c "$winExeWin --version"
-        if ("$got".Trim() -cne "browse $Ver") { throw "win 冒烟红：$got" }
+    if ($WinSmokeHost) {
+        Run scp @('-q', "$dist/$dw.zip", "${WinSmokeHost}:$WinSmokeRemoteDir/$dw.zip") 'win 冒烟件推送(ssh)'
+        $remote = "$WinSmokeRemoteDir/browse-rel-smoke"
+        $winExeDir = "$remote/$dw"
+        try {
+            $got = & ssh $WinSmokeHost "powershell -NoProfile -Command `"Expand-Archive -Force $WinSmokeRemoteDir/$dw.zip $remote; & '$winExeDir/browse.exe' --version`""
+            if ($LASTEXITCODE -ne 0) { throw "win 冒烟红（ssh $WinSmokeHost）：exit $LASTEXITCODE" }
+            if ("$got".Trim() -cne "browse $Ver") { throw "win 冒烟红（ssh $WinSmokeHost）：$got" }
+        }
+        finally {
+            & ssh $WinSmokeHost "powershell -NoProfile -Command `"Remove-Item -Recurse -Force $remote, $WinSmokeRemoteDir/$dw.zip -ErrorAction SilentlyContinue`"" *> $null
+        }
     }
-    finally { Remove-Item -Force $winExe -ErrorAction SilentlyContinue }
+    else {
+        $winExe = Join-Path $WinSmokeDir "browse-rel-smoke.exe"
+        Copy-Item "$smoke/$dw/browse.exe" $winExe -Force
+        try {
+            $winExeWin = ($winExe -replace '^/mnt/c', 'C:').Replace('/', '\')
+            $got = & cmd.exe /c "$winExeWin --version"
+            if ("$got".Trim() -cne "browse $Ver") { throw "win 冒烟红：$got" }
+        }
+        finally { Remove-Item -Force $winExe -ErrorAction SilentlyContinue }
+    }
 
     # mac：包推 mac 实机解包直跑
     $dm = "browse-${Tag}-aarch64-apple-darwin"
