@@ -28,7 +28,7 @@
 | `browse chrome doctor` | 检查托管 Chromium 是否在位、文件是否完整、Linux 运行库（ldd 直查）零缺失、pin 是否有效。 |
 | `browse fetch <url> [--html] [--markdown|-m] [--timeout <s>]` | 一次性抓取 URL。默认 HTTP；正文空、墙页或过短则改走引擎。--html 返回渲染 DOM；--markdown 转为 Markdown。 |
 | `browse events [--since <seq>] [--last <n>] [--clear]` | 读取 userscript 上报的事件环。脚本 POST /events；满 1000 条丢最旧。 |
-| `browse rune <script.rn|@名> [--vars k=v] [--root <dir>]` | 运行图灵完备的 Rune 编排脚本。入口 pub async fn main()（不支持返回类型注解；错误传播用 ?，回值用 Ok(..)/Err(..)）。原生 CDP：cdp::raw("Domain.method", params)。页面：goto/eval/eval_handle/call/release、js/js_lib（主世界）、dialect（方言全量桥）、requests/snapshot/request_detail。事件：wait_event。工具：render/stdin。宿主模块：json、time（time::sleep 可用）。--vars k=v 按 Jinja 渲染，默认定界 <%= 键 %>。无实参时 stdin 作为脚本；有实参时 stdin 作为 cdp::stdin()。browse rune stop 停止执行。 |
+| `browse rune <script.rn|@名> [--vars k=v] [--root <dir>]` | 运行图灵完备的 Rune 编排脚本。入口 pub async fn main()（不支持返回类型注解；错误传播用 ?，回值用 Ok(..)/Err(..)）。原生 CDP：cdp::raw("Domain.method", params)。页面：goto/eval/eval_handle/call/release、js/js_lib（主世界）、dialect（方言全量桥）、requests/snapshot/request_detail。事件：wait_event(method, 毫秒；方言 waitFor 是秒,单位不同勿混)。工具：render/stdin。宿主模块：json、time（time::sleep 可用）。--vars k=v 按 Jinja 渲染，默认定界 <%= 键 %>。无实参时 stdin 作为脚本；有实参时 stdin 作为 cdp::stdin()。browse rune stop 停止执行。 |
 | `browse issue new <标题> --acceptance <验收> [--kind bug|improvement] [--body <正文>] [--dry-run]` | 创建 issue。--acceptance 必填。--dry-run 只预览不提交。 |
 | `browse issue list [--limit <n>] [--before <id>]` | 列出 issue。--limit 条数，打满则还有更多。 |
 | `browse issue show <id>` | 显示一条 issue。 |
@@ -163,7 +163,7 @@
 | `session.setActiveSession(sessionId?)` | 设置活动 sessionId。 |
 | `session.getActiveSession()` | 返回活动 sessionId。 |
 | `session.isConnected()` | 连接是否存活。 |
-| `session.waitFor(method, undefined, s?)` | 从事件缓冲取出指定 method 的下一条事件。 |
+| `session.waitFor(method, undefined, s?)` | 从事件缓冲取出指定 method 的下一条事件。超时参秒（rn 面 cdp::wait_event 是毫秒,两原语单位不同勿混）。 |
 | `session.waitJs(expression, s?)` | 轮询页内 JS 谓词，直到为真。 |
 | `session.call(method, params?)` | 调用一条原生 CDP。方法名为 Domain.method。 |
 | `session.peekEvents(method, n?)` | 查看事件缓冲，不取出。 |
@@ -424,7 +424,7 @@ browse events --since 41
 
 ## `browse rune <script.rn|@名> [--vars k=v] [--root <dir>]`
 
-运行图灵完备的 Rune 编排脚本。入口 pub async fn main()（不支持返回类型注解；错误传播用 ?，回值用 Ok(..)/Err(..)）。原生 CDP：cdp::raw("Domain.method", params)。页面：goto/eval/eval_handle/call/release、js/js_lib（主世界）、dialect（方言全量桥）、requests/snapshot/request_detail。事件：wait_event。工具：render/stdin。宿主模块：json、time（time::sleep 可用）。--vars k=v 按 Jinja 渲染，默认定界 <%= 键 %>。无实参时 stdin 作为脚本；有实参时 stdin 作为 cdp::stdin()。browse rune stop 停止执行。
+运行图灵完备的 Rune 编排脚本。入口 pub async fn main()（不支持返回类型注解；错误传播用 ?，回值用 Ok(..)/Err(..)）。原生 CDP：cdp::raw("Domain.method", params)。页面：goto/eval/eval_handle/call/release、js/js_lib（主世界）、dialect（方言全量桥）、requests/snapshot/request_detail。事件：wait_event(method, 毫秒；方言 waitFor 是秒,单位不同勿混)。工具：render/stdin。宿主模块：json、time（time::sleep 可用）。--vars k=v 按 Jinja 渲染，默认定界 <%= 键 %>。无实参时 stdin 作为脚本；有实参时 stdin 作为 cdp::stdin()。browse rune stop 停止执行。
 
 参数：
 - `script`（string，缺省 @ 前缀走 scripts 根(.rn 两试)或字面路径），必填
@@ -1824,7 +1824,7 @@ return await session.isConnected()
 
 ## `session.waitFor(method, undefined, s?)`
 
-从事件缓冲取出指定 method 的下一条事件。
+从事件缓冲取出指定 method 的下一条事件。超时参秒（rn 面 cdp::wait_event 是毫秒,两原语单位不同勿混）。
 
 参数：
 - `method`（string），必填
