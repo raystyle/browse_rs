@@ -4,7 +4,12 @@
 
 ## Unreleased
 
-（无；最新封版 0.37.0）
+（无；最新封版 0.37.1）
+
+## 0.37.1（2026-10-19）
+
+- `--connect <host:port>` 跨宿主附着真落地：host 段不再丢弃（旧 `parse_port` 只取端口、握手硬编码 127.0.0.1，跨宿主 attach 静默落回环）；`EngineSpec::Port` 升 `{port, host}` 全链传递
+- spawn 等待腿绑址回退：`--engine-arg` 钉死端口+非回环 `--remote-debugging-address` 时 clean-chrome 不落 `DevToolsActivePort`，转 `/json/version` 探测钉死端点——browse 管理的非回环引擎可起可管
 
 ## 0.37.0（2026-10-19）
 
