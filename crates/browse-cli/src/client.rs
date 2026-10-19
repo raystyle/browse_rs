@@ -315,37 +315,27 @@ pub async fn rune_stop() -> Result<Value> {
     resp.json().await.context("解析 /rune/stop 响应")
 }
 
-/// #60 渲染操作信封的引擎上下文（crate 内缝，eval 与 fetch 引擎腿共用）：
-/// 指纹变化与跨宿主各出告警行（跨宿主每进程一次防刷屏），紧凑行按
-/// `BROWSE_ENGINE_CONTEXT` 开。正常态零输出（默认输出与现状兼容）。
+/// #60 渲染操作信封的引擎上下文（crate 内缝，eval、rune、fetch 引擎腿、
+/// cdp、userscript eval 共用）：身份行三态闸（用户裁定 2026-10-19，业界
+/// 先例对齐轮定谳「机器身份在信封、人眼身份看终端」）——stderr 是终端
+/// 才出身份行（实例、daemon 端口、引擎来源、通道/端点、profile，与
+/// status/up 同一词汇），管道/agent 默认安静；`BROWSE_ENGINE_CONTEXT=1`
+/// 强制开、`=0` 强制关；进程内内容去重（REPL/批处理防刷屏，变化即新行）。
+/// 指纹变化与跨宿主告警恒显（不受三态闸管）。
 pub(crate) fn render_engine_context(ctx: &Value) {
-    let show = std::env::var_os("BROWSE_ENGINE_CONTEXT")
-        .map(|v| {
-            let v = v.to_string_lossy().to_ascii_lowercase();
-            !(v == "0" || v == "false")
-        })
-        .unwrap_or(false);
-    if show {
-        let prov = ctx.get("provenance");
-        let origin = prov
-            .and_then(|p| p.get("origin"))
-            .and_then(Value::as_str)
-            .unwrap_or("?");
-        let host = prov
-            .and_then(|p| p.get("hostContext"))
-            .and_then(Value::as_str)
-            .unwrap_or("?");
-        eprintln!("引擎：{origin} @ {host}");
-    }
-    for c in ctx
-        .get("changes")
-        .and_then(Value::as_array)
-        .into_iter()
-        .flatten()
-        .filter_map(Value::as_str)
+    if identity_line_enabled()
+        && let Some(line) = engine_identity_line(ctx)
     {
-        eprintln!("⚠ 引擎变化：{c}");
+        // 内容去重（批处理防刷屏）：同上下文只在首操作出一次，变化即新行
+        static LAST: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
+        if let Ok(mut last) = LAST.lock()
+            && last.as_deref() != Some(line.as_str())
+        {
+            eprintln!("{line}");
+            *last = Some(line);
+        }
     }
+
     // 跨宿主与同 OS 异机（#59 同口径；每进程一次防批处理刷屏）
     use std::sync::OnceLock;
     static HOST_CHECKED: OnceLock<bool> = OnceLock::new();
@@ -383,6 +373,91 @@ pub(crate) fn render_engine_context(ctx: &Value) {
             }
         }
     }
+}
+
+/// [`render_engine_context`] 的身份行三态闸：未设 env 看 stderr 是否
+/// 终端（终端人读出、管道与 agent 安静）；`1/true`（或任何非 0 值）
+/// 强制开；`0/false` 强制关。
+fn identity_line_enabled() -> bool {
+    identity_show_from(
+        std::env::var_os("BROWSE_ENGINE_CONTEXT").map(|v| v.to_string_lossy().into_owned()),
+        std::io::IsTerminal::is_terminal(&std::io::stderr()),
+    )
+}
+
+/// [`identity_line_enabled`] 的纯判定腿（单测面）：Some 且非 0/false
+/// 强制开，Some 0/false 强制关，None 跟随终端态。
+fn identity_show_from(env: Option<String>, tty: bool) -> bool {
+    match env {
+        Some(v) => {
+            let v = v.to_ascii_lowercase();
+            !(v == "0" || v == "false")
+        }
+        None => tty,
+    }
+}
+
+/// [`render_engine_context`] 的身份行料（纯函数便于单测）：daemon 实例
+/// 与端口、引擎 origin、spawn 形的 pid/通道/profile/有头、attached 形的
+/// ws 端点，与 status 面同一词汇。字段残缺（老 daemon 无 engine 键）返
+/// `None`——老 daemon 兼容面不渲染半行。
+fn engine_identity_line(ctx: &Value) -> Option<String> {
+    let name = ctx.pointer("/daemon/name").and_then(Value::as_str)?;
+    let port = daemon_bind();
+    let port = port.rsplit(':').next().unwrap_or("?");
+    let prov = ctx.get("provenance");
+    let origin = prov
+        .and_then(|p| p.get("origin"))
+        .and_then(Value::as_str)
+        .unwrap_or("?");
+    let host = prov
+        .and_then(|p| p.get("hostContext"))
+        .and_then(Value::as_str)
+        .unwrap_or("?");
+    let eng = ctx.get("engine");
+    let detail = match eng.and_then(|e| e.get("Spawned")) {
+        Some(s) => {
+            let mut parts = vec![format!(
+                "pid {}",
+                s.get("pid").and_then(Value::as_u64).unwrap_or(0)
+            )];
+            if let Some(c) = s.get("channel").and_then(Value::as_str) {
+                parts.push(format!("通道 {c}"));
+            }
+            // 端口态的 ws 调试端点（authority 形——用户令点名的端口面；
+            // 管道态 ws_url 缺席，通道字段自证）
+            if let Some(w) = s.get("ws_url").and_then(Value::as_str) {
+                parts.push(ws_authority(w).to_string());
+            }
+            if let Some(p) = s.get("profile_dir").and_then(Value::as_str) {
+                parts.push(format!("profile {p}"));
+            }
+            if s.get("headless").and_then(Value::as_bool) == Some(false) {
+                parts.push("有头".to_string());
+            }
+            format!("，{}", parts.join(" "))
+        }
+        None => {
+            let ws = eng
+                .and_then(|e| e.get("Attached"))
+                .and_then(|a| a.get("ws_url"))
+                .and_then(Value::as_str)?;
+            format!("，{ws}")
+        }
+    };
+    Some(format!(
+        "引擎：实例 {name}（端口 {port}），{origin} @ {host}{detail}"
+    ))
+}
+
+/// [`engine_identity_line`] 的 ws 端点 authority 提取（`ws://host:port/…`
+/// 取 `host:port`；形不对回原串截断，不 panic）。
+fn ws_authority(ws: &str) -> &str {
+    ws.trim_start_matches("ws://")
+        .trim_start_matches("wss://")
+        .split('/')
+        .next()
+        .unwrap_or(ws)
 }
 
 /// 解码 `-b/--b64` 通道的片段实参（#22）：标准 base64 解码为 UTF-8
@@ -864,6 +939,11 @@ pub async fn cdp_call(method: &str, params: Value) -> Result<Value> {
         .await
         .with_context(|| format!("解析 /cdp 响应（HTTP {status}）"))?;
     if status.is_success() {
+        // #60 信封扩到 cdp 口（用户令 2026-10-19）：result 原文不动，
+        // 引擎上下文照 eval 道渲染
+        if let Some(ctx) = body.get("engineContext") {
+            render_engine_context(ctx);
+        }
         Ok(body)
     } else {
         Err(anyhow!(
@@ -899,6 +979,11 @@ pub async fn userscript_eval(code: &str, timeout_s: Option<u64>) -> Result<Value
         .await
         .with_context(|| format!("解析 /userscript/eval 响应（HTTP {status}）"))?;
     if status.is_success() {
+        // #60 信封扩到油猴求值口（用户令 2026-10-19）：result 原文不动，
+        // 引擎上下文照 eval 道渲染
+        if let Some(ctx) = body.get("engineContext") {
+            render_engine_context(ctx);
+        }
         Ok(body)
     } else {
         Err(anyhow!(
@@ -980,6 +1065,93 @@ pub async fn quit() -> Result<()> {
 mod tests {
     use super::*;
     use browse_rune::vars_syntax::VarsSyntax;
+
+    /// 身份行三态闸（用户裁定 2026-10-19）：默认跟终端，1 强制开，
+    /// 0/false 强制关。
+    #[test]
+    fn identity_line_three_state_gate() {
+        assert!(identity_show_from(None, true), "终端默认开");
+        assert!(!identity_show_from(None, false), "管道默认安静");
+        assert!(identity_show_from(Some("1".into()), false), "=1 强制开");
+        assert!(!identity_show_from(Some("0".into()), true), "=0 强制关");
+        assert!(
+            !identity_show_from(Some("false".into()), true),
+            "=false 强制关"
+        );
+        assert!(identity_show_from(Some("yes".into()), false), "非 0 值按开");
+    }
+
+    /// #60 身份行料（用户令 2026-10-19）：spawn 形带实例/端口/pid/通道/
+    /// profile/有头，字段词汇与 status 面对齐。
+    #[test]
+    fn engine_identity_line_spawned_shape() {
+        let ctx = serde_json::json!({
+            "daemon": { "name": "nightly", "os": "linux", "hostname": "nuc-a" },
+            "provenance": { "origin": "managed-spawn", "hostContext": "linux/nuc-a" },
+            "engine": { "Spawned": {
+                "ws_url": "ws://127.0.0.1:9222/devtools/browser/abc",
+                "pid": 4712, "profile_dir": "/home/ray/.browse-rs/engine-profile",
+                "chrome": "/c/chrome", "headless": false, "channel": "port",
+                "spawned_at": 1700000000000u64
+            }}
+        });
+        let line = engine_identity_line(&ctx).expect("spawn 形应有身份行");
+        assert!(line.contains("实例 nightly"), "{line}");
+        assert!(line.contains("pid 4712"), "{line}");
+        assert!(line.contains("通道 port"), "{line}");
+        assert!(
+            line.contains("profile /home/ray/.browse-rs/engine-profile"),
+            "{line}"
+        );
+        assert!(line.contains("有头"), "{line}");
+        assert!(line.contains("managed-spawn @ linux/nuc-a"), "{line}");
+        assert!(
+            line.contains("127.0.0.1:9222"),
+            "ws 端点 authority 入行：{line}"
+        );
+        // 端口：CLI 本机 bind 的口（缺省 9880；env 覆盖态本测试不掺）
+        if std::env::var_os("BROWSE_PORT").is_none() && std::env::var_os("BROWSE_NAME").is_none() {
+            assert!(line.contains("端口 9880"), "{line}");
+        }
+    }
+
+    /// #60 身份行料：attached 形带 ws 端点；管道态通道字段自证。
+    #[test]
+    fn engine_identity_line_attached_and_pipe() {
+        let ctx = serde_json::json!({
+            "daemon": { "name": "default", "os": "windows", "hostname": "host-pc" },
+            "provenance": { "origin": "attached", "hostContext": "127.0.0.1（loopback）" },
+            "engine": { "Attached": { "ws_url": "ws://127.0.0.1:9222/devtools/page/x" } }
+        });
+        let line = engine_identity_line(&ctx).expect("attached 形应有身份行");
+        assert!(
+            line.contains("ws://127.0.0.1:9222/devtools/page/x"),
+            "{line}"
+        );
+        // 管道态：ws_url 缺席（null），通道字段是唯一通道证词
+        let pipe = serde_json::json!({
+            "daemon": { "name": "default", "os": "linux", "hostname": "n" },
+            "provenance": { "origin": "managed-spawn", "hostContext": "linux/n" },
+            "engine": { "Spawned": {
+                "ws_url": null, "pid": 8, "profile_dir": "/p", "chrome": "/c",
+                "headless": true, "channel": "pipe", "spawned_at": 1u64
+            }}
+        });
+        let line = engine_identity_line(&pipe).expect("pipe 形应有身份行");
+        assert!(line.contains("通道 pipe"), "{line}");
+        assert!(!line.contains("有头"), "headless 不出有头标：{line}");
+    }
+
+    /// #60 老 daemon 兼容：engine 键缺（0.36 及以前信封）不出半行。
+    #[test]
+    fn engine_identity_line_legacy_envelope_none() {
+        let legacy = serde_json::json!({
+            "daemon": { "name": "default", "os": "linux", "hostname": "n" },
+            "provenance": { "origin": "managed-spawn", "hostContext": "linux/n" },
+            "changes": []
+        });
+        assert!(engine_identity_line(&legacy).is_none());
+    }
 
     /// 评审 F-1（0.30.0 对齐轮）：占位遇 Jinja 控制流——死分支丢弃静默
     /// 略过、循环体复制全量回填，不再误报 exit 2；rune 与 JS 双面锁。

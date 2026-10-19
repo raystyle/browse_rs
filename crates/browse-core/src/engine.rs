@@ -854,13 +854,16 @@ impl Engine {
 
     /// 产出 `/health` 面的状态 JSON（实例名、引擎来源、连接与活动路由）。
     /// #60 操作时刻上下文快照：provenance（#59 语义面）加 fingerprint
-    /// （比对用身份面）一次取出，eval 信封的 engineContext 键同源。
+    /// （比对用身份面）一次取出，eval 信封的 engineContext 键同源；
+    /// `engine` 是身份行料（ws 端点/通道、profile 路径、pid——CLI 侧
+    /// 操作回执的引擎身份行与 status 面同源取材，用户令 2026-10-19）。
     pub async fn context_snapshot(&self, daemon: &crate::server::DaemonDesc) -> serde_json::Value {
         let source = self.source().await;
         let isolated = self.inner.lock().await.isolated_dir.is_some();
         json!({
             "provenance": provenance(&source, isolated, daemon.os, &daemon.hostname),
             "fingerprint": fingerprint_of(&source, isolated),
+            "engine": serde_json::to_value(&source).unwrap_or(serde_json::Value::Null),
         })
     }
 

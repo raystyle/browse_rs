@@ -1740,7 +1740,8 @@ pub fn render_manual() -> String {
     );
     out.push_str(
         "## 读序\n\n页面操作走方言片段，引擎走 up/down/status/chrome，脚本走 rune 与 userscript。\
-         全局旗标尾置合法。\n\n",
+         全局旗标尾置合法。操作回执信封带 engineContext（与 /health 同源，agent 断言执行环境\
+         用）；stderr 在终端显引擎身份行（BROWSE_ENGINE_CONTEXT=1/0 强制开/关）。\n\n",
     );
     out.push_str("## 子命令\n\n| 形态 | 说明 |\n| --- | --- |\n");
     for c in COMMANDS

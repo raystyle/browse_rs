@@ -871,27 +871,41 @@ async fn rune_handler(
             return rune_stopped_response(op, elapsed, cause, capture);
         }
     };
-    let ctx = d.engine.context_snapshot(&d.desc).await;
-    let changes = {
-        let fp = ctx
-            .get("fingerprint")
-            .cloned()
-            .unwrap_or(serde_json::Value::Null);
-        let mut guard = d.last_fp.lock().unwrap_or_else(|e| e.into_inner());
-        let changes = match guard.as_ref() {
-            Some(old) => crate::engine::fingerprint_changes(old, &fp),
-            None => Vec::new(),
-        };
-        *guard = Some(fp);
-        changes
-    };
+    let (ctx, changes) = engine_context_of(d).await;
     let mut envelope = json!({ "ok": true, "value": value });
-    envelope["engineContext"] = json!({
+    envelope["engineContext"] = engine_context_json(d, &ctx, changes);
+    (axum::http::StatusCode::OK, Json(envelope))
+}
+
+/// #60 操作信封的 engineContext 键（共用腿）：provenance（语义面）、
+/// daemon 自描述、指纹变化列表、engine 身份料（ws 端点/通道、profile
+/// 路径、pid——CLI 操作回执的引擎身份行取材处，与 /health 的 engine
+/// 键同源）。eval/rune/cdp/userscript eval 四口同构（用户令
+/// 2026-10-19：操作回执要与 status/up/down 对得上账）。
+fn engine_context_json(d: &Daemon, ctx: &serde_json::Value, changes: Vec<String>) -> Value {
+    json!({
         "provenance": ctx.get("provenance").cloned().unwrap_or(serde_json::Value::Null),
         "daemon": d.desc.to_json(),
         "changes": changes,
-    });
-    (axum::http::StatusCode::OK, Json(envelope))
+        "engine": ctx.get("engine").cloned().unwrap_or(serde_json::Value::Null),
+    })
+}
+
+/// [`engine_context_json`] 的取料腿：快照加指纹比对（eval 的既有逻辑
+/// 抽共用，四口一处维护）。
+async fn engine_context_of(d: &Daemon) -> (serde_json::Value, Vec<String>) {
+    let ctx = d.engine.context_snapshot(&d.desc).await;
+    let fp = ctx
+        .get("fingerprint")
+        .cloned()
+        .unwrap_or(serde_json::Value::Null);
+    let mut guard = d.last_fp.lock().unwrap_or_else(|e| e.into_inner());
+    let changes = match guard.as_ref() {
+        Some(old) => crate::engine::fingerprint_changes(old, &fp),
+        None => Vec::new(),
+    };
+    *guard = Some(fp);
+    (ctx, changes)
 }
 
 /// /cdp（#80 直通）：任意 CDP 域方法转发引擎会话，回 result/error 原文。
@@ -922,7 +936,14 @@ async fn cdp_handler(State(st): State<AppState>, Json(req): Json<CdpRequest>) ->
         }
     }
     match d.host.session().call(&req.method, req.params).await {
-        Ok(v) => (axum::http::StatusCode::OK, Json(json!({ "result": v }))),
+        Ok(v) => {
+            // #60 信封扩到 cdp 口（用户令 2026-10-19）：result 原文不动，
+            // 引擎上下文并行入 envelope 键
+            let (ctx, changes) = engine_context_of(d).await;
+            let mut envelope = json!({ "result": v });
+            envelope["engineContext"] = engine_context_json(d, &ctx, changes);
+            (axum::http::StatusCode::OK, Json(envelope))
+        }
         Err(e) => err_response(e),
     }
 }
@@ -1015,7 +1036,12 @@ async fn userscript_eval_handler(
                     r["description"].as_str().unwrap_or("?")
                 ));
             }
-            (axum::http::StatusCode::OK, Json(json!({ "result": r.clone() })))
+            // #60 信封扩到油猴求值口（用户令 2026-10-19）：result 原文
+            // 不动，引擎上下文并行入 envelope 键
+            let (ctx, changes) = engine_context_of(d).await;
+            let mut envelope = json!({ "result": r.clone() });
+            envelope["engineContext"] = engine_context_json(d, &ctx, changes);
+            (axum::http::StatusCode::OK, Json(envelope))
         }
         Ok(Err(e)) => err_response(e),
         Err(_) => err_response(anyhow::anyhow!(
@@ -1120,26 +1146,9 @@ async fn eval_handler(
     };
     // #60 操作时刻引擎上下文（信封键，不进方言 value）：daemon 侧比对
     // 上次指纹出 changes；provenance 与 daemon 自描述同源 #59
-    let ctx = d.engine.context_snapshot(&d.desc).await;
-    let changes = {
-        let fp = ctx
-            .get("fingerprint")
-            .cloned()
-            .unwrap_or(serde_json::Value::Null);
-        let mut guard = d.last_fp.lock().unwrap_or_else(|e| e.into_inner());
-        let changes = match guard.as_ref() {
-            Some(old) => crate::engine::fingerprint_changes(old, &fp),
-            None => Vec::new(),
-        };
-        *guard = Some(fp);
-        changes
-    };
+    let (ctx, changes) = engine_context_of(d).await;
     let mut envelope = json!({ "ok": true, "value": value });
-    envelope["engineContext"] = json!({
-        "provenance": ctx.get("provenance").cloned().unwrap_or(serde_json::Value::Null),
-        "daemon": d.desc.to_json(),
-        "changes": changes,
-    });
+    envelope["engineContext"] = engine_context_json(d, &ctx, changes);
     (axum::http::StatusCode::OK, Json(envelope))
 }
 

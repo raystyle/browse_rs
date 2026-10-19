@@ -83,6 +83,7 @@ browse chrome install 155.0.8059.39-gen8-r7
 | `BROWSE_ENGINE_ARGS` | 附加旗标；无 DISPLAY/WAYLAND_DISPLAY 时有头 spawn 自动补 `--headless` |
 | `BROWSE_NO_AUTO_DIALOG=1` | 关掉 alert 自动接受 |
 | `BROWSE_EVAL_TIMEOUT` | 单次求值超时秒（默认 60） |
+| `BROWSE_ENGINE_CONTEXT=1/0` | 强制开/关操作回执的引擎身份行（stderr 的「引擎：实例…」行，与 status 同一词汇）；默认只在 stderr 是终端时显示，管道与 agent 安静，机器面在回执信封 `engineContext` |
 | `BROWSE_DENY_DOMAINS` / `BROWSE_ALLOW_DOMAINS` | 域策略，deny 优先 |
 | `BROWSE_CHROME_MIRROR` / `BROWSE_CHROME_ASSET` | 引擎镜像与资产名 |
 | `BROWSE_CHROME_LATEST` | `chrome update` 发现源钉 |
