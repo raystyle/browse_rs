@@ -36,5 +36,5 @@ pub mod pipe;
 pub mod session;
 pub mod spawn;
 
-pub use discovery::{parse_port, resolve_ws_url, ws_from_active_port_text};
+pub use discovery::{parse_host_port, parse_port, resolve_ws_url, ws_from_active_port_text};
 pub use session::{ConnectOptions, PageTarget, Session};

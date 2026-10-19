@@ -19,17 +19,42 @@ use std::time::Duration;
 /// assert_eq!(cdp::parse_port("not-a-port"), None);
 /// ```
 pub fn parse_port(s: &str) -> Option<u16> {
+    parse_host_port(s).map(|(_, p)| p)
+}
+
+/// host:port 形的完整解析（跨宿主附着，S009 修复批）：`"9222"` 出
+/// `(None, 9222)`（纯端口，按本机 127.0.0.1）；`"10.10.10.5:9333"`、
+/// `"http://10.10.10.5:9333/"` 出 `(Some("10.10.10.5"), 9333)`——host
+/// 不再丢弃（旧 [`parse_port`] 只取端口段，跨宿主 attach 静默落到
+/// 127.0.0.1 的根因）。何时用：`--connect`/`ConnectOptions` 收
+/// host:port 形时。边界：hostname 与 IPv4/IPv6 字面都按原样透传
+/// （IPv6 形未特判 `[::1]:9222`，方括号保留在 host 串里）。
+///
+/// # Examples
+///
+/// ```
+/// assert_eq!(cdp::parse_host_port("9222"), Some((None, 9222)));
+/// assert_eq!(
+///     cdp::parse_host_port("http://10.10.10.5:9333/"),
+///     Some((Some("10.10.10.5".to_string()), 9333))
+/// );
+/// assert_eq!(cdp::parse_host_port("not-a-port"), None);
+/// ```
+pub fn parse_host_port(s: &str) -> Option<(Option<String>, u16)> {
     if let Ok(p) = s.parse::<u16>() {
-        return Some(p);
+        return Some((None, p));
     }
     let s = s
         .trim_start_matches("http://")
         .trim_start_matches("https://");
-    if let Some((_, port)) = s.rsplit_once(':') {
-        let port = port.trim_end_matches('/');
-        return port.parse().ok();
+    let (host, port) = s.rsplit_once(':')?;
+    let port = port.trim_end_matches('/');
+    let port = port.parse().ok()?;
+    let host = host.trim_end_matches('/');
+    if host.is_empty() {
+        return Some((None, port));
     }
-    None
+    Some((Some(host.to_string()), port))
 }
 
 /// 从 `DevToolsActivePort` 文件文本解析 WS URL：首行端口，次行 `/devtools/...` 路径。
@@ -230,4 +255,32 @@ pub fn detect_browsers() -> Vec<DetectedBrowser> {
     }
     hits.sort_by_key(|b| std::cmp::Reverse(b.mtime_ms));
     hits
+}
+
+#[cfg(test)]
+mod host_port_tests {
+    use super::parse_host_port;
+
+    /// S009 修复批锁形：纯端口出 (None, p)；host:port 与 http 前缀形都
+    /// 保留 host 段（旧 parse_port 丢 host 的回归锚）。
+    #[test]
+    fn host_port_shapes() {
+        assert_eq!(parse_host_port("9222"), Some((None, 9222)));
+        assert_eq!(
+            parse_host_port("10.10.10.5:9333"),
+            Some((Some("10.10.10.5".to_string()), 9333))
+        );
+        assert_eq!(
+            parse_host_port("http://10.10.10.5:9333/"),
+            Some((Some("10.10.10.5".to_string()), 9333))
+        );
+        // host 缺席的 http 形按纯端口（127.0.0.1 语义）
+        assert_eq!(
+            parse_host_port("http://127.0.0.1:9222"),
+            Some((Some("127.0.0.1".to_string()), 9222))
+        );
+        // 废形拒收
+        assert_eq!(parse_host_port("not-a-port"), None);
+        assert_eq!(parse_host_port("host:oops"), None);
+    }
 }

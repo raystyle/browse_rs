@@ -32,11 +32,16 @@ pub enum EngineSpec {
         /// WebSocket 端点。
         ws_url: String,
     },
-    /// 显式端口（`--port`），走 `/json/version`。
-    Port(
+    /// 显式端口（`--port` / `--connect` 的端口与 host:port 形），走
+    /// `/json/version`；host 缺省按本机 `127.0.0.1`，带 host 即跨宿主
+    /// 附着（S009 修复批：旧形只收端口丢 host，跨宿主 attach 静默落
+    /// 回环的根因）。
+    Port {
         /// 调试端口。
-        u16,
-    ),
+        port: u16,
+        /// 调试端点宿主（`--connect 10.10.10.5:9333` 的 host 段）。
+        host: Option<String>,
+    },
     /// 自动策略：先探测附着，缺则 spawn（`--chrome` / `--headless` / `--pipe` /
     /// `--profile` / `--proxy` / `--isolated` 可约束 spawn 面）。
     Auto {
@@ -450,7 +455,7 @@ impl Engine {
         // BROWSE_CDP_WS）是「切到这个」不是「有就行」——已连接且目标不同
         // 也要切换；同目标幂等免抖（重复 up 不次次断重连）。旧引擎是
         // spawn 的优雅关（down 所有权），是附着来源的零触碰只断本侧连接
-        let explicit = matches!(spec, EngineSpec::Attach { .. } | EngineSpec::Port(_));
+        let explicit = matches!(spec, EngineSpec::Attach { .. } | EngineSpec::Port { .. });
         {
             let inner = self.inner.lock().await;
             if self.session.is_connected() {
@@ -461,12 +466,19 @@ impl Engine {
                     (EngineSource::Attached { ws_url }, EngineSpec::Attach { ws_url: w }) => {
                         ws_url == w
                     }
-                    (EngineSource::Attached { ws_url }, EngineSpec::Port(p)) => {
-                        // F1（评审）：Port 语义是本机 127.0.0.1:<p>，同目标
-                        // 要求现状 ws 也是 loopback 宿主——远端同端口的附着
-                        // 不得误判同目标吞掉本机切换意图
-                        ws_port_of(ws_url) == Some(*p)
-                            && is_loopback_host(&ws_authority_host(ws_url))
+                    (EngineSource::Attached { ws_url }, EngineSpec::Port { port: p, host }) => {
+                        // F1（评审）：同目标要求宿主与端口都一致——host 是
+                        // Some 时现状 ws 的宿主须等值（跨宿主附着不误吞本机
+                        // 切换意图），None 时按本机 127.0.0.1（现状 ws 也须
+                        // 是 loopback 宿主）
+                        let cur_host = ws_authority_host(ws_url);
+                        match host {
+                            Some(h) => ws_port_of(ws_url) == Some(*p) && &cur_host == h,
+                            None => {
+                                ws_port_of(ws_url) == Some(*p)
+                                    && is_loopback_host(&ws_authority_host(ws_url))
+                            }
+                        }
                     }
                     _ => false,
                 };
@@ -524,16 +536,18 @@ impl Engine {
                     ws_url: ws_url.clone(),
                 }
             }
-            EngineSpec::Port(port) => {
+            EngineSpec::Port { port, host } => {
                 // F2（评审）：先解出真 ws URL 再连，来源记真端点（不记
                 // 「port N」合成串）——同目标判与 provenance 的 hostContext
-                // 都吃到真形
+                // 都吃到真形；host 带 host:port 形的 host 段（S009 修复
+                // 批，跨宿主握手不再硬编码 127.0.0.1）
+                let host = host.as_deref().unwrap_or("127.0.0.1");
                 let ws = discovery::http_version_ws_url(
-                    &format!("http://127.0.0.1:{port}"),
+                    &format!("http://{host}:{port}"),
                     Duration::from_secs(10),
                 )
                 .await
-                .with_context(|| format!("attach port {port}"))?;
+                .with_context(|| format!("attach {host}:{port}"))?;
                 self.session
                     .connect_opts(ConnectOptions {
                         ws_url: Some(ws.clone()),
@@ -665,7 +679,11 @@ impl Engine {
                 return Err($e);
             }};
         }
-        let ws = match cdp_spawn::wait_devtools_ready(&profile).await {
+        // S009 修复批：extra_args 钉死端口+非回环绑址时 chrome 不落
+        // DevToolsActivePort（clean-chrome r5 实测），等待腿转 /json/version
+        // 探测该端点
+        let pinned = cdp_spawn::pinned_debug_endpoint(extra_args);
+        let ws = match cdp_spawn::wait_devtools_ready_pinned(&profile, pinned).await {
             Ok(ws) => ws,
             Err(e) => bail_kill!(e.context(format!("spawn {} 后等调试口", chrome.display()))),
         };

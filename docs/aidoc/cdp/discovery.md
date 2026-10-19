@@ -11,6 +11,7 @@ Chrome 144+ 对默认 profile 的 HTTP `/json` 端点可能不服务，
 - `default_profile_dirs` — 返回默认 user-data 目录清单（clean-chrome / Chromium / Chrome，按探测优先序）。
 - `detect_browsers` — 扫默认 profile 目录列出所有可附着候选：读各目录的 `DevToolsActivePort`
 - `http_version_ws_url` — GET `<http>/json/version` 取 `webSocketDebuggerUrl`（自带 `timeout` 超时）。
+- `parse_host_port` — host:port 形的完整解析（跨宿主附着，S009 修复批）：`"9222"` 出
 - `parse_port` — 端口字面量的宽容解析：`"9222"`、`"http://127.0.0.1:9222"`、`"127.0.0.1:9222/"` 都出 `9222`。
 - `probe_default` — 探测本机已开调试口的浏览器，返回其 WS URL；没有则 `None`。
 - `resolve_ws_url` — 把 [`super::ConnectOptions`] 三线索解析成 WS URL。

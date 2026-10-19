@@ -66,6 +66,7 @@ async fn restart_engine(profile: Option<String>) -> anyhow::Result<()> {
             chrome: None,
             ws: None,
             port: None,
+            host: None,
             pipe: false,
             profile,
             proxy: None,
@@ -239,6 +240,8 @@ struct Globals {
     ws: Option<String>,
     /// `--port` 附着端口。
     port: Option<u16>,
+    /// `--connect <host:port>` 的 host 段（S009：跨宿主附着）。
+    host: Option<String>,
     /// `--chrome` 引擎二进制。
     chrome: Option<String>,
     /// `--profile` 引擎 user-data-dir。
@@ -952,6 +955,7 @@ async fn main() -> Result<()> {
         new_tab,
         mut ws,
         mut port,
+        mut host,
         chrome,
         profile,
         headless,
@@ -999,6 +1003,7 @@ async fn main() -> Result<()> {
             bind,
             ws,
             port,
+            host,
             chrome.map(Into::into),
             headless,
             pipe,
@@ -1084,7 +1089,9 @@ async fn main() -> Result<()> {
     {
         if c.starts_with("ws://") || c.starts_with("wss://") {
             ws = Some(c);
-        } else if let Some(p) = cdp::parse_port(&c) {
+        } else if let Some((h, p)) = cdp::parse_host_port(&c) {
+            // S009 修复批：host:port 形保留 host（跨宿主附着）
+            host = h;
             port = Some(p);
         } else {
             eprintln!("browse: --connect 认不出 {c}（要 ws://…、端口或 host:port，退出 2）");
@@ -1129,6 +1136,7 @@ async fn main() -> Result<()> {
                 chrome,
                 ws,
                 port,
+                host: host.clone(),
                 pipe,
                 profile,
                 proxy,
@@ -1946,6 +1954,7 @@ async fn main() -> Result<()> {
                 chrome,
                 ws,
                 port,
+                host: host.clone(),
                 pipe,
                 profile,
                 proxy,
@@ -2012,6 +2021,7 @@ async fn main() -> Result<()> {
                 js,
                 ws,
                 port,
+                host,
                 chrome,
                 headless,
                 pipe,
@@ -2125,6 +2135,7 @@ async fn run_eval(
     js: bool,
     ws: Option<String>,
     port: Option<u16>,
+    host: Option<String>,
     chrome: Option<String>,
     headless: bool,
     pipe: bool,
@@ -2171,6 +2182,7 @@ async fn run_eval(
             chrome,
             ws,
             port,
+            host: host.clone(),
             pipe,
             profile,
             proxy,
@@ -2218,10 +2230,12 @@ async fn run_snip(snip: &str, new_tab: bool, js: bool, timeout_s: Option<u64>) {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn serve_foreground(
     bind: String,
     ws: Option<String>,
     port: Option<u16>,
+    port_host: Option<String>,
     chrome: Option<std::path::PathBuf>,
     headless: bool,
     pipe: bool,
@@ -2233,7 +2247,10 @@ async fn serve_foreground(
     let mut spec = if let Some(ws) = ws {
         browse_core::EngineSpec::Attach { ws_url: ws }
     } else if let Some(p) = port {
-        browse_core::EngineSpec::Port(p)
+        browse_core::EngineSpec::Port {
+            port: p,
+            host: port_host,
+        }
     } else {
         browse_core::EngineSpec::from_env(chrome, headless, pipe)
     };

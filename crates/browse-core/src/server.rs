@@ -99,6 +99,10 @@ pub struct EngineUpRequest {
     pub ws: Option<String>,
     /// 显式端口。
     pub port: Option<u16>,
+    /// 显式端口的宿主段（`--connect <host:port>` 的 host；缺省按本机
+    /// 127.0.0.1，S009 修复批）。
+    #[serde(default)]
+    pub host: Option<String>,
     /// spawn 走 CDP 管道通道（S005，Windows）。
     #[serde(default)]
     pub pipe: bool,
@@ -1334,7 +1338,8 @@ fn health_with_spec(spec: &EngineSpec, mut health: Value) -> Value {
             "chrome": chrome.as_ref().map(|p| p.display().to_string()),
         }),
         EngineSpec::Attach { .. } => json!({"kind": "attach"}),
-        EngineSpec::Port(_) => json!({"kind": "port"}),
+        EngineSpec::Port { port, host } => json!({"kind": "port", "port": port,
+            "host": host.clone().unwrap_or_else(|| "127.0.0.1".into())}),
     };
     if let Some(o) = health.as_object_mut() {
         o.insert("spec".into(), s);
@@ -1416,7 +1421,10 @@ async fn engine_up_handler(
     let spec = if let Some(ws) = req.ws {
         EngineSpec::Attach { ws_url: ws }
     } else if let Some(p) = req.port {
-        EngineSpec::Port(p)
+        EngineSpec::Port {
+            port: p,
+            host: req.host.clone(),
+        }
     } else {
         // 缺字段回落 from_env（评审 F2）：消除「同一 BROWSE_PROXY/
         // BROWSE_PROFILE 一会生效一会不生效」的旗标与 env 两态。走到本块
@@ -1432,7 +1440,7 @@ async fn engine_up_handler(
                 engine_args,
                 ..
             } => (profile, proxy, proxy_bypass, engine_args, None),
-            EngineSpec::Port(_) => (None, None, None, Vec::new(), None),
+            EngineSpec::Port { .. } => (None, None, None, Vec::new(), None),
         };
         if let Some(ws_url) = env_ws {
             EngineSpec::Attach { ws_url }

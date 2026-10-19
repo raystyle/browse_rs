@@ -11,10 +11,12 @@
 - `chrome_binary_in_dir` — 在部署目录里解析 chrome 可执行文件（布局感知）：Windows `chrome.exe`、
 - `chrome_binary_name` — 返回本平台的 chrome 二进制名（Windows `chrome.exe`，其余 `chrome`）。
 - `find_chrome` — 依优先序探测 Chrome 可执行文件，找不到返回 `None`。
+- `pinned_debug_endpoint` — 等 spawn 出来的实例调试口就绪，返回 WS URL（读它 profile 下的
 - `spawn_engine` — 拉起一个带调试口的专属引擎实例（独立 profile、端口自动分配）。
 - `spawn_engine_pipes` — 按管道契约拉起 clean-chrome（S005 / D02-6；Windows 句柄态与 POSIX
 - `terminate_pid` — 强杀引擎进程（优雅退出 `Browser.close` 失败后的兜底）：Windows
-- `wait_devtools_ready` — 等 spawn 出来的实例调试口就绪，返回 WS URL（读它 profile 下的
+- `wait_devtools_ready` — [`wait_devtools_ready_pinned`] 的无钉死形（回环绑定缺省道）。
+- `wait_devtools_ready_pinned` — 等调试口就绪并返回 WS URL（S009 修复批带绑址回退）：先走
 
 ## Types
 

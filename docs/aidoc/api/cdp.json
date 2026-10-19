@@ -28,6 +28,11 @@
       "docs": "GET `<http>/json/version` 取 `webSocketDebuggerUrl`（自带 `timeout` 超时）。\n\n# Errors\n\n请求失败、非 JSON、或缺 `webSocketDebuggerUrl` 字段。"
     },
     {
+      "path": "cdp::discovery::parse_host_port",
+      "kind": "function",
+      "docs": "host:port 形的完整解析（跨宿主附着，S009 修复批）：`\"9222\"` 出\n`(None, 9222)`（纯端口，按本机 127.0.0.1）；`\"10.10.10.5:9333\"`、\n`\"http://10.10.10.5:9333/\"` 出 `(Some(\"10.10.10.5\"), 9333)`——host\n不再丢弃（旧 [`parse_port`] 只取端口段，跨宿主 attach 静默落到\n127.0.0.1 的根因）。何时用：`--connect`/`ConnectOptions` 收\nhost:port 形时。边界：hostname 与 IPv4/IPv6 字面都按原样透传\n（IPv6 形未特判 `[::1]:9222`，方括号保留在 host 串里）。\n\n# Examples\n\n```\nassert_eq!(cdp::parse_host_port(\"9222\"), Some((None, 9222)));\nassert_eq!(\n    cdp::parse_host_port(\"http://10.10.10.5:9333/\"),\n    Some((Some(\"10.10.10.5\".to_string()), 9333))\n);\nassert_eq!(cdp::parse_host_port(\"not-a-port\"), None);\n```"
+    },
+    {
       "path": "cdp::discovery::parse_port",
       "kind": "function",
       "docs": "端口字面量的宽容解析：`\"9222\"`、`\"http://127.0.0.1:9222\"`、`\"127.0.0.1:9222/\"` 都出 `9222`。\n\n# Examples\n\n```\nassert_eq!(cdp::parse_port(\"9222\"), Some(9222));\nassert_eq!(cdp::parse_port(\"http://127.0.0.1:9222\"), Some(9222));\nassert_eq!(cdp::parse_port(\"not-a-port\"), None);\n```"
@@ -163,6 +168,11 @@
       "docs": "依优先序探测 Chrome 可执行文件，找不到返回 `None`。\n\n优先序：`BROWSE_CHROME` 环境变量 -> 可执行文件同目录与当前目录下的\n`chromium-*/chrome.exe`（clean-chrome SxS 部署形态）-> 常规安装路径。\n\n# Examples\n\n```\nuse std::path::Path;\n// 显式路径原样直通（不校验存在性）\nassert_eq!(\n    cdp::spawn::find_chrome(Some(Path::new(\"/x/chrome\"))),\n    Some(\"/x/chrome\".into()),\n);\n// 无显式时按环境与部署探测，结果随机器而变，不在此断言\n```"
     },
     {
+      "path": "cdp::spawn::pinned_debug_endpoint",
+      "kind": "function",
+      "docs": "等 spawn 出来的实例调试口就绪，返回 WS URL（读它 profile 下的\n`DevToolsActivePort`）。\n\n冷启动首跑（建 profile）可能要几秒，默认上限 15 秒。\n\n[`wait_devtools_ready_pinned`] 的取料腿（S009 修复批）：extra_args\n同时带 `--remote-debugging-port=N`（N 非 0）与\n`--remote-debugging-address=<非回环>` 时返回 `(host, port)`——此形\nchrome 不落 DevToolsActivePort，等待腿需按端点探测。只钉端口未绑址\n或绑回环按缺省文件道，返回 `None`。"
+    },
+    {
       "path": "cdp::spawn::spawn_engine",
       "kind": "function",
       "docs": "拉起一个带调试口的专属引擎实例（独立 profile、端口自动分配）。\n\n参数：可执行文件、独立 profile 目录、是否无头。\n\n命令行：`--user-data-dir <dir> --remote-debugging-port=0 --no-first-run\n--no-default-browser-check --no-sandbox [--headless] about:blank`；\n无显示会话（如 ssh 无 DISPLAY）有头意图自动补 `--headless`（#57 的\nheadless_fallback 判定），extra_args 显式 headless 旗标优先不叠补。\n\n`--no-sandbox`：SxS 部署的 clean-chrome 在本机沙箱进程打不开自身 exe\n（`Sandbox cannot access executable`，0x5）；引擎是自动化专属隔离实例，\n不承载用户浏览面，关沙箱与 clean-chrome 验收实践一致（linux 同款）。\nchrome 诊断写 `<state>/engine.log`。\n\n# Errors\n\nspawn 失败（路径不是可执行文件等）。"
@@ -180,7 +190,12 @@
     {
       "path": "cdp::spawn::wait_devtools_ready",
       "kind": "function",
-      "docs": "等 spawn 出来的实例调试口就绪，返回 WS URL（读它 profile 下的\n`DevToolsActivePort`）。\n\n冷启动首跑（建 profile）可能要几秒，默认上限 15 秒。\n\n# Errors\n\n超时内端口文件没就绪。"
+      "docs": "[`wait_devtools_ready_pinned`] 的无钉死形（回环绑定缺省道）。\n\n# Errors\n\n超时内端口文件没就绪。"
+    },
+    {
+      "path": "cdp::spawn::wait_devtools_ready_pinned",
+      "kind": "function",
+      "docs": "等调试口就绪并返回 WS URL（S009 修复批带绑址回退）：先走\n`DevToolsActivePort` 文件（回环绑定形）；文件超时且 `pinned_hint`\n给了钉死端点（`--engine-arg --remote-debugging-port=N\n--remote-debugging-address=<非回环>` 形——此形 chrome 不落端口文件，\nclean-chrome r5 实测 0.0.0.0 与字面 IP 都不落），转 `/json/version`\n探测该端点。两路都败报原文件路的错（文案指向 profile 诊断位）。\n\n# Errors\n\n两路超时都未就绪。"
     }
   ]
 }

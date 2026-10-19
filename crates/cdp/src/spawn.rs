@@ -292,11 +292,76 @@ pub fn spawn_engine(
 ///
 /// 冷启动首跑（建 profile）可能要几秒，默认上限 15 秒。
 ///
+/// [`wait_devtools_ready_pinned`] 的取料腿（S009 修复批）：extra_args
+/// 同时带 `--remote-debugging-port=N`（N 非 0）与
+/// `--remote-debugging-address=<非回环>` 时返回 `(host, port)`——此形
+/// chrome 不落 DevToolsActivePort，等待腿需按端点探测。只钉端口未绑址
+/// 或绑回环按缺省文件道，返回 `None`。
+pub fn pinned_debug_endpoint(extra_args: &[String]) -> Option<(&str, u16)> {
+    let mut port: Option<u16> = None;
+    let mut host: Option<&str> = None;
+    for a in extra_args {
+        if let Some(v) = a.strip_prefix("--remote-debugging-port=")
+            && let Ok(p) = v.parse::<u16>()
+            && p != 0
+        {
+            port = Some(p);
+        }
+        if let Some(v) = a.strip_prefix("--remote-debugging-address=") {
+            host = Some(v);
+        }
+    }
+    let port = port?;
+    let host = host?;
+    if host == "127.0.0.1" || host == "localhost" || host == "::1" {
+        return None;
+    }
+    Some((host, port))
+}
+
+/// 等调试口就绪并返回 WS URL（S009 修复批带绑址回退）：先走
+/// `DevToolsActivePort` 文件（回环绑定形）；文件超时且 `pinned_hint`
+/// 给了钉死端点（`--engine-arg --remote-debugging-port=N
+/// --remote-debugging-address=<非回环>` 形——此形 chrome 不落端口文件，
+/// clean-chrome r5 实测 0.0.0.0 与字面 IP 都不落），转 `/json/version`
+/// 探测该端点。两路都败报原文件路的错（文案指向 profile 诊断位）。
+///
+/// # Errors
+///
+/// 两路超时都未就绪。
+pub async fn wait_devtools_ready_pinned(
+    profile_dir: &Path,
+    pinned_hint: Option<(&str, u16)>,
+) -> Result<String> {
+    match crate::discovery::wait_active_port_file(profile_dir, Duration::from_secs(15)).await {
+        Ok(ws) => Ok(ws),
+        Err(file_err) => {
+            if let Some((host, port)) = pinned_hint
+                && let Ok(ws) = crate::discovery::http_version_ws_url(
+                    // 0.0.0.0 绑定的本地可达面是 127.0.0.1（Windows 连
+                    // 0.0.0.0 不通）；字面 IP 绑定本机接口直连即达
+                    &format!(
+                        "http://{}:{port}",
+                        if host == "0.0.0.0" { "127.0.0.1" } else { host }
+                    ),
+                    Duration::from_secs(10),
+                )
+                .await
+            {
+                return Ok(ws);
+            }
+            Err(file_err)
+        }
+    }
+}
+
+/// [`wait_devtools_ready_pinned`] 的无钉死形（回环绑定缺省道）。
+///
 /// # Errors
 ///
 /// 超时内端口文件没就绪。
 pub async fn wait_devtools_ready(profile_dir: &Path) -> Result<String> {
-    crate::discovery::wait_active_port_file(profile_dir, Duration::from_secs(15)).await
+    wait_devtools_ready_pinned(profile_dir, None).await
 }
 
 /// 管道态引擎的句柄：chrome 子进程加留在启动器侧的两条 CDP 管道端。
@@ -535,6 +600,48 @@ pub fn terminate_pid(pid: u32) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// S009 修复批锁形：端口+非回环绑址同时钉死才出端点；只钉端口、
+    /// 绑回环、缺任一都 None（回环形走 DevToolsActivePort 缺省道）。
+    #[test]
+    fn pinned_endpoint_shapes() {
+        let args = |v: &[&str]| v.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        assert_eq!(
+            pinned_debug_endpoint(&args(&[
+                "--remote-debugging-port=9444",
+                "--remote-debugging-address=0.0.0.0"
+            ])),
+            Some(("0.0.0.0", 9444))
+        );
+        assert_eq!(
+            pinned_debug_endpoint(&args(&[
+                "--remote-debugging-address=10.10.10.5",
+                "--remote-debugging-port=9333"
+            ])),
+            Some(("10.10.10.5", 9333))
+        );
+        // 只钉端口（缺绑址）→ None（文件道）
+        assert_eq!(
+            pinned_debug_endpoint(&args(&["--remote-debugging-port=9444"])),
+            None
+        );
+        // 绑回环 → None（文件道照常落盘）
+        assert_eq!(
+            pinned_debug_endpoint(&args(&[
+                "--remote-debugging-port=9444",
+                "--remote-debugging-address=127.0.0.1"
+            ])),
+            None
+        );
+        // port=0 随机口 → None（外部无从知口）
+        assert_eq!(
+            pinned_debug_endpoint(&args(&[
+                "--remote-debugging-port=0",
+                "--remote-debugging-address=0.0.0.0"
+            ])),
+            None
+        );
+    }
 
     /// headless 加固组自持(clean-chrome 二分定案回归锁):Linux 非空、
     /// 同前缀去重、用户显式值优先。

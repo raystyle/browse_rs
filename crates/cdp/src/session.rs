@@ -283,10 +283,18 @@ impl Session {
                 ws_url: Some(url.to_string()),
                 ..Default::default()
             }
-        } else if let Some(port) = crate::parse_port(url) {
-            ConnectOptions {
-                port: Some(port),
-                ..Default::default()
+        } else if let Some((host, port)) = crate::parse_host_port(url) {
+            // S009 修复批：host:port 形不再丢 host——带 host 走 http 端点
+            // 形（跨宿主 /json/version 握手），纯端口按本机 127.0.0.1
+            match host {
+                Some(h) => ConnectOptions {
+                    ws_url: Some(format!("http://{h}:{port}")),
+                    ..Default::default()
+                },
+                None => ConnectOptions {
+                    port: Some(port),
+                    ..Default::default()
+                },
             }
         } else {
             ConnectOptions {

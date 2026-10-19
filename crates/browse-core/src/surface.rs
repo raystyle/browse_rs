@@ -153,12 +153,12 @@ pub const COMMANDS: &[CmdSpec] = &[
     CmdSpec {
         name: "connect-flag",
         kind: CmdKind::Cli,
-        signature: "browse --connect <ws|端口> '<片段>'",
+        signature: "browse --connect <ws|host:port|端口> '<片段>'",
         args: &[
             arg!("target", "string", true),
             arg!("snippet", "string", false),
         ],
-        description: "附着指定 WebSocket URL 或调试端口。",
+        description: "附着指定 WebSocket URL 或调试端口（host:port 形跨宿主直连，宿主 chrome 须 --remote-debugging-address 绑非回环）。",
         example: "browse --connect 9222 'return await listPageTargets()'",
     },
     CmdSpec {

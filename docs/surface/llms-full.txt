@@ -12,7 +12,7 @@
 | `browse --js '<JS 源码|@<路径>>'` | 在页面主世界求值 JS（Runtime.evaluate）。@ 文件、--vars 模板、空实参走管道。 |
 | `browse --b64 '<base64>'` | 把片段或 --js 实参按 base64 解码后再求值。空实参读管道。 |
 | `browse --new-tab '<片段>'` | 求值前先打开 about:blank 新标签。 |
-| `browse --connect <ws|端口> '<片段>'` | 附着指定 WebSocket URL 或调试端口。 |
+| `browse --connect <ws|host:port|端口> '<片段>'` | 附着指定 WebSocket URL 或调试端口（host:port 形跨宿主直连，宿主 chrome 须 --remote-debugging-address 绑非回环）。 |
 | `browse up [--headless] [--pipe] [--chrome <path>] [--profile <dir>] [--ws <url>] [--port <p>] [--proxy <url>] [--proxy-bypass <list>] [--engine-arg <a>] [--isolated] [--idle-timeout <ms>] [--cookies <域csv>]` | 启动引擎。优先附着已开浏览器，否则 spawn clean-chrome。--profile 指定用户数据目录；--isolated 退出即删；--headless 无头。 |
 | `browse update` | 自更新 browse 二进制。镜像优先，失败回落 GitHub；校验 sha256。 |
 | `browse down` | 停止 daemon。只结束本工具 spawn 的引擎。 |
@@ -241,9 +241,9 @@ browse --js --b64 $(printf '%s' '1+1' | base64)
 browse --new-tab 'return await snapshot()'
 ```
 
-## `browse --connect <ws|端口> '<片段>'`
+## `browse --connect <ws|host:port|端口> '<片段>'`
 
-附着指定 WebSocket URL 或调试端口。
+附着指定 WebSocket URL 或调试端口（host:port 形跨宿主直连，宿主 chrome 须 --remote-debugging-address 绑非回环）。
 
 参数：
 - `target`（string），必填

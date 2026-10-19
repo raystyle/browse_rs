@@ -904,6 +904,9 @@ pub struct UpParams {
     pub ws: Option<String>,
     /// 显式端口。
     pub port: Option<u16>,
+    /// 显式端口的宿主段（`--connect <host:port>` 的 host；缺省按本机
+    /// 127.0.0.1，S009 修复批）。
+    pub host: Option<String>,
     /// spawn 走 CDP 管道。
     pub pipe: bool,
     /// 自定义 user-data-dir。
@@ -1009,6 +1012,7 @@ pub async fn engine_up(p: UpParams) -> Result<Value> {
             "chrome": p.chrome,
             "ws": p.ws,
             "port": p.port,
+            "host": p.host,
             "pipe": p.pipe,
             "profile": p.profile,
             "proxy": p.proxy,
