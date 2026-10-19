@@ -19,3 +19,7 @@
 
 - `fetch` — 抓取入口：HTTP 优先，命中升级条件转引擎腿。
 
+## Types
+
+- `EngineIntent` — fetch 面的引擎意图（冷附着修）：CLI 解析出的显式连接/引擎旗标束。
+

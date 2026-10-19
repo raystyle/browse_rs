@@ -4,7 +4,12 @@
 
 ## Unreleased
 
-（无；最新封版 0.37.1）
+（无；最新封版 0.37.2）
+
+## 0.37.2（2026-10-20）
+
+- `fetch` 引擎腿透传引擎意图：冷 daemon 带显式 `--connect`/`--ws`/`--port` 不再回落本地拉引擎（容器/远端 chrome 形冷跑 fetch 报「找不到 chrome」修；与 eval 面同构，全缺省行为零变化）
+- 契约注记（在册不改动）：fetch 两腿回执形状有意不同——HTTP 直取腿 `{bytes,status,text}`、引擎腿 `{httpStatus,text,title,url,via,upgradedFrom}`；消费方按 `via` 分辨。统一属契约破裂级变更，待后续批单议
 
 ## 0.37.1（2026-10-19）
 
