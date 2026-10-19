@@ -4,7 +4,12 @@
 
 ## Unreleased
 
-（无；最新封版 0.36.0）
+（无；最新封版 0.37.0）
+
+## 0.37.0（2026-10-19）
+
+- 操作回执引擎上下文四口同构：eval/rune/cdp/userscript eval/fetch 引擎腿的信封带 `engineContext`（`engine` 键与 `/health` 同源，含 ws 端点/通道/profile/pid；agent 断言执行环境读这里，stdout 恒纯值）
+- stderr 引擎身份行三态闸：终端默认显（实例、daemon 端口、origin、宿主、pid、通道、ws 调试端点、profile、有头，与 status 同一词汇），管道/agent 默认安静，`BROWSE_ENGINE_CONTEXT=1/0` 强制开/关；指纹变化与跨宿主告警恒显
 
 ## 0.36.0（2026-10-17）
 
