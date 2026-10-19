@@ -1487,7 +1487,22 @@ async fn main() -> Result<()> {
             markdown,
             timeout_s,
         } => {
-            let r = browse_cli::fetch::fetch(&url, dom_html, markdown, timeout_s).await?;
+            // 引擎意图透传（fetch 冷附着修）：--connect/--ws/--port 及引擎
+            // 旗标族与 eval 面同一语义，引擎腿冷 daemon 先落附着意图
+            let engine = browse_cli::fetch::EngineIntent {
+                ws: ws.clone(),
+                port,
+                host: host.clone(),
+                chrome: chrome.clone(),
+                headless,
+                pipe,
+                profile: profile.clone(),
+                proxy: proxy.clone(),
+                proxy_bypass: proxy_bypass.clone(),
+                isolated,
+                engine_args: engine_args.clone(),
+            };
+            let r = browse_cli::fetch::fetch(&url, dom_html, markdown, timeout_s, &engine).await?;
             println!("{}", serde_json::to_string_pretty(&r)?);
             Ok(())
         }

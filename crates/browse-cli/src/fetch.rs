@@ -25,7 +25,13 @@ use browse_core::fetch_core;
 ///
 /// 两腿全失败（HTTP 网络错且引擎腿也失败）；引擎腿的 goto/抽取错误原样
 /// 上抛。
-pub async fn fetch(url: &str, dom_html: bool, markdown: bool, timeout_s: u64) -> Result<Value> {
+pub async fn fetch(
+    url: &str,
+    dom_html: bool,
+    markdown: bool,
+    timeout_s: u64,
+    engine: &EngineIntent,
+) -> Result<Value> {
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(timeout_s))
         .user_agent(concat!("browse/", env!("CARGO_PKG_VERSION")))
@@ -44,6 +50,7 @@ pub async fn fetch(url: &str, dom_html: bool, markdown: bool, timeout_s: u64) ->
             None,
             timeout_s,
             &client,
+            engine,
         )
         .await;
     }
@@ -95,6 +102,7 @@ pub async fn fetch(url: &str, dom_html: bool, markdown: bool, timeout_s: u64) ->
                 Some(status),
                 timeout_s,
                 &client,
+                engine,
             )
             .await;
         }
@@ -127,6 +135,7 @@ async fn fetch_engine_leg(
     http_status: Option<u16>,
     timeout_s: u64,
     client: &reqwest::Client,
+    engine: &EngineIntent,
 ) -> Result<Value> {
     let extract = fetch_core::extract_js(shape.need_html);
     // 引擎腿 goto 预算随 --timeout 走（评审 G5/kimi G-5）：写死 20 秒让
@@ -146,6 +155,13 @@ async fn fetch_engine_leg(
     // 不只认 BROWSE_PORT 缺省；懒拉起同构（#49）：daemon 不在则
     // 自动拉起，冷启动 fetch 不再要求先手工 browse up
     crate::client::ensure_daemon_with_env(&crate::client::skills_passthrough_env()).await?;
+    // 引擎意图透传（fetch 冷附着修）：显式 --connect/--ws/--port 与 eval
+    // 面同一语义——冷 daemon 先落附着意图再求值，不再回落 Auto 去本地
+    // spawn chrome（容器/远端 chrome 形冷跑 fetch 报「找不到 chrome」的
+    // 根因）
+    if let Some(p) = engine.up_params() {
+        crate::client::engine_up(p).await?;
+    }
     let bind = crate::client::daemon_bind();
     let resp = client
         .post(format!("http://{bind}/eval"))
@@ -265,6 +281,71 @@ fn add_domain_skills(url: &str, r: &mut Value) {
         if let Some(obj) = r.as_object_mut() {
             obj.insert(k.to_string(), v);
         }
+    }
+}
+
+/// fetch 面的引擎意图（冷附着修）：CLI 解析出的显式连接/引擎旗标束。
+/// `up_params` 在有显式意图（ws/port/host/chrome/headless/pipe/profile/
+/// proxy/isolated/engine-arg 任一）时出 `UpParams`,与 eval 面的
+/// engine_up 触发条件同构。
+#[derive(Default)]
+pub struct EngineIntent {
+    /// `--ws`/`--connect` 的 ws 形。
+    pub ws: Option<String>,
+    /// `--port`/`--connect` 的端口形。
+    pub port: Option<u16>,
+    /// `--connect <host:port>` 的 host 段(S009)。
+    pub host: Option<String>,
+    /// `--chrome`。
+    pub chrome: Option<String>,
+    /// `--headless`。
+    pub headless: bool,
+    /// `--pipe`。
+    pub pipe: bool,
+    /// `--profile`。
+    pub profile: Option<String>,
+    /// `--proxy`。
+    pub proxy: Option<String>,
+    /// `--proxy-bypass`。
+    pub proxy_bypass: Option<String>,
+    /// `--isolated`。
+    pub isolated: bool,
+    /// `--engine-arg`(可叠)。
+    pub engine_args: Vec<String>,
+}
+
+impl EngineIntent {
+    /// 有任一显式意图才出 [`crate::client::UpParams`](冷 daemon 时先
+    /// engine_up 落意图);全缺省返 None(不动引擎,fetch 走 daemon 既有态
+    /// 或 Auto)。
+    fn up_params(&self) -> Option<crate::client::UpParams> {
+        if self.ws.is_none()
+            && self.port.is_none()
+            && self.host.is_none()
+            && self.chrome.is_none()
+            && !self.headless
+            && !self.pipe
+            && self.profile.is_none()
+            && self.proxy.is_none()
+            && self.proxy_bypass.is_none()
+            && !self.isolated
+            && self.engine_args.is_empty()
+        {
+            return None;
+        }
+        Some(crate::client::UpParams {
+            headless: self.headless,
+            chrome: self.chrome.clone(),
+            ws: self.ws.clone(),
+            port: self.port,
+            host: self.host.clone(),
+            pipe: self.pipe,
+            profile: self.profile.clone(),
+            proxy: self.proxy.clone(),
+            proxy_bypass: self.proxy_bypass.clone(),
+            isolated: self.isolated,
+            engine_args: self.engine_args.clone(),
+        })
     }
 }
 
