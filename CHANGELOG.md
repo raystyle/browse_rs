@@ -6,15 +6,21 @@
 
 （无；最新封版 0.37.2）
 
+## 0.38.0（2026-10-21）
+
+- **移除 ledger/issue 功能面（用户裁 2026-10-21，总台令 ledger 全线淘汰）**：`browse issue new/list/show`、`browse artifact publish/attest/list`、`browse ledger keygen` 三族命令下线；`ledger-client` 依赖移除（连带 `ed25519-dalek`/`base64`/`sha2` 的 CLI 侧独占依赖清理）；issue 传递今后走 shares/streams 原语。契约破裂级（命令面移除），版本取 0.38.0
+- `browse rune` 无旗标调用不再前置 `engine_up`（与 eval 面同门，#118 修复）：此前全缺省 UpParams 会把 daemon 记录 spec 洗成缺省形态（运行引擎的 profile 等字段与记录面分家），userscript 族缺省装库 write-A-read-B；冷引擎由 daemon /rune 道按记录 spec 懒拉
+- daemon `/engine/up` 的 #61 回写门收口（#118 修复第二层）：引擎已连接时 Auto 形 ensure 是 no-op，不再覆写记录 spec。记录面恒等于「最近一次真把引擎带起来的 up 形态」，闲置回收后懒重拉名实一致
+
 ## 0.37.2（2026-10-20）
 
 - `fetch` 引擎腿透传引擎意图：冷 daemon 带显式 `--connect`/`--ws`/`--port` 不再回落本地拉引擎（容器/远端 chrome 形冷跑 fetch 报「找不到 chrome」修；与 eval 面同构，全缺省行为零变化）
-- 契约注记（在册不改动）：fetch 两腿回执形状有意不同——HTTP 直取腿 `{bytes,status,text}`、引擎腿 `{httpStatus,text,title,url,via,upgradedFrom}`；消费方按 `via` 分辨。统一属契约破裂级变更，待后续批单议
+- 契约注记（在册不改动）：fetch 两腿回执形状有意不同：HTTP 直取腿 `{bytes,status,text}`、引擎腿 `{httpStatus,text,title,url,via,upgradedFrom}`；消费方按 `via` 分辨。统一属契约破裂级变更，待后续批单议
 
 ## 0.37.1（2026-10-19）
 
 - `--connect <host:port>` 跨宿主附着真落地：host 段不再丢弃（旧 `parse_port` 只取端口、握手硬编码 127.0.0.1，跨宿主 attach 静默落回环）；`EngineSpec::Port` 升 `{port, host}` 全链传递
-- spawn 等待腿绑址回退：`--engine-arg` 钉死端口+非回环 `--remote-debugging-address` 时 clean-chrome 不落 `DevToolsActivePort`，转 `/json/version` 探测钉死端点——browse 管理的非回环引擎可起可管
+- spawn 等待腿绑址回退：`--engine-arg` 钉死端口+非回环 `--remote-debugging-address` 时 clean-chrome 不落 `DevToolsActivePort`，转 `/json/version` 探测钉死端点，browse 管理的非回环引擎可起可管
 
 ## 0.37.0（2026-10-19）
 

@@ -29,13 +29,6 @@
 | `browse fetch <url> [--html] [--markdown|-m] [--timeout <s>]` | 一次性抓取 URL。默认 HTTP；正文空、墙页或过短则改走引擎。--html 返回渲染 DOM；--markdown 转为 Markdown。 |
 | `browse events [--since <seq>] [--last <n>] [--clear]` | 读取 userscript 上报的事件环。脚本 POST /events；满 1000 条丢最旧。 |
 | `browse rune <script.rn|@名> [--vars k=v] [--root <dir>]` | 运行图灵完备的 Rune 编排脚本。入口 pub async fn main()（不支持返回类型注解；错误传播用 ?，回值用 Ok(..)/Err(..)）。原生 CDP：cdp::raw("Domain.method", params)。页面：goto/eval/eval_handle/call/release、js/js_lib（主世界）、dialect（方言全量桥）、requests/snapshot/request_detail。事件：wait_event(method, 毫秒；方言 waitFor 是秒,单位不同勿混)。工具：render/stdin。宿主模块：json、time（time::sleep 可用）。--vars k=v 按 Jinja 渲染，默认定界 <%= 键 %>。无实参时 stdin 作为脚本；有实参时 stdin 作为 cdp::stdin()。browse rune stop 停止执行。 |
-| `browse issue new <标题> --acceptance <验收> [--kind bug|improvement] [--body <正文>] [--dry-run]` | 创建 issue。--acceptance 必填。--dry-run 只预览不提交。 |
-| `browse issue list [--limit <n>] [--before <id>]` | 列出 issue。--limit 条数，打满则还有更多。 |
-| `browse issue show <id>` | 显示一条 issue。 |
-| `browse artifact publish --name <n> --kind <k> --digest <d> [--summary <s>] [--outcome <success|failure>] [--git-sha <sha>] [--version <v>] [--git-range <r>] [--note <n>] [--dep <d>]…` | 发布产物记录。--kind 与 --digest 必填。digest 形如 sha256:<64hex>。 |
-| `browse artifact attest <id> --type <t>` | 为产物添加验证事件。--type 为 attest_dev、attest_prod 或 verification_failed。 |
-| `browse artifact list [--current] [--env dev|prod]` | 列出产物。--current 只看当前有效集；--env 过滤环境。 |
-| `browse ledger keygen [--force]` | 生成 Ed25519 密钥对。私钥写入 ~/.browse-rs/ledger/ed25519.key，公钥打印到终端。 |
 | `browse workspace status [--json]` | 显示技能仓安装态、git 与技能计数。 |
 | `browse workspace install` | 把默认技能仓 clone 到 ~/.browse-rs/workspace。 |
 | `browse workspace update` | git pull --ff-only 更新技能仓。有未提交修改则拒绝。 |

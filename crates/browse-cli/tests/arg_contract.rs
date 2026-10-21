@@ -1,13 +1,14 @@
 //! CLI argv 契约锁（#53）：0.12.1 的 G-F 收口把 `next` 必值口改成直出
-//! exit 2 后，七处子命令旗标收集循环按「参数尽返 Err 收尾」旧契约写，
-//! 全部假报用法错（`fetch` / `artifact` 三兄弟 / `ledger keygen` /
-//! `issue new` / `issue list`）。
+//! exit 2 后，子命令旗标收集循环按「参数尽返 Err 收尾」旧契约写，全部
+//! 假报用法错（`fetch` / `userscript` 族等收集环）。
 //! 本件用真二进制（`CARGO_BIN_EXE_browse`）锁双口分面：必值口缺值
-//! exit 2，收集口参数尽即收尾。全部用例零网络（dry-run 与本地校验面）。
+//! exit 2，收集口参数尽即收尾。全部用例零网络（本地校验面）。
+//! 注：issue/artifact/ledger 三族已移除（总台令 2026-10-21 ledger 全线
+//! 淘汰），其用例随之退场，收集环契约由存活子命令续锁。
 
 use std::process::{Command, Stdio};
 
-/// 跑真二进制：stdin 恒 null（issue new 的空 body 会读管道，挂住测试）。
+/// 跑真二进制：stdin 恒 null（读管道的子命令会挂住测试）。
 fn run(args: &[&str], env: &[(&str, &str)]) -> (i32, String, String) {
     let mut c = Command::new(env!("CARGO_BIN_EXE_browse"));
     c.args(args).stdin(Stdio::null());
@@ -52,57 +53,20 @@ impl Drop for TempState {
     }
 }
 
-/// 七处旗标收集循环（含 `while let Some` 与 `loop { match }` 两形态）与
+/// 旗标收集循环（含 `while let Some` 与 `loop { match }` 两形态）与
 /// 可选位全部正常收尾，不再假报「旗标 需要一个值」。
 #[test]
 fn flag_collection_loops_terminate() {
-    // issue new：循环走完进 dry-run 本地预览（零网络零签名）
-    let (code, out, err) = run(
-        &["issue", "new", "t", "--acceptance", "a", "--dry-run"],
-        &[],
-    );
-    assert_eq!(code, 0, "issue new dry-run 应 0：{err}");
-    assert!(out.contains("\"dryRun\": true"), "dry-run 回执：{out}");
-
-    // artifact publish：循环走完命中 --kind 必填校验（非旗标缺值假报）
-    let (code, _, err) = run(&["artifact", "publish", "--name", "x"], &[]);
-    assert_eq!(code, 2, "{err}");
-    assert!(err.contains("--kind 必填"), "应命中 kind 校验：{err}");
-
-    // 示在 stderr）
-    // ledger keygen 裸调：循环收尾后真落钥（隔离态，勿碰本机密档）
-    let key = TempState::new("key");
-    let (code, out, err) = run(&["ledger", "keygen"], &[("BROWSE_NAME", key.path())]);
-    assert_eq!(code, 0, "keygen 应 0：{err}");
-    assert!(out.contains("\"ok\": true"), "keygen 回执：{out}");
-
-    // fetch / artifact attest / issue list 的循环首迭代（坏旗标与坏值都
-    // 在网络前拦截）
+    // fetch 的循环首迭代（坏旗标在网络前拦截）
     let (code, _, err) = run(&["fetch", "x", "--bogus"], &[]);
     assert_eq!(code, 2, "{err}");
     assert!(err.contains("参数不认识 --bogus"), "{err}");
-    let (code, _, err) = run(&["issue", "list", "--limit", "abc"], &[]);
-    assert_eq!(code, 2, "{err}");
-    assert!(err.contains("--limit 要数字"), "{err}");
 
-    // artifact publish 的 outcome 枚举（结构化字段，网络前拦截）
-    let (code, _, err) = run(
-        &[
-            "artifact",
-            "publish",
-            "--name",
-            "x",
-            "--kind",
-            "lesson",
-            "--digest",
-            "sha256:0000000000000000000000000000000000000000000000000000000000000000",
-            "--outcome",
-            "bogus",
-        ],
-        &[],
-    );
+    // userscript 族收集环（多 id 收集形态）：坏旗标用法错点名收到的旗标
+    let (code, _, err) = run(&["userscript", "enable", "x", "--bogus"], &[]);
     assert_eq!(code, 2, "{err}");
-    assert!(err.contains("--outcome 只认 success|failure"), "{err}");
+    assert!(err.contains("只收 id/名与 --restart"), "{err}");
+    assert!(err.contains("--bogus"), "报错应点名旗标：{err}");
 }
 
 /// 必值口（Args::next）缺值仍直出 exit 2——分面只救收集口，不放松守卫。
@@ -125,14 +89,17 @@ fn mode_level_missing_param_reachable() {
     assert!(err.contains("workspace site 缺段"), "{err}");
 }
 
-/// bail_arg 措辞中性化：非 issue 子命令的坏旗标不再误报「issue 参数不
-/// 认识」。
+/// bail_arg 措辞中性化：坏旗标报错点名收到的旗标与本子命令，不误报到
+/// 别的子命令头上。
 #[test]
 fn bail_arg_wording_is_subcommand_neutral() {
-    let (code, _, err) = run(&["artifact", "attest", "id-x", "--bogus"], &[]);
+    let (code, _, err) = run(&["userscript", "disable", "id-x", "--bogus"], &[]);
     assert_eq!(code, 2, "{err}");
-    assert!(err.contains("参数不认识 --bogus"), "{err}");
-    assert!(!err.contains("issue 参数不认识"), "{err}");
+    assert!(
+        err.contains("userscript disable"),
+        "报错应点名本子命令：{err}"
+    );
+    assert!(err.contains("--bogus"), "报错应点名旗标：{err}");
 }
 
 /// #64 `@` 文件实参形态：读失败报错带 CTA 直出 exit 2（网络前拦截，

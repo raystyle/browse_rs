@@ -525,7 +525,7 @@ fn verify_sha(bytes: &[u8], want: &str, asset: &str) -> Result<()> {
     if got != want {
         bail!(
             "sha256 不匹配（资产损坏或被篡改，硬拒不回落）：{asset} 期望 {want} 实得 {got}；\
-             下一步：重试一次，仍失败反馈 browse issue new"
+             下一步：重试一次，仍失败走 streams 回执上报总台"
         );
     }
     Ok(())
@@ -615,11 +615,13 @@ pub fn extract_binary(archive: &[u8], staging: &Path) -> Result<PathBuf> {
             Ok(dst)
         }
         0 => {
-            bail!("发布包内未找到 {bin_name} 二进制；下一步：重试一次，仍失败反馈 browse issue new")
+            bail!(
+                "发布包内未找到 {bin_name} 二进制；下一步：重试一次，仍失败走 streams 回执上报总台"
+            )
         }
         n => bail!(
             "发布包内 {bin_name} 命中 {n} 件（包形异常拒绝盲取）；\
-             下一步：反馈 browse issue new"
+             下一步：走 streams 回执上报总台"
         ),
     }
 }
@@ -651,7 +653,7 @@ fn rollback_and_verify(exe: &Path, bak: &Path, new_bin: &Path) -> Result<()> {
             exe.display()
         ),
         Err(e) => bail!(
-            "回滚受阻（{e}）：旧件在 {}，新件在 {}；下一步：手动复原 mv {} {} 后反馈 browse issue new",
+            "回滚受阻（{e}）：旧件在 {}，新件在 {}；下一步：手动复原 mv {} {} 后走 streams 回执上报总台",
             bak.display(),
             new_bin.display(),
             bak.display(),
@@ -707,7 +709,7 @@ pub fn swap_binary(exe: &Path, new_bin: &Path, expect_version: &str) -> Result<(
             .context(format!("新件自证失败（--version 非 {expect_version}）"))?;
         bail!(
             "新件自证失败（--version 非 {expect_version}，已回滚并复核在位）；\
-             下一步：重试一次，仍失败反馈 browse issue new"
+             下一步：重试一次，仍失败走 streams 回执上报总台"
         );
     }
     std::fs::remove_file(&bak).ok();

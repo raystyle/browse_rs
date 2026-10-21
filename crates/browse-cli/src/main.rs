@@ -116,18 +116,6 @@ enum Mode {
     ChromeRemove(String),
     /// `browse chrome doctor`：托管部署体检。
     ChromeDoctor,
-    /// `browse issue new <标题> --acceptance <验收> [--kind bug|improvement] [--body <正文>] [--dry-run]`：账本 issue 流开单（REQ-063，真源 ledger.ohmygh.com）。
-    IssueNew {
-        title: String,
-        body: String,
-        kind: String,
-        acceptance: String,
-        dry: bool,
-    },
-    /// `browse issue list [--limit <n>] [--before <id>]`：列 issue（账本面；count 是返回条数，has_more 权威）。
-    IssueList { limit: u32, before: Option<u64> },
-    /// `browse issue show <id>`：看 issue 详情。
-    IssueShow(String),
     /// `browse workspace status [--json]`：workspace 仓与 git 状态概览（#50/#51 配套）。
     WorkspaceStatus,
     /// `browse workspace install`：git clone 种子仓到仓根。
@@ -171,53 +159,14 @@ enum Mode {
         markdown: bool,
         timeout_s: u64,
     },
-    /// `browse issue close` 面已移除（总台修正令 2026-09-20 收口：关闭与删除唯一道 = omc 工位经 herdr 委托）。
-    /// `browse artifact publish --name <n> --kind <k> --digest <d>`：产物共享库发布（REQ-063；--dep 可重复记依赖出处；--summary/--outcome/--git-sha 结构化字段网页详情直出，参数面随 ledger-client v0.1.3）。
-    ArtifactPublish {
-        name: String,
-        kind: String,
-        digest: String,
-        version: Option<String>,
-        git_range: Option<String>,
-        note: Option<String>,
-        summary: Option<String>,
-        outcome: Option<String>,
-        git_sha: Option<String>,
-        deps: Vec<String>,
-    },
-    /// `browse artifact attest <id> --type <t>`：产物验证事件（attest_dev/attest_prod/verification_failed 三型；promote/demote/supersede 归 omc）。
-    ArtifactAttest {
-        id: String,
-        ev_type: String,
-        note: Option<String>,
-    },
-    /// `browse artifact list [--current] [--env dev|prod]`：产物列表。
-    ArtifactList {
-        current: bool,
-        env_f: Option<String>,
-    },
-    /// `browse ledger keygen [--force]`：Ed25519 密钥对（REQ-063）。
-    LedgerKeygen { force: bool },
+    /// `browse issue`/`browse artifact`/`browse ledger` 面已移除（总台令
+    /// 2026-10-21：ledger 全线淘汰，账本三族命令下线；issue 传递改走
+    /// shares/streams 原语）。
     /// `browse rune <script.rn|@名> [--vars k=v] [--root <dir>]`：Rune 编排面（#67）。
     Rune { script: Option<String> },
     /// `browse rune stop`：主动停止在跑的 rune 执行（批次二总台指令；
     /// 名是动词位，脚本文件别叫 stop）。
     RuneStop,
-}
-
-/// 账本调用统一走阻塞线程（收口适配 2026-09-20）：ledger-client 是
-/// reqwest blocking 客户端，在 async 上下文里构造/销毁会 panic（嵌套
-/// runtime 的 drop 限制，实弹红）；spawn_blocking 让它整个生命周期留在
-/// 阻塞线程池。
-async fn ledger_call<T, F>(f: F) -> Result<T>
-where
-    T: Send + 'static,
-    F: FnOnce() -> std::result::Result<T, String> + Send + 'static,
-{
-    tokio::task::spawn_blocking(f)
-        .await
-        .map_err(|e| anyhow!("ledger 线程故障：{e}"))?
-        .map_err(|e| anyhow!("{e}"))
 }
 
 /// 全局旗标态（尾置合法批，R4 上游缺陷 b 修复）：--llms 手册读序句
@@ -369,8 +318,8 @@ impl Globals {
             "--vars-syntax" => {
                 self.vars_syntax_flag = Some(args.next("--vars-syntax"));
             }
-            // base64 通道只留长参：`-b` 短参是 issue new 的 --body 既有
-            // 契约（REQ-057），不夺权
+            // base64 通道只留长参（`-b` 短参历史上是 issue new 的 --body
+            // 专属，issue 面已移除 2026-10-21，短参不再回收）
             "--b64" => self.b64 = true,
             "--json" => self.json = true,
             "--llms" => self.llms = true,
@@ -518,160 +467,15 @@ async fn main() -> Result<()> {
                     timeout_s,
                 };
             }
-            "artifact" if g.snippets.is_empty() && mode_is_eval(&mode) => {
-                match args.next("artifact").as_str() {
-                    "publish" => {
-                        // kind 必填（REQ-063 十五枚举无缺省）；--dep 可重复
-                        //（deps[] 一等公民，回溯链即证据链）；参数面随标准
-                        // crate ledger-client 收口（总台修正令 2026-09-20）
-                        let mut name = String::new();
-                        let mut kind = String::new();
-                        let mut digest = String::new();
-                        let mut version = None;
-                        let mut git_range = None;
-                        let mut note = None;
-                        let mut summary = None;
-                        let mut outcome = None;
-                        let mut git_sha = None;
-                        let mut deps: Vec<String> = Vec::new();
-                        loop {
-                            match args.next_opt() {
-                                Some(f) if f == "--name" => name = args.next("--name"),
-                                Some(f) if f == "--kind" => kind = args.next("--kind"),
-                                Some(f) if f == "--digest" => digest = args.next("--digest"),
-                                Some(f) if f == "--version" => {
-                                    version = Some(args.next("--version"))
-                                }
-                                Some(f) if f == "--git-range" => {
-                                    git_range = Some(args.next("--git-range"))
-                                }
-                                Some(f) if f == "--note" => note = Some(args.next("--note")),
-                                Some(f) if f == "--dep" => deps.push(args.next("--dep")),
-                                // 结构化字段（ledger-client v0.1.3 面）：summary
-                                // 一行技术摘要与 outcome 结果倾向，网页详情直出
-                                Some(f) if f == "--summary" => {
-                                    summary = Some(args.next("--summary"))
-                                }
-                                Some(f) if f == "--outcome" => {
-                                    outcome = Some(args.next("--outcome"))
-                                }
-                                Some(f) if f == "--git-sha" => {
-                                    git_sha = Some(args.next("--git-sha"))
-                                }
-                                Some(f) => {
-                                    if !g.apply(&f, &mut args) {
-                                        bail_arg(&f);
-                                    }
-                                }
-                                None => break,
-                            }
-                        }
-                        if kind.is_empty() {
-                            eprintln!(
-                                "browse: --kind 必填（十五枚举：binary/experience/lesson/research/prototype/…，退出 2）"
-                            );
-                            std::process::exit(2);
-                        }
-                        if let Some(o) = outcome.as_deref()
-                            && !matches!(o, "success" | "failure")
-                        {
-                            eprintln!(
-                                "browse: --outcome 只认 success|failure，得 {o}（用法错，退出 2）"
-                            );
-                            std::process::exit(2);
-                        }
-                        // 自由字段本地预检（评审 G1，与 digest/kind/name 同款
-                        // 免配额损耗）：summary 非空限长，git_sha 十六进制形
-                        if let Some(s) = summary.as_deref()
-                            && (s.trim().is_empty() || s.chars().count() > 1000)
-                        {
-                            eprintln!("browse: --summary 要非空且至多 1000 字符（用法错，退出 2）");
-                            std::process::exit(2);
-                        }
-                        if let Some(g) = git_sha.as_deref()
-                            && (!(7..=40).contains(&g.len())
-                                || !g.chars().all(|c| c.is_ascii_hexdigit()))
-                        {
-                            eprintln!("browse: --git-sha 要 7 至 40 位十六进制（用法错，退出 2）");
-                            std::process::exit(2);
-                        }
-                        mode = Mode::ArtifactPublish {
-                            name,
-                            kind,
-                            digest,
-                            version,
-                            git_range,
-                            note,
-                            summary,
-                            outcome,
-                            git_sha,
-                            deps,
-                        };
-                    }
-                    "attest" => {
-                        let id = args.next("artifact attest <id>");
-                        let mut ev_type = String::from("attest_dev");
-                        let mut note = None;
-                        loop {
-                            match args.next_opt() {
-                                Some(f) if f == "--type" => ev_type = args.next("--type"),
-                                Some(f) if f == "--note" => note = Some(args.next("--note")),
-                                Some(f) => {
-                                    if !g.apply(&f, &mut args) {
-                                        bail_arg(&f);
-                                    }
-                                }
-                                None => break,
-                            }
-                        }
-                        mode = Mode::ArtifactAttest { id, ev_type, note };
-                    }
-                    "list" => {
-                        let mut current = false;
-                        let mut env_f = None;
-                        loop {
-                            match args.next_opt() {
-                                Some(f) if f == "--current" => current = true,
-                                Some(f) if f == "--env" => env_f = Some(args.next("--env")),
-                                Some(f) => {
-                                    if !g.apply(&f, &mut args) {
-                                        bail_arg(&f);
-                                    }
-                                }
-                                None => break,
-                            }
-                        }
-                        mode = Mode::ArtifactList { current, env_f };
-                    }
-                    other => {
-                        eprintln!(
-                            "browse: artifact 子命令不认识 {other}（publish/attest/list；promote/demote 面已收口归 omc 工位，退出 2）"
-                        );
-                        std::process::exit(2);
-                    }
-                }
-            }
-            "ledger" if g.snippets.is_empty() && mode_is_eval(&mode) => {
-                match args.next("ledger").as_str() {
-                    "keygen" => {
-                        let mut force = false;
-                        while let Some(f) = args.next_opt() {
-                            match f.as_str() {
-                                "--force" => force = true,
-                                other2 => {
-                                    if !g.apply(other2, &mut args) {
-                                        bail_arg(other2);
-                                    }
-                                }
-                            }
-                        }
-                        mode = Mode::LedgerKeygen { force };
-                    }
-                    other => {
-                        eprintln!("browse: ledger 子命令不认识 {other}（keygen，退出 2）");
-                        std::process::exit(2);
-                    }
-                }
+            // 墓碑臂（总台令 2026-10-21 ledger 全线淘汰）：显式拒收不落
+            // 求值道，旧命令的调用方拿到点名去向而非方言报错
+            cmd @ ("issue" | "artifact" | "ledger")
+                if g.snippets.is_empty() && mode_is_eval(&mode) =>
+            {
+                eprintln!(
+                    "browse: {cmd} 面已移除（总台令 2026-10-21 ledger 全线淘汰；issue 传递走 shares/streams 原语，退出 2）"
+                );
+                std::process::exit(2);
             }
             "rune" if g.snippets.is_empty() && mode_is_eval(&mode) => {
                 // 评审 #67 一轮 G4：对齐 snippets 族口径——未知旗标 bail、
@@ -840,90 +644,6 @@ async fn main() -> Result<()> {
                         }
                     }
                     mode = Mode::CdpCall(method, params)
-                }
-            }
-            "issue" if g.snippets.is_empty() && mode_is_eval(&mode) => {
-                match args.next("issue").as_str() {
-                    "new" => {
-                        let title = args.next("issue new <标题>");
-                        // --kind（bug|improvement 缺省 bug）加 --acceptance（必
-                        // 填，关单 result 的完成判据锚，REQ-063 契约与 hst 家
-                        // 族同规）加可选 --body；--dry-run 本地校验加载荷预览
-                        // 零网络（#57 G6 评审强制项，账本只增不可撤故保留）
-                        let mut body = String::new();
-                        let mut kind = String::from("bug");
-                        let mut acceptance = String::new();
-                        let mut dry = false;
-                        loop {
-                            match args.next_opt() {
-                                Some(f) if f == "--body" || f == "-b" => {
-                                    body = args.next("--body");
-                                }
-                                Some(f) if f == "--kind" => kind = args.next("--kind"),
-                                Some(f) if f == "--acceptance" => {
-                                    acceptance = args.next("--acceptance")
-                                }
-                                Some(f) if f == "--dry-run" => dry = true,
-                                Some(f) => {
-                                    if !g.apply(&f, &mut args) {
-                                        bail_arg(&f);
-                                    }
-                                }
-                                None => break,
-                            }
-                        }
-                        if acceptance.is_empty() {
-                            eprintln!(
-                                "browse: --acceptance 必填（关单 result 引 digest 的完成判据；--dry-run 可先预览，退出 2）"
-                            );
-                            std::process::exit(2);
-                        }
-                        mode = Mode::IssueNew {
-                            title,
-                            body,
-                            kind,
-                            acceptance,
-                            dry,
-                        };
-                    }
-                    "list" => {
-                        // 默认 100（服务端上限）：默认面即全量，防 open 集超
-                        // 20 后旧条目静默隐形（#52）
-                        let mut limit = 100u32;
-                        let mut before = None;
-                        // next_opt 参数尽返 None 即旗标收尾（必值口在
-                        // Args::next，分面见 #53）
-                        while let Some(f) = args.next_opt() {
-                            match f.as_str() {
-                                "--before" => {
-                                    let b = args.next("--before");
-                                    before = Some(b.parse().unwrap_or_else(|_| {
-                                        eprintln!("browse: --before 要数字 issue 号（退出 2）");
-                                        std::process::exit(2);
-                                    }))
-                                }
-                                "--limit" => {
-                                    limit = args.next("--limit").parse().unwrap_or_else(|_| {
-                                        eprintln!("browse: --limit 要数字（退出 2）");
-                                        std::process::exit(2);
-                                    })
-                                }
-                                other2 => {
-                                    if !g.apply(other2, &mut args) {
-                                        bail_arg(other2);
-                                    }
-                                }
-                            }
-                        }
-                        mode = Mode::IssueList { limit, before };
-                    }
-                    "show" => mode = Mode::IssueShow(args.next("issue show <id>")),
-                    other => {
-                        eprintln!(
-                            "browse: issue 子命令不认识 {other}（new/list/show；close 面已收口归 omc 工位，退出 2）"
-                        );
-                        std::process::exit(2);
-                    }
                 }
             }
             other if other.starts_with('-') => {
@@ -1279,205 +999,6 @@ async fn main() -> Result<()> {
                 serde_json::to_string_pretty(&browse_core::chrome_mgr::doctor_json(
                     &browse_core::chrome_mgr::chromium_root()
                 ))?
-            );
-            Ok(())
-        }
-        // issue 通道（REQ-063）：真源 ledger.ohmygh.com（旧 issues.ohmygh.com
-        // 过渡保役），签名道与只增面在标准 crate ledger-client（总台修正令
-        // 2026-09-20 收口）；关闭/删除唯一道 = omc 工位经 herdr 委托
-        Mode::IssueNew {
-            title,
-            body,
-            kind,
-            acceptance,
-            dry,
-        } => {
-            let mut body = body;
-            // 管道读腿有界（评审 F-9，复用 #69 的 read_stdin_bounded）：裸
-            // read_to_string 在「开着不关」的 agent 壳管道形态无上界挂死，
-            // 且把 --dry-run 的零网络快验也挡在读腿后面
-            if body.is_empty() && !std::io::stdin().is_terminal() {
-                match read_stdin_bounded() {
-                    StdinRead::Data(s) => body = s,
-                    StdinRead::Failed(e) => {
-                        eprintln!("browse: issue new 读管道失败：{e}（退出 2）");
-                        std::process::exit(2);
-                    }
-                    StdinRead::Silent => {
-                        eprintln!(
-                            "browse: 提示：stdin 3 秒内未完成读入（无 EOF；agent 壳常开管道形），按空 body 继续；要传正文用 --body 或完整写入并关闭管道"
-                        );
-                    }
-                }
-            }
-            // --dry-run（#57 G6）：本地同规校验加载荷与签名基预览，零网络
-            // 零签名——账本只增不可撤，误发测试单比旧面更贵
-            if dry {
-                let r =
-                    browse_cli::ledger::issue_open_dry_run(&title, &kind, &acceptance, Some(&body))
-                        .map_err(|e| anyhow!("{e}"))?;
-                println!("{}", serde_json::to_string_pretty(&r)?);
-                return Ok(());
-            }
-            // 实发腿同规预检（收口批评审 F1）：与 --dry-run 同一道本地校验，
-            // 坏入参 exit 2 不打网络（服务端 400 也损耗 per-key 日配额）
-            if let Err(e) = browse_cli::ledger::validate_issue_open(&title, &kind) {
-                eprintln!("browse: {e}（用法错，退出 2）");
-                std::process::exit(2);
-            }
-            let n = ledger_call(move || {
-                let n = browse_cli::ledger::client()?
-                    .issue_new(&title, &kind, &acceptance, Some(&body))
-                    .map_err(|e| e.to_string())?;
-                // crate 静默默认守卫（评审 G4）：回执缺 issue 字段时 as_u64
-                // 落 0（如幂等命中回执无该键），零即报错防假成功
-                if n == 0 {
-                    return Err("ledger 回执缺 issue 号（0），拒假成功".into());
-                }
-                Ok(n)
-            })
-            .await?;
-            println!(
-                "{}",
-                serde_json::to_string_pretty(&json!({ "ok": true, "issue": n }))?
-            );
-            Ok(())
-        }
-        Mode::IssueList { limit, before } => {
-            let eff = browse_cli::ledger::clamp_issue_limit(limit);
-            let r = ledger_call(move || {
-                browse_cli::ledger::client()?
-                    .issue_list(eff, before)
-                    .map_err(|e| e.to_string())
-            })
-            .await?;
-            let rows = r["issues"].as_array().cloned().unwrap_or_default();
-            if r["has_more"]
-                .as_bool()
-                .unwrap_or_else(|| browse_cli::ledger::issue_list_saturated(rows.len(), eff))
-            {
-                eprintln!("{}", browse_cli::ledger::issue_list_truncation_hint(eff));
-            }
-            println!("{}", serde_json::to_string_pretty(&r)?);
-            Ok(())
-        }
-        Mode::IssueShow(id) => {
-            let n: u64 = id
-                .parse()
-                .map_err(|_| anyhow!("issue 号须数字（得 {id}）"))?;
-            let r = ledger_call(move || {
-                browse_cli::ledger::client()?
-                    .issue_show(n)
-                    .map_err(|e| e.to_string())
-            })
-            .await?;
-            println!("{}", serde_json::to_string_pretty(&r)?);
-            Ok(())
-        }
-        Mode::ArtifactPublish {
-            name,
-            kind,
-            digest,
-            version,
-            git_range,
-            note,
-            summary,
-            outcome,
-            git_sha,
-            deps,
-        } => {
-            // 值域/形错统一用法错 exit 2（评审 G5，与退出码契约「2=用法错」对齐）
-            if let Err(e) = browse_cli::ledger::validate_digest(&digest) {
-                eprintln!("browse: {e}（用法错，退出 2）");
-                std::process::exit(2);
-            }
-            if !ledger_client::ARTIFACT_KINDS.contains(&kind.as_str()) {
-                eprintln!(
-                    "browse: kind 仅十五枚举（ledger-client 同源表），得 {kind}（用法错，退出 2）"
-                );
-                std::process::exit(2);
-            }
-            if let Err(e) = browse_cli::ledger::validate_artifact_publish(&name) {
-                eprintln!("browse: {e}（用法错，退出 2）");
-                std::process::exit(2);
-            }
-            let id = ledger_call(move || {
-                let id = browse_cli::ledger::client()?
-                    .artifact_publish_full(
-                        &name,
-                        &kind,
-                        &digest,
-                        version.as_deref(),
-                        git_range.as_deref(),
-                        &deps,
-                        note.as_deref(),
-                        summary.as_deref(),
-                        outcome.as_deref(),
-                        git_sha.as_deref(),
-                    )
-                    .map_err(|e| e.to_string())?;
-                // crate 静默默认守卫（评审 G4）：回执缺 artifact_id 时落空串
-                if id.is_empty() {
-                    return Err("ledger 回执缺 artifact_id（空），拒假成功".into());
-                }
-                Ok(id)
-            })
-            .await?;
-            println!(
-                "{}",
-                serde_json::to_string_pretty(&json!({ "ok": true, "artifact_id": id }))?
-            );
-            Ok(())
-        }
-        Mode::ArtifactAttest { id, ev_type, note } => {
-            if let Err(e) = browse_cli::ledger::validate_artifact_id(&id) {
-                eprintln!("browse: {e}（用法错，退出 2）");
-                std::process::exit(2);
-            }
-            if !ledger_client::ATTEST_TYPES.contains(&ev_type.as_str()) {
-                eprintln!(
-                    "browse: type 仅 {}（promote/demote/supersede 归 omc 工位），得 {ev_type}（用法错，退出 2）",
-                    ledger_client::ATTEST_TYPES.join("|")
-                );
-                std::process::exit(2);
-            }
-            let r = ledger_call(move || {
-                browse_cli::ledger::client()?
-                    .artifact_attest(&id, &ev_type, json!({}), note.as_deref())
-                    .map_err(|e| e.to_string())
-            })
-            .await?;
-            println!("{}", serde_json::to_string_pretty(&r)?);
-            Ok(())
-        }
-        Mode::ArtifactList { current, env_f } => {
-            let r = ledger_call(move || {
-                browse_cli::ledger::client()?
-                    .artifact_list(current, env_f.as_deref())
-                    .map_err(|e| e.to_string())
-            })
-            .await?;
-            println!("{}", serde_json::to_string_pretty(&r)?);
-            Ok(())
-        }
-        Mode::LedgerKeygen { force } => {
-            let (kid, jwk, old, backup) =
-                browse_cli::ledger::keygen_write(force).map_err(|e| anyhow!("{e}"))?;
-            println!(
-                "{}",
-                serde_json::to_string_pretty(&serde_json::json!({
-                    "ok": true,
-                    "keyId": kid,
-                    "pubkeyJwk": jwk,
-                    "replacedKid": old,
-                    // 覆盖前备份件（评审 #66 一轮 G5）：--force 轮换的旧 seed
-                    // 落 0600 备份，误操作可回滚
-                    "backupKey": backup,
-                    // 内置 JWK 的 kid 自证面（评审 G6）：与 keyId 对账——轮换后
-                    // 须重烧常量再在册，两值不同即提示未烧
-                    "builtinKid": browse_cli::ledger::key_id(),
-                    "hint": "总台在册此 kid 后方可写入；私钥在 ~/.browse-rs/ledger/ed25519.key（0600），不打印不进 argv；keyId 与 builtinKid 不同 = 新钥未烧进常量"
-                }))?
             );
             Ok(())
         }
@@ -1959,25 +1480,30 @@ async fn main() -> Result<()> {
             };
             // 引擎/连接旗标族照 eval 面生效（评审 #67 一轮 G3：--ws/--port/
             // --chrome/--headless/--pipe/--profile/--proxy/--isolated/
-            // --engine-arg/--secrets 不再静默失效）
+            // --engine-arg/--secrets 不再静默失效）；#118：与 eval 面同
+            // 门——显式意图才前置 engine_up，全缺省不投（全缺省 UpParams
+            // 会把 daemon 记录 spec 洗成缺省，引擎实际形态与记录面分家），
+            // 冷引擎由 daemon /rune 道按记录 spec 懒拉
             if let Some(f) = &secrets {
                 browse_core::load_secrets(f)?;
             }
             client::ensure_daemon().await?;
-            client::engine_up(client::UpParams {
+            let up = client::UpParams {
                 headless,
                 chrome,
                 ws,
                 port,
-                host: host.clone(),
+                host,
                 pipe,
                 profile,
                 proxy,
                 proxy_bypass,
                 isolated,
                 engine_args,
-            })
-            .await?;
+            };
+            if up.has_explicit_intent() {
+                client::engine_up(up).await?;
+            }
             // 评审双批 G1：递根三序终值（旗标 > env > 内置在此收口），防 CLI 与
             // 长命 daemon 两侧 env 各解一次的分叉
             // 评审 F-1（0.30.3）：件首行指令优先旗标且须随请求递 daemon
@@ -2180,32 +1706,23 @@ async fn run_eval(
         client::ensure_daemon_with_env(&client::skills_passthrough_env()).await?;
     }
     // 显式连接意图先落引擎（up 面接受同样的旗标），再求值；proxy 三旗标
-    // 同守卫透传（评审 F2：静默吞比报错更坑）
-    if ws.is_some()
-        || port.is_some()
-        || chrome.is_some()
-        || headless
-        || pipe
-        || profile.is_some()
-        || proxy.is_some()
-        || proxy_bypass.is_some()
-        || isolated
-        || !engine_args.is_empty()
-    {
-        client::engine_up(client::UpParams {
-            headless,
-            chrome,
-            ws,
-            port,
-            host: host.clone(),
-            pipe,
-            profile,
-            proxy,
-            proxy_bypass,
-            isolated,
-            engine_args,
-        })
-        .await?;
+    // 同守卫透传（评审 F2：静默吞比报错更坑）；意图判据收口在
+    // [`client::UpParams::has_explicit_intent`]（#118：rune 面同门）
+    let up = client::UpParams {
+        headless,
+        chrome,
+        ws,
+        port,
+        host,
+        pipe,
+        profile,
+        proxy,
+        proxy_bypass,
+        isolated,
+        engine_args,
+    };
+    if up.has_explicit_intent() {
+        client::engine_up(up).await?;
     }
     // 空片段的裸调用分支已在 Mode::Eval 臂前置处理（帮助体 / 管道 / --repl），
     // 进到这里必带片段

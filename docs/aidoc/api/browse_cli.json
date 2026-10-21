@@ -1,6 +1,6 @@
 {
   "crate": "browse-cli",
-  "version": "0.37.2",
+  "version": "0.38.0",
   "items": [
     {
       "path": "browse_cli::client",
@@ -166,96 +166,6 @@
       "path": "browse_cli::fetch::fetch",
       "kind": "function",
       "docs": "抓取入口：HTTP 优先，命中升级条件转引擎腿。\n\n# Errors\n\n两腿全失败（HTTP 网络错且引擎腿也失败）；引擎腿的 goto/抽取错误原样\n上抛。"
-    },
-    {
-      "path": "browse_cli::ledger",
-      "kind": "module",
-      "docs": "账本薄适配层（REQ-063；总台修正令 2026-09-20 收口）：签名道与只增面\n全在 ledger-client crate（github.com/raystyle/ledger-rs v0.1.1，全舰队\n唯一实现；v0.1.0 有 URL 拼接舰队级缺陷已避），本层只留本仓身份面\n（公钥 JWK 常量与 kid 派生）、密档管理\n（base64url seed，env `BROWSE_LEDGER_PRIVATE_KEY` 或本地密档双通道）、\n命令面本地校验、`--dry-run` 载荷预览与 #52 家族截断提示。CLI 只增不关\n不删：issue close 与 artifact promote/demote/supersede 面已移除，关闭\n与删除唯一道 = 开发工作台经 herdr 委托 omc 工位执行（`omc ledger issue\nstatus <repo> <n> <to>` 与 `omc ledger issue delete`）。真源 =\nledger.ohmygh.com（替代 issues.ohmygh.com 客户端面；旧服务只读保役）。"
-    },
-    {
-      "path": "browse_cli::ledger::ISSUE_KINDS",
-      "kind": "constant",
-      "docs": "issue kind 集（服务端 ISSUE_KINDS 同源，本地预检省一次网络往返）：bug\n（BUG 错误任务）与 improvement（改进优化任务）。"
-    },
-    {
-      "path": "browse_cli::ledger::PUBKEY_JWK",
-      "kind": "constant",
-      "docs": "本仓公钥 JWK（REQ-063 裁 2：常量集成进 CLI；字母键序紧凑形，kid 即\n其 sha256hex，与舰队派生约定一致）。私钥恒在提交侧（env 或本地密档），\n不进仓。"
-    },
-    {
-      "path": "browse_cli::ledger::REPO_ID",
-      "kind": "constant",
-      "docs": "本仓账本身份（REQ-063：repo_id = 规范化 remote）。"
-    },
-    {
-      "path": "browse_cli::ledger::clamp_issue_limit",
-      "kind": "function",
-      "docs": "issue list 的 limit 钳制（1 至 100，服务端上限；#52 家族标准）：钳制\n单源，命令面默认值与饱和提示判定共用。"
-    },
-    {
-      "path": "browse_cli::ledger::client",
-      "kind": "function",
-      "docs": "组装标准客户端（签名道与只增面在 ledger-client；本仓身份面注入）。\n\n# Errors\n\n私钥载入失败（见 [`load_keypair`]）。"
-    },
-    {
-      "path": "browse_cli::ledger::issue_list_saturated",
-      "kind": "function",
-      "docs": "issue list 饱和判定（#52 家族标准）：返回条数不少于钳制后 limit 即示\n警；用 `>=` 不用 `==`，服务端若返回多于请求值，`==` 会静默漏报。"
-    },
-    {
-      "path": "browse_cli::ledger::issue_list_truncation_hint",
-      "kind": "function",
-      "docs": " issue list 饱和提示行（#52/#53 家族标准）：返回条数打满钳制后 limit\n（或 before 翻页面 has_more 为真）时出此行到 stderr，指向 `--status`\n 不适用（账本列表无状态过滤）故给 `--limit` 提高、`--before` 翻更旧\n 一页与账本网页面；不饱和不出。"
-    },
-    {
-      "path": "browse_cli::ledger::issue_open_dry_run",
-      "kind": "function",
-      "docs": "issue 开单的 dry-run（#57 G6 评审强制项，账本面保留）：本地同规校验加\n将发送 body 与签名基形预览（ts/nonce/idem 占位），零网络零签名——账本\n只增不可撤且 per-key 日配额，误发测试单不可回收，契约实弹先走这里。\n\n# Errors\n\n本地校验失败（title 空或超 200、kind 出集）；不含任何网络类错误。"
-    },
-    {
-      "path": "browse_cli::ledger::key_id",
-      "kind": "function",
-      "docs": "kid = sha256hex(规范化 JWK {crv,kty,x}，键序字母、紧凑无空白)；常量\n本身已是该形，直接哈希（单一真相，不在代码里另存 kid 字面量）。"
-    },
-    {
-      "path": "browse_cli::ledger::keygen_write",
-      "kind": "function",
-      "docs": "密钥对生成（一次性或轮换）：写私钥密档（0600）并返回 (kid, JWK, 旧\nkid, 备份件路径)；私钥不打印不进 argv，公钥 JWK 供总台在册（在册后\n方可写入）。在位密档非 `--force` 即拒（防静默销毁）；`--force` 轮换\n覆盖前先落 0600 备份件 `ed25519.key.bak-<epoch秒>`（评审 #66 一轮\nG5：误操作可回滚，回执点名备份路径）。\n\n# Errors\n\n失败返回 `String` 错误（路径与写入类）。"
-    },
-    {
-      "path": "browse_cli::ledger::load_keypair",
-      "kind": "function",
-      "docs": "载入账本身份：env `BROWSE_LEDGER_PRIVATE_KEY`（base64url seed）优先，\n次本地密档；构造标准 crate 的 [`ledger_client::KeyPair`]（kid 与 JWK 由\n其按舰队约定派生）。不进 argv 不进仓。\n\n# Errors\n\nenv 值或密档内容非 base64url 32 字节 seed，或密档不可读。"
-    },
-    {
-      "path": "browse_cli::ledger::pairing_ok",
-      "kind": "function",
-      "docs": "本地私钥与内置公钥 JWK 的配对自检（评审 G3）：密档/env 缺位回 None\n（无法判），在位回配对与否——不配对则写入会全体 401 且难归因。\n\n# Errors\n\n内置 JWK 常量解析失败（形变即测试红，运行时不可达）。"
-    },
-    {
-      "path": "browse_cli::ledger::private_key_path",
-      "kind": "function",
-      "docs": "私钥密档路径（`~/.browse-rs/ledger/ed25519.key`，内容 = base64url 32 字节\nseed；0600 由 keygen 落）。\n\n# Errors\n\n密档根解析失败。"
-    },
-    {
-      "path": "browse_cli::ledger::validate_artifact_id",
-      "kind": "function",
-      "docs": "artifact_id 形校验（总台建议 2026-09-20）：36 字 UUID 形\n`8-4-4-4-12` 小写 hex 连四杠；截断或转写错本地即报，免上游 404 往返。\n\n# Errors\n\n非 36 字 UUID 形（段长、非法字符、分隔位）。"
-    },
-    {
-      "path": "browse_cli::ledger::validate_artifact_publish",
-      "kind": "function",
-      "docs": "artifact 发布入参本地预检（收口批评审 F1）：name trim 后 1 至 200，\n服务端同规；坏入参本地拦免配额损耗。\n\n# Errors\n\nname trim 后空或超 200 字符。"
-    },
-    {
-      "path": "browse_cli::ledger::validate_digest",
-      "kind": "function",
-      "docs": "digest 校验（服务端 DIGEST_RE 同源）：`sha256:<64hex 小写>` 形合规即 Ok。\n\n# Errors\n\n缺前缀、段长错或大写。"
-    },
-    {
-      "path": "browse_cli::ledger::validate_issue_open",
-      "kind": "function",
-      "docs": "issue 开单入参本地预检（实发腿与 dry-run 同规，收口批评审 F1）：坏\n入参本地拦（exit 2 语义），免打到服务端吃 400 且损耗 per-key 日配额。\n\n# Errors\n\ntitle trim 后空或超 200 字符；kind 出 [`ISSUE_KINDS`] 集。"
     },
     {
       "path": "browse_cli::render",

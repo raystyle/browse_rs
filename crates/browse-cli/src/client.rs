@@ -895,6 +895,7 @@ pub async fn engine_restart() -> Result<Value> {
 }
 
 /// `engine_up` 的参数面：CLI up 旗标直通（字段名即 /engine/up 请求键）。
+#[derive(Clone)]
 pub struct UpParams {
     /// spawn 时无头。
     pub headless: bool,
@@ -919,6 +920,27 @@ pub struct UpParams {
     pub isolated: bool,
     /// 引擎附加旗标（#48，可叠加）。
     pub engine_args: Vec<String>,
+}
+
+impl UpParams {
+    /// 显式引擎/连接意图判据（#118，eval 与 rune 两面同门）：任一旗标
+    /// 在场才算意图，才前置 `engine_up`；全缺省（bool 全 false、其余全
+    /// 空表）不是意图——全缺省 UpParams 投给 daemon 会把记录 spec 洗成
+    /// 缺省形态，引擎在跑时运行态不动而记录面失真，闲置回收后懒重拉
+    /// 名实不符（userscript 族缺省装库 write-A-read-B）。`host` 单独
+    /// 在场不算：它只随端口形旗标出现，与 eval 面口径一致。
+    pub fn has_explicit_intent(&self) -> bool {
+        self.ws.is_some()
+            || self.port.is_some()
+            || self.chrome.is_some()
+            || self.headless
+            || self.pipe
+            || self.profile.is_some()
+            || self.proxy.is_some()
+            || self.proxy_bypass.is_some()
+            || self.isolated
+            || !self.engine_args.is_empty()
+    }
 }
 
 /// /cdp 直通（#80）：任意 CDP 域方法经 daemon 转发引擎会话，回
@@ -1069,6 +1091,62 @@ pub async fn quit() -> Result<()> {
 mod tests {
     use super::*;
     use browse_rune::vars_syntax::VarsSyntax;
+
+    /// #118 显式意图门：全缺省 UpParams 无意图（不投 engine_up，daemon
+    /// 记录面不动）；任一引擎/连接旗标在场即意图；host 单独在场不算。
+    #[test]
+    fn up_params_explicit_intent_gate() {
+        let bare = UpParams {
+            headless: false,
+            chrome: None,
+            ws: None,
+            port: None,
+            host: None,
+            pipe: false,
+            profile: None,
+            proxy: None,
+            proxy_bypass: None,
+            isolated: false,
+            engine_args: vec![],
+        };
+        assert!(!bare.has_explicit_intent(), "全缺省不是意图");
+        let mut p = bare.clone();
+        p.ws = Some("ws://127.0.0.1:9222/x".into());
+        assert!(p.has_explicit_intent(), "--ws 是意图");
+        let mut p = bare.clone();
+        p.port = Some(9222);
+        assert!(p.has_explicit_intent(), "--port 是意图");
+        let mut p = bare.clone();
+        p.chrome = Some("chrome".into());
+        assert!(p.has_explicit_intent(), "--chrome 是意图");
+        let mut p = bare.clone();
+        p.headless = true;
+        assert!(p.has_explicit_intent(), "--headless 是意图");
+        let mut p = bare.clone();
+        p.pipe = true;
+        assert!(p.has_explicit_intent(), "--pipe 是意图");
+        let mut p = bare.clone();
+        p.profile = Some("p".into());
+        assert!(p.has_explicit_intent(), "--profile 是意图");
+        let mut p = bare.clone();
+        p.proxy = Some("http://127.0.0.1:1".into());
+        assert!(p.has_explicit_intent(), "--proxy 是意图");
+        let mut p = bare.clone();
+        p.proxy_bypass = Some("a.com".into());
+        assert!(p.has_explicit_intent(), "--proxy-bypass 是意图");
+        let mut p = bare.clone();
+        p.isolated = true;
+        assert!(p.has_explicit_intent(), "--isolated 是意图");
+        let mut p = bare.clone();
+        p.engine_args = vec!["--flag".into()];
+        assert!(p.has_explicit_intent(), "--engine-arg 是意图");
+        let mut p = bare.clone();
+        p.host = Some("10.0.0.5".into());
+        assert!(
+            !p.has_explicit_intent(),
+            "host 单独在场不算意图（只随端口形旗标出现）"
+        );
+    }
 
     /// 身份行三态闸（用户裁定 2026-10-19）：默认跟终端，1 强制开，
     /// 0/false 强制关。

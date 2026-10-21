@@ -1316,6 +1316,15 @@ fn err_response(e: anyhow::Error) -> (axum::http::StatusCode, Json<Value>) {
     )
 }
 
+/// `/engine/up` 记录面的回写判据（#61 懒重生语义 + #118 防洗）：只记
+/// Auto 形（Attach/Port 是连接意图不是重生意图），且仅当本次请求真正
+/// 驱动了引擎落位——调用前引擎未连接。已连接时 Auto 形 ensure 是
+/// no-op（运行态不动），请求形态不代表重生意图，回写会把记录面洗成
+/// 请求缺省（profile 等字段与运行引擎分家，闲置回收后懒重拉名实不符）。
+fn should_record_spec(spec: &EngineSpec, was_connected: bool) -> bool {
+    matches!(spec, EngineSpec::Auto { .. }) && !was_connected
+}
+
 /// health 回执并入 daemon 记录 spec 的用户面（#84 下腿）：CLI userscript
 /// 族缺省库按「运行/最近一次 up 形态」解析。只并 Auto 形的
 /// profile/headless/pipe/chrome（含 isolated 标——隔离库随引擎退场，
@@ -1466,13 +1475,16 @@ async fn engine_up_handler(
             }
         }
     };
+    // #118：先记调用前连接态再 ensure——Auto 形在引擎已连接时是 no-op，
+    // 回写门据此区分「请求真驱动了引擎落位」与「引擎本来就在跑」
+    let was_connected = st.daemon.host.session().is_connected();
     match st.daemon.engine.ensure(&spec).await {
         Ok(_) => {
             // #61：显式 spawn 意图回写缺省 spec——引擎意外死掉后的懒重
-            // spawn 沿用最近一次 up 的形态（headless 等），不再回退 daemon
-            // 启动时的 from_env 缺省（有头）。只记 Auto（spawn）意图；
-            // Attach 是连接意图不是重生意图，不回写
-            if let EngineSpec::Auto { .. } = &spec {
+            // spawn 沿用最近一次真把它带起来的 up 形态（headless 等），
+            // 不再回退 daemon 启动时的 from_env 缺省（有头）。回写判据
+            // 收口在 [`should_record_spec`]（#118：no-op 不洗记录面）
+            if should_record_spec(&spec, was_connected) {
                 *st.daemon.spec.lock().unwrap_or_else(|e| e.into_inner()) = spec.clone();
             }
             // 注意:spec 锁克隆必须先于 await(MutexGuard 非 Send,横跨
@@ -1774,6 +1786,37 @@ mod tests {
         );
         let (_, Json(v)) = eval_timeout_response(None, Duration::from_secs(60));
         assert_eq!(v["timeout"]["op"], json!(null), "执行间隙 null");
+    }
+
+    /// #118 /engine/up 回写门：Auto 形且调用前未连接（请求真把引擎带
+    /// 起来）才回写；引擎在跑时的缺省 up 不洗记录面；Attach/Port 恒不
+    /// 回写（连接意图非重生意图）。
+    #[test]
+    fn engine_up_spec_writeback_gate() {
+        let auto = EngineSpec::Auto {
+            chrome: None,
+            headless: false,
+            pipe: false,
+            profile: None,
+            proxy: None,
+            proxy_bypass: None,
+            isolated: false,
+            engine_args: vec![],
+        };
+        assert!(should_record_spec(&auto, false), "冷起真驱动引擎落位，回写");
+        assert!(
+            !should_record_spec(&auto, true),
+            "引擎在跑的 no-op up 不得洗记录面"
+        );
+        let attach = EngineSpec::Attach {
+            ws_url: "ws://127.0.0.1:9222/x".into(),
+        };
+        assert!(!should_record_spec(&attach, false), "Attach 不回写");
+        let port = EngineSpec::Port {
+            port: 9222,
+            host: None,
+        };
+        assert!(!should_record_spec(&port, false), "Port 不回写");
     }
 
     /// #77 事件环：序号单调、since/last 窗、容量截断、data 超限截断、

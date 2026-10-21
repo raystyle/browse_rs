@@ -29,13 +29,6 @@
 | `browse fetch <url> [--html] [--markdown|-m] [--timeout <s>]` | 一次性抓取 URL。默认 HTTP；正文空、墙页或过短则改走引擎。--html 返回渲染 DOM；--markdown 转为 Markdown。 |
 | `browse events [--since <seq>] [--last <n>] [--clear]` | 读取 userscript 上报的事件环。脚本 POST /events；满 1000 条丢最旧。 |
 | `browse rune <script.rn|@名> [--vars k=v] [--root <dir>]` | 运行图灵完备的 Rune 编排脚本。入口 pub async fn main()（不支持返回类型注解；错误传播用 ?，回值用 Ok(..)/Err(..)）。原生 CDP：cdp::raw("Domain.method", params)。页面：goto/eval/eval_handle/call/release、js/js_lib（主世界）、dialect（方言全量桥）、requests/snapshot/request_detail。事件：wait_event(method, 毫秒；方言 waitFor 是秒,单位不同勿混)。工具：render/stdin。宿主模块：json、time（time::sleep 可用）。--vars k=v 按 Jinja 渲染，默认定界 <%= 键 %>。无实参时 stdin 作为脚本；有实参时 stdin 作为 cdp::stdin()。browse rune stop 停止执行。 |
-| `browse issue new <标题> --acceptance <验收> [--kind bug|improvement] [--body <正文>] [--dry-run]` | 创建 issue。--acceptance 必填。--dry-run 只预览不提交。 |
-| `browse issue list [--limit <n>] [--before <id>]` | 列出 issue。--limit 条数，打满则还有更多。 |
-| `browse issue show <id>` | 显示一条 issue。 |
-| `browse artifact publish --name <n> --kind <k> --digest <d> [--summary <s>] [--outcome <success|failure>] [--git-sha <sha>] [--version <v>] [--git-range <r>] [--note <n>] [--dep <d>]…` | 发布产物记录。--kind 与 --digest 必填。digest 形如 sha256:<64hex>。 |
-| `browse artifact attest <id> --type <t>` | 为产物添加验证事件。--type 为 attest_dev、attest_prod 或 verification_failed。 |
-| `browse artifact list [--current] [--env dev|prod]` | 列出产物。--current 只看当前有效集；--env 过滤环境。 |
-| `browse ledger keygen [--force]` | 生成 Ed25519 密钥对。私钥写入 ~/.browse-rs/ledger/ed25519.key，公钥打印到终端。 |
 | `browse workspace status [--json]` | 显示技能仓安装态、git 与技能计数。 |
 | `browse workspace install` | 把默认技能仓 clone 到 ~/.browse-rs/workspace。 |
 | `browse workspace update` | git pull --ff-only 更新技能仓。有未提交修改则拒绝。 |
@@ -433,100 +426,6 @@ browse events --since 41
 
 ```js
 browse rune @x.test/fill-form --vars q=hello
-```
-
-## `browse issue new <标题> --acceptance <验收> [--kind bug|improvement] [--body <正文>] [--dry-run]`
-
-创建 issue。--acceptance 必填。--dry-run 只预览不提交。
-
-参数：
-- `title`（string），必填
-- `acceptance`（string），必填
-- `kind`（string，缺省 bug）
-- `body`（string，缺省 管道 stdin）
-- `dry-run`（boolean，缺省 false）
-
-```js
-browse issue new "修复 X" --kind bug --acceptance "测试过" --dry-run
-```
-
-## `browse issue list [--limit <n>] [--before <id>]`
-
-列出 issue。--limit 条数，打满则还有更多。
-
-参数：
-- `limit`（number，缺省 100）
-- `before`（id）
-
-```js
-browse issue list --limit 10
-```
-
-## `browse issue show <id>`
-
-显示一条 issue。
-
-参数：
-- `id`（string），必填
-
-```js
-browse issue show 3
-```
-
-## `browse artifact publish --name <n> --kind <k> --digest <d> [--summary <s>] [--outcome <success|failure>] [--git-sha <sha>] [--version <v>] [--git-range <r>] [--note <n>] [--dep <d>]…`
-
-发布产物记录。--kind 与 --digest 必填。digest 形如 sha256:<64hex>。
-
-参数：
-- `name`（string），必填
-- `kind`（string），必填
-- `digest`（string），必填
-- `summary`（string，缺省 一行技术摘要，网页详情直出）
-- `outcome`（string，缺省 success|failure 结果倾向）
-- `git-sha`（string，缺省 提交锚，服务端落表）
-- `version`（string）
-- `git-range`（string）
-- `note`（string）
-- `dep`（string，缺省 可重复：依赖出处，回溯链即证据链）
-
-```js
-browse artifact publish --name browse-0.8 --kind prototype --digest sha256:... --summary '集成实战摘' --outcome success --dep github.com/raystyle/hst_rs
-```
-
-## `browse artifact attest <id> --type <t>`
-
-为产物添加验证事件。--type 为 attest_dev、attest_prod 或 verification_failed。
-
-参数：
-- `id`（string），必填
-- `type`（string，缺省 attest_dev）
-- `note`（string）
-
-```js
-browse artifact attest 66857bb2-d1ae-4977-97df-8ab41cc37399 --type attest_prod
-```
-
-## `browse artifact list [--current] [--env dev|prod]`
-
-列出产物。--current 只看当前有效集；--env 过滤环境。
-
-参数：
-- `current`（boolean，缺省 false）
-- `env`（string）
-
-```js
-browse artifact list --current --env prod
-```
-
-## `browse ledger keygen [--force]`
-
-生成 Ed25519 密钥对。私钥写入 ~/.browse-rs/ledger/ed25519.key，公钥打印到终端。
-
-参数：
-- `force`（boolean，缺省 false）
-
-```js
-browse ledger keygen
 ```
 
 ## `browse workspace status [--json]`
