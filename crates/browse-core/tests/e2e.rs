@@ -1029,11 +1029,16 @@ l`.length === 3].join(\"|\")", returnByValue:true})).result.value"#;
         )
         .await
         .expect("读还原后 matchMedia");
-    assert_eq!(mq2, json!(false), "clear 后应回 stock: {mq2}");
+    // 回浅色基线（非 stock：clear 是显式 light 覆写，prefers-color-scheme
+    // 无「回 OS」通道——155 实证，见 emulate_media_clear 注释）
+    assert_eq!(mq2, json!(false), "clear 后应回浅色基线: {mq2}");
 
     // ---- #35 鼠标原语族 ----
     host.eval_snippet(
-        r#"await routeMock("http://mouse.test/*", "<div id=h style='width:50px;height:50px'>HOVER</div><button id=w>wheel</button><input id=f type=file multiple>", {contentType: "text/html"}); await goto("http://mouse.test/x", {timeout: 10})"#,
+        // aria-label 钉可达名：zh-CN 引擎的 file input 按钮名本地化
+        // （「选择文件」，实测），不钉则 name 匹配落空、fallback 抓走
+        // wheel 按钮的 ref，dropFiles 灌错节点
+        r#"await routeMock("http://mouse.test/*", "<div id=h style='width:50px;height:50px'>HOVER</div><button id=w>wheel</button><input id=f type=file multiple aria-label='Choose Files'>", {contentType: "text/html"}); await goto("http://mouse.test/x", {timeout: 10})"#,
     )
     .await
     .expect("goto 鼠标页");

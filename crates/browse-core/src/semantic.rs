@@ -410,14 +410,30 @@ pub async fn emulate_media(s: &Session, opts: &Value) -> Result<Value> {
     Ok(json!(true))
 }
 
-/// 还原媒质仿真（#40）：`Emulation.setEmulatedMedia` 空参，五特征与媒质
-/// 全部回 stock。
+/// 还原媒质仿真（#40）：显式覆写回浅色基线。空参/空数组/空值/差集/
+/// 导航都不清 override（155 实证，`setEmulatedMedia` 是会话级 override，
+/// 唯一可靠清除通道是显式覆写：`prefers-color-scheme` 只认 dark/light
+/// 二值——`no-preference` 是暗桩，非 light 值全按 dark 解析，故回
+/// `light`）。边界：`prefers-color-scheme` 无「回 OS」通道，OS 深色机上
+/// clear 后是显式 light 而非 stock dark——协议面天花板，非实现选择。
 ///
 /// # Errors
 ///
 /// 未连接或 CDP 失败。
 pub async fn emulate_media_clear(s: &Session) -> Result<Value> {
-    s.call("Emulation.setEmulatedMedia", json!({})).await?;
+    s.call(
+        "Emulation.setEmulatedMedia",
+        json!({
+            "media": "",
+            "features": [
+                {"name": "prefers-color-scheme", "value": "light"},
+                {"name": "prefers-reduced-motion", "value": "no-preference"},
+                {"name": "forced-colors", "value": "none"},
+                {"name": "prefers-contrast", "value": "no-preference"},
+            ]
+        }),
+    )
+    .await?;
     Ok(json!(true))
 }
 

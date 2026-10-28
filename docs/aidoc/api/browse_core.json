@@ -525,7 +525,7 @@
     {
       "path": "browse_core::semantic::emulate_media_clear",
       "kind": "function",
-      "docs": "还原媒质仿真（#40）：`Emulation.setEmulatedMedia` 空参，五特征与媒质\n全部回 stock。\n\n# Errors\n\n未连接或 CDP 失败。"
+      "docs": "还原媒质仿真（#40）：显式覆写回浅色基线。空参/空数组/空值/差集/\n导航都不清 override（155 实证，`setEmulatedMedia` 是会话级 override，\n唯一可靠清除通道是显式覆写：`prefers-color-scheme` 只认 dark/light\n二值——`no-preference` 是暗桩，非 light 值全按 dark 解析，故回\n`light`）。边界：`prefers-color-scheme` 无「回 OS」通道，OS 深色机上\nclear 后是显式 light 而非 stock dark——协议面天花板，非实现选择。\n\n# Errors\n\n未连接或 CDP 失败。"
     },
     {
       "path": "browse_core::semantic::export_storage_state",

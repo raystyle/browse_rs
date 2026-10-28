@@ -447,7 +447,7 @@ ark 管理的安装拦自更新走 ark 单通道（判据：exe 同目录 `ark-m
 - `element_rect_in` — 同 [`element_rect`]，但可指定归属子 session（#60 OOPIF：元素在自己
 - `emulate` — 视口与 UA 仿真档位（#24）：`{viewport:{width,height}, mobile, userAgent,
 - `emulate_media` — a11y 媒质仿真族（#40）：`Emulation.setEmulatedMedia` 的 features 面。
-- `emulate_media_clear` — 还原媒质仿真（#40）：`Emulation.setEmulatedMedia` 空参，五特征与媒质
+- `emulate_media_clear` — 还原媒质仿真（#40）：显式覆写回浅色基线。空参/空数组/空值/差集/
 - `export_storage_state` — 导出会话态（#25.3）：cookies 全量加当前页 origin 的 localStorage。
 - `fill_input` — 按 CSS 选择器填输入框：focus -> 全选（commands，不发 Ctrl+A）-> 可选
 - `fill_ref` — 按短 ref 填输入框：objectId 上 focus -> 探测控件（SELECT/readOnly 拒收
