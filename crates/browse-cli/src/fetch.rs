@@ -4,6 +4,11 @@
 //!   墙词、正文少于 20 词。
 //! - 引擎腿：经 daemon POST /eval 走 goto 加页内抽取（启发式标题加段落，
 //!   非 Readability；v1 口径已在 surface 披露）。
+//! - 两腿回执统一（契约破裂批）：共键 `url/via/title/text/status/bytes`——
+//!   `status` 是内容源的 HTTP 状态（HTTP 腿=直连状态，引擎腿=渲染导航
+//!   responseStatus，旧名 `httpStatus` 退役），`bytes` 统一为 text 的
+//!   字节数（HTTP 腿旧值是 raw body 长度，随批改语义）。引擎腿另有
+//!   `upgradedFrom`（升级成因，直取形无）。
 //! - 单源纪律（REQ-028）：纯函数（粗抽/升级判定/标题/markdown 转换）在
 //!   `browse_core::fetch_core`，与方言全局 `fetch(url, opts?)`（rn 经
 //!   dialect 桥直达）共用；本文件的腿编排（CLI 进程内 reqwest + /eval
@@ -78,7 +83,9 @@ pub async fn fetch(
                 "url": url, "via": "http", "status": status,
                 "title": title,
                 "text": text,
-                "bytes": html.len(),
+                // bytes 两腿统一 = text 的字节数（旧值 raw body 长度，
+                // 统一批随契约破裂改语义并披露）
+                "bytes": text.len(),
             });
             // markdown 形（--markdown，mdka 真转换）：转的是本腿手上的 html
             //（HTTP 直通腿是 raw body；升级腿是渲染后的 DOM）
@@ -254,12 +261,23 @@ fn shape_engine_receipt(
         "url": url, "via": "engine",
         "title": inner.get("title"),
         "text": inner.get("text"),
+        // bytes 语义两腿统一 = text 的字节数（HTTP 直取腿旧值是 raw body
+        // 长度，引擎腿没有 raw 源体——渲染后才有 DOM，恒取只为量体不划算；
+        // text 是两腿都稳定持有的内容面，统一锚它）
+        "bytes": inner.get("text").and_then(Value::as_str).map(str::len).unwrap_or(0),
     });
     if reason != "dom-html" {
         r["upgradedFrom"] = json!(reason);
     }
-    if let Some(st) = http_status {
-        r["httpStatus"] = json!(st);
+    // status 两腿统一（旧名 httpStatus 退役）：引擎腿的 status 是内容源
+    // 的 HTTP 状态。升级腿优先用抽取带回的渲染导航 responseStatus——
+    // 它才是引擎腿真取到的状态；抽取没带回（非 HTTP 导航）时回落先试
+    // 腿状态；直取形没有先试腿，抽取带回什么就是什么（可 null）
+    let nav_status = inner.get("status").cloned().unwrap_or(Value::Null);
+    if let Some(st) = http_status.filter(|_| nav_status.is_null()) {
+        r["status"] = json!(st);
+    } else {
+        r["status"] = nav_status;
     }
     let html_src = inner.get("html").and_then(Value::as_str);
     // 求了没取到给 null 占位（评审 G-8）：键缺席只表「没求」
@@ -353,15 +371,18 @@ impl EngineIntent {
 mod tests {
     use super::*;
 
-    /// 引擎腿旗标契约（评审二轮 F-1）：升级腿 `--markdown` 单置——markdown
+    /// 引擎腿旗标契约（评审二轮 F-1）加两腿回执统一契约：`status` 恒在
+    /// （内容源状态，与 HTTP 腿同键名，旧名 `httpStatus` 退役）、`bytes`
+    /// 恒在（text 字节数，两腿同语义）；升级腿 `--markdown` 单置——markdown
     /// 从渲染 html 真转换、html 字段不入册；`--html` 直取形两键齐；
-    /// 纯旗标形零键。
+    /// 纯旗标形零可选键。
     #[test]
     fn engine_receipt_flag_contract() {
         let inner = json!({
             "title": "t",
             "text": "body",
-            "html": "<main><h1>Head</h1><p>words</p></main>"
+            "html": "<main><h1>Head</h1><p>words</p></main>",
+            "status": 200
         });
         // 升级腿 markdown 单置（need_html=true 供转换，include_html=false）
         let upgraded = shape_engine_receipt(
@@ -385,8 +406,14 @@ mod tests {
             "markdown 从渲染 html 真转换: {upgraded}"
         );
         assert_eq!(upgraded["upgradedFrom"], json!("thin-content"));
+        // 两腿统一契约：status 恒在（内容源状态，旧名 httpStatus 退役）、
+        // bytes 恒在（text 字节数）
+        assert_eq!(upgraded["status"], json!(200), "status 统一键: {upgraded}");
+        assert!(upgraded.get("httpStatus").is_none(), "旧名退役: {upgraded}");
+        assert_eq!(upgraded["bytes"], json!(4), "bytes=text 字节数: {upgraded}");
 
-        // dom-html 直取形：html 与 markdown 齐入册
+        // dom-html 直取形：html 与 markdown 齐入册；status 取抽取带回的
+        // 导航 responseStatus（直取形没有先试腿）
         let direct = shape_engine_receipt(
             "https://spa.test/x",
             "dom-html",
@@ -407,6 +434,26 @@ mod tests {
             direct.get("upgradedFrom").is_none(),
             "直取形成因不入册: {direct}"
         );
+        assert_eq!(
+            direct["status"],
+            json!(200),
+            "直取形 status 来自导航: {direct}"
+        );
+
+        // 抽取没带回状态（非 HTTP 导航）时回落先试腿状态
+        let no_nav = shape_engine_receipt(
+            "https://spa.test/x",
+            "thin-content",
+            Some(403),
+            &json!({ "title": "t", "text": "body", "html": "<p>x</p>" }),
+            LegShape {
+                need_html: false,
+                include_html: false,
+                markdown: false,
+            },
+            |_, _| {},
+        );
+        assert_eq!(no_nav["status"], json!(403), "回落先试腿: {no_nav}");
 
         // 纯旗标形零可选键
         let bare = shape_engine_receipt(
@@ -459,11 +506,11 @@ mod tests {
                 .is_some_and(|h| h == "browse workspace site x"),
             "{http}"
         );
-        // 引擎腿回执形：同口径命中
+        // 引擎腿回执形（两腿统一后）：同口径命中
         let mut engine = json!({
             "url": "https://www.x.com/a", "via": "engine",
-            "upgradedFrom": "thin-content", "httpStatus": 200,
-            "title": "t", "text": "body",
+            "upgradedFrom": "thin-content", "status": 200,
+            "title": "t", "text": "body", "bytes": 4,
         });
         add_domain_skills("https://www.x.com/a", &mut engine);
         assert_eq!(

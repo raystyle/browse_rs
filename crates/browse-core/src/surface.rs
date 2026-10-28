@@ -304,7 +304,7 @@ pub const COMMANDS: &[CmdSpec] = &[
             ),
             arg!("timeout", "number", false, "15"),
         ],
-        description: "一次性抓取 URL。默认 HTTP；正文空、墙页或过短则改走引擎。--html 返回渲染 DOM；--markdown 转为 Markdown。",
+        description: "一次性抓取 URL。默认 HTTP；正文空、墙页或过短则改走引擎。--html 返回渲染 DOM；--markdown 转为 Markdown。两腿回执统一共键 url/via/title/text/status/bytes（status=内容源 HTTP 状态，bytes=text 字节数；引擎腿另有 upgradedFrom）。",
         example: "browse fetch https://example.com",
     },
     CmdSpec {
@@ -1160,7 +1160,7 @@ pub const COMMANDS: &[CmdSpec] = &[
                 "{html: false, markdown: false, timeout: 15}"
             ),
         ],
-        description: "一次性抓取 URL。语义与 browse fetch 相同。",
+        description: "一次性抓取 URL。语义与 browse fetch 相同（两腿回执统一共键 url/via/title/text/status/bytes）。",
         example: r#"return await fetch("https://example.com", {markdown: true})"#,
     },
     CmdSpec {

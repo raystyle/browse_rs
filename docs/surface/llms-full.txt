@@ -26,7 +26,7 @@
 | `browse chrome update` | 升级到镜像 latest 并切换使用。 |
 | `browse chrome remove <版本>` | 删除已安装版本。当前 pin 指向的版本须先 chrome use 切走。 |
 | `browse chrome doctor` | 检查托管 Chromium 是否在位、文件是否完整、Linux 运行库（ldd 直查）零缺失、pin 是否有效。 |
-| `browse fetch <url> [--html] [--markdown|-m] [--timeout <s>]` | 一次性抓取 URL。默认 HTTP；正文空、墙页或过短则改走引擎。--html 返回渲染 DOM；--markdown 转为 Markdown。 |
+| `browse fetch <url> [--html] [--markdown|-m] [--timeout <s>]` | 一次性抓取 URL。默认 HTTP；正文空、墙页或过短则改走引擎。--html 返回渲染 DOM；--markdown 转为 Markdown。两腿回执统一共键 url/via/title/text/status/bytes（status=内容源 HTTP 状态，bytes=text 字节数；引擎腿另有 upgradedFrom）。 |
 | `browse events [--since <seq>] [--last <n>] [--clear]` | 读取 userscript 上报的事件环。脚本 POST /events；满 1000 条丢最旧。 |
 | `browse rune <script.rn|@名> [--vars k=v] [--root <dir>]` | 运行图灵完备的 Rune 编排脚本。入口 pub async fn main()（不支持返回类型注解；错误传播用 ?，回值用 Ok(..)/Err(..)）。原生 CDP：cdp::raw("Domain.method", params)。页面：goto/eval/eval_handle/call/release、js/js_lib（主世界）、dialect（方言全量桥）、requests/snapshot/request_detail。事件：wait_event(method, 毫秒；方言 waitFor 是秒,单位不同勿混)。工具：render/stdin。宿主模块：json、time（time::sleep 可用）。--vars k=v 按 Jinja 渲染，默认定界 <%= 键 %>。无实参时 stdin 作为脚本；有实参时 stdin 作为 cdp::stdin()。browse rune stop 停止执行。 |
 | `browse workspace status [--json]` | 显示技能仓安装态、git 与技能计数。 |
@@ -115,7 +115,7 @@
 | `dialogStatus()` | 当前对话框状态。 |
 | `dialogAccept(text?)` | 接受当前对话框。 |
 | `dialogDismiss()` | 关闭当前对话框。 |
-| `fetch(url, opts?)` | 一次性抓取 URL。语义与 browse fetch 相同。 |
+| `fetch(url, opts?)` | 一次性抓取 URL。语义与 browse fetch 相同（两腿回执统一共键 url/via/title/text/status/bytes）。 |
 | `routeBlock(pattern)` | 拦截匹配 glob 的请求。 |
 | `routeMock(pattern, body, opts?)` | 对匹配请求返回本地应答。 |
 | `routeClear()` | 清除全部拦截规则。 |
@@ -390,7 +390,7 @@ browse chrome doctor
 
 ## `browse fetch <url> [--html] [--markdown|-m] [--timeout <s>]`
 
-一次性抓取 URL。默认 HTTP；正文空、墙页或过短则改走引擎。--html 返回渲染 DOM；--markdown 转为 Markdown。
+一次性抓取 URL。默认 HTTP；正文空、墙页或过短则改走引擎。--html 返回渲染 DOM；--markdown 转为 Markdown。两腿回执统一共键 url/via/title/text/status/bytes（status=内容源 HTTP 状态，bytes=text 字节数；引擎腿另有 upgradedFrom）。
 
 参数：
 - `url`（string），必填
@@ -1333,7 +1333,7 @@ await dialogDismiss()
 
 ## `fetch(url, opts?)`
 
-一次性抓取 URL。语义与 browse fetch 相同。
+一次性抓取 URL。语义与 browse fetch 相同（两腿回执统一共键 url/via/title/text/status/bytes）。
 
 参数：
 - `url`（string），必填

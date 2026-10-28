@@ -3568,6 +3568,21 @@ async fn fetch_global_face() {
         up_md.contains("# Static Head") && up_md.contains("js-injected-node"),
         "升级腿 markdown 从渲染 html 转换（不空串、含注入节点）：{up_md}"
     );
+    // 两腿回执统一契约（契约破裂批）：status 恒在且与 HTTP 腿同键名
+    // （引擎腿 = 渲染导航 responseStatus），bytes 恒在（text 字节数），
+    // 旧名 httpStatus 退役
+    assert_eq!(r["status"], json!(200), "直取形 status=导航响应: {r}");
+    assert_eq!(up["status"], json!(200), "升级腿 status 统一键: {up}");
+    assert!(
+        up.get("httpStatus").is_none(),
+        "旧名 httpStatus 已退役: {up}"
+    );
+    assert!(
+        r["bytes"].as_u64().is_some_and(|b| b > 0) && up["bytes"].as_u64().is_some_and(|b| b > 0),
+        "两腿 bytes 恒在（text 字节数）: r.bytes={:?} up.bytes={:?}",
+        r["bytes"],
+        up["bytes"]
+    );
     origin.abort();
     engine.shutdown().await.expect("shutdown");
     clean_profile().await;

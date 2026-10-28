@@ -130,11 +130,15 @@ pub fn title_of(html: &str) -> String {
 
 /// 引擎腿的页内抽取 JS（主世界 returnByValue 求值体）：标题、正文
 /// innerText，`need_html` 时连渲染后的 `documentElement.outerHTML`。
+/// 回执恒带 `status`（导航响应的 HTTP 状态，取自 PerformanceNavigationTiming
+/// 的 `responseStatus`；非 HTTP 导航（data: 等）或无导航条目时为 null）——
+/// 两腿回执统一契约：`status` 是内容源的 HTTP 状态，HTTP 直取腿是直连
+/// 状态，引擎腿是渲染导航的响应状态。
 pub fn extract_js(need_html: bool) -> &'static str {
     if need_html {
-        r#"JSON.stringify({title: document.title, text: (document.body ? document.body.innerText : '').trim(), html: document.documentElement.outerHTML})"#
+        r#"JSON.stringify({title: document.title, text: (document.body ? document.body.innerText : '').trim(), html: document.documentElement.outerHTML, status: ((performance.getEntriesByType('navigation')[0] || {}).responseStatus ?? null)})"#
     } else {
-        r#"JSON.stringify({title: document.title, text: (document.body ? document.body.innerText : '').trim()})"#
+        r#"JSON.stringify({title: document.title, text: (document.body ? document.body.innerText : '').trim(), status: ((performance.getEntriesByType('navigation')[0] || {}).responseStatus ?? null)})"#
     }
 }
 

@@ -6,6 +6,11 @@
   墙词、正文少于 20 词。
 - 引擎腿：经 daemon POST /eval 走 goto 加页内抽取（启发式标题加段落，
   非 Readability；v1 口径已在 surface 披露）。
+- 两腿回执统一（契约破裂批）：共键 `url/via/title/text/status/bytes`——
+  `status` 是内容源的 HTTP 状态（HTTP 腿=直连状态，引擎腿=渲染导航
+  responseStatus，旧名 `httpStatus` 退役），`bytes` 统一为 text 的
+  字节数（HTTP 腿旧值是 raw body 长度，随批改语义）。引擎腿另有
+  `upgradedFrom`（升级成因，直取形无）。
 - 单源纪律（REQ-028）：纯函数（粗抽/升级判定/标题/markdown 转换）在
   `browse_core::fetch_core`，与方言全局 `fetch(url, opts?)`（rn 经
   dialect 桥直达）共用；本文件的腿编排（CLI 进程内 reqwest + /eval

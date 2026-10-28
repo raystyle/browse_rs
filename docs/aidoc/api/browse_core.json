@@ -175,7 +175,7 @@
     {
       "path": "browse_core::fetch_core::extract_js",
       "kind": "function",
-      "docs": "引擎腿的页内抽取 JS（主世界 returnByValue 求值体）：标题、正文\ninnerText，`need_html` 时连渲染后的 `documentElement.outerHTML`。"
+      "docs": "引擎腿的页内抽取 JS（主世界 returnByValue 求值体）：标题、正文\ninnerText，`need_html` 时连渲染后的 `documentElement.outerHTML`。\n回执恒带 `status`（导航响应的 HTTP 状态，取自 PerformanceNavigationTiming\n的 `responseStatus`；非 HTTP 导航（data: 等）或无导航条目时为 null）——\n两腿回执统一契约：`status` 是内容源的 HTTP 状态，HTTP 直取腿是直连\n状态，引擎腿是渲染导航的响应状态。"
     },
     {
       "path": "browse_core::fetch_core::needs_upgrade",

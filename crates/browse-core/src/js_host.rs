@@ -898,8 +898,11 @@ impl JsHost {
     /// 编排——HTTP 直取腿（reqwest）加三条件升级引擎腿（直调本进程
     /// session 的 goto 与主世界求值，不经 /eval 自环）；`html: true` 恒走
     /// 引擎腿回渲染后 DOM HTML，`markdown: true` 对本腿 html 做 mdka 转换；
-    /// 域名知识点名与 goto 同口径。腿逻辑与 CLI `browse fetch` 双轨
-    /// （ADR-0009 注记形，纯函数单源在 [`crate::fetch_core`]）。
+    /// 域名知识点名与 goto 同口径。两腿回执统一（契约破裂批）：共键
+    /// `url/via/title/text/status/bytes`——`status` 是内容源 HTTP 状态
+    /// （引擎腿=渲染导航 responseStatus，抽取没带回时回落先试腿；旧名
+    /// `httpStatus` 退役），`bytes`=text 字节数。腿逻辑与 CLI `browse fetch`
+    /// 双轨（ADR-0009 注记形，纯函数单源在 [`crate::fetch_core`]）。
     async fn fetch_global(&self, url: &str, opts: &Value) -> Result<Value> {
         let dom_html = opts.get("html").and_then(Value::as_bool).unwrap_or(false);
         let markdown = opts
@@ -948,7 +951,8 @@ impl JsHost {
                     "url": url, "via": "http", "status": status,
                     "title": crate::fetch_core::title_of(&html),
                     "text": text,
-                    "bytes": html.len(),
+                    // bytes 两腿统一 = text 的字节数（与 CLI 腿同批契约统一）
+                    "bytes": text.len(),
                 });
                 if markdown {
                     r["markdown"] = json!(crate::fetch_core::to_markdown(&html));
@@ -991,12 +995,23 @@ impl JsHost {
             "url": url, "via": "engine",
             "title": inner.get("title"),
             "text": inner.get("text"),
+            // bytes 两腿统一 = text 的字节数（HTTP 腿旧值 raw body 长度，
+            // 引擎腿没有 raw 源体，统一锚两腿都稳定持有的 text）
+            "bytes": inner.get("text").and_then(Value::as_str).map(str::len).unwrap_or(0),
         });
         // 升级成因入册（--html 直取形没有，与 CLI 腿同口径；评审 G-1）
-        if !dom_html && let Some((why, st)) = upgraded {
+        if !dom_html && let Some((why, _)) = upgraded {
             r["upgradedFrom"] = json!(why);
-            r["httpStatus"] = json!(st);
         }
+        // status 两腿统一（旧名 httpStatus 退役）：引擎腿 status 是内容源
+        // 的 HTTP 状态——优先抽取带回的渲染导航 responseStatus（引擎腿真
+        // 取到的），没有时回落先试腿状态；直取形没有先试腿
+        let nav_status = inner.get("status").cloned().unwrap_or(Value::Null);
+        r["status"] = if nav_status.is_null() && !dom_html {
+            upgraded.map(|(_, st)| json!(st)).unwrap_or(Value::Null)
+        } else {
+            nav_status
+        };
         let html_src = inner
             .get("html")
             .and_then(Value::as_str)
